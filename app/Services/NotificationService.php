@@ -154,4 +154,52 @@ class NotificationService
             error_log("Failed to clean old notifications: " . $e->getMessage());
         }
     }
+
+    /**
+     * Send notification to all active channels in a group
+     *
+     * @param int $groupId The notification group ID
+     * @param string $subject The notification subject
+     * @param string $message The notification message
+     * @return void
+     */
+    public function sendToGroup(int $groupId, string $subject, string $message): void
+    {
+        try {
+            // Get active channels for the group
+            $channelModel = new \App\Models\NotificationChannel();
+            $channels = $channelModel->getActiveByGroupId($groupId);
+
+            foreach ($channels as $channel) {
+                // Get channel configuration
+                $config = json_decode($channel['channel_config'], true);
+                if (!$config) continue;
+
+                // Create channel instance based on type
+                $channelClass = "\\App\\Services\\Channels\\" . ucfirst($channel['channel_type']) . "Channel";
+                if (!class_exists($channelClass)) {
+                    error_log("Notification channel class not found: " . $channelClass);
+                    continue;
+                }
+
+                $channelInstance = new $channelClass();
+                
+                // Prepare data for channel
+                $data = [
+                    'subject' => $subject,
+                    'message' => $message
+                ];
+
+                // Send notification through channel
+                try {
+                    $channelInstance->send($config, $message, $data);
+                } catch (\Exception $e) {
+                    error_log("Failed to send notification through channel {$channel['channel_type']}: " . $e->getMessage());
+                    continue;
+                }
+            }
+        } catch (\Exception $e) {
+            error_log("Failed to send group notification: " . $e->getMessage());
+        }
+    }
 }
