@@ -12,7 +12,7 @@ services:
       DB_HOST: db
       DB_PORT: 3306
       DB_DATABASE: ${DB_DATABASE:-domain_monitor}
-      DB_USERNAME: ${DB_USERNAME:-domain_user}
+      DB_USERNAME: ${DB_USERNAME:-domain_monitor}
       DB_PASSWORD: ${DB_PASSWORD:-secure_password_change_me}
     ports:
       - "${APP_PORT:-8000}:8000"
@@ -37,7 +37,7 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secure_password}
       MYSQL_DATABASE: ${DB_DATABASE:-domain_monitor}
-      MYSQL_USER: ${DB_USERNAME:-domain_user}
+      MYSQL_USER: ${DB_USERNAME:-domain_monitor}
       MYSQL_PASSWORD: ${DB_PASSWORD:-secure_password_change_me}
     ports:
       - "${DB_PORT:-3306}:3306"
