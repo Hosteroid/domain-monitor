@@ -89,7 +89,7 @@ max_attempts=30
 attempt=0
 
 while [ $attempt -lt $max_attempts ]; do
-    if docker-compose exec -T db mysqladmin ping -h localhost -u root -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d '=' -f2)" &> /dev/null; then
+    if docker-compose exec -T db mysqladmin ping -h localhost -u domain_monitor -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d '=' -f2)" &> /dev/null; then
         print_success "MySQL is ready"
         break
     fi
