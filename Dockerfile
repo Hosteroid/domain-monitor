@@ -40,7 +40,6 @@ RUN mkdir -p logs \
 
 # Copy PHP configuration
 COPY docker/php.ini /usr/local/etc/php/conf.d/custom.ini
-COPY docker/php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
 
 # Copy startup script
 COPY docker/entrypoint.sh /entrypoint.sh
