@@ -80,6 +80,8 @@ if ! docker-compose ps | grep -q "Up"; then
 fi
 
 print_success "Containers started successfully"
+docker-compose exec app composer install
+
 
 # Step 5: Wait for MySQL to be ready
 print_header "Waiting for MySQL to be ready..."
