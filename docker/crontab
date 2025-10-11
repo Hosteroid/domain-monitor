@@ -1,0 +1,6 @@
+# Domain Monitor Cron Jobs
+# Check domains daily at 9 AM
+0 9 * * * /usr/bin/php /var/www/html/cron/check_domains.php >> /var/www/html/logs/cron.log 2>&1
+
+# Optional: Import TLD Registry weekly on Sunday at 2 AM
+0 2 * * 0 /usr/bin/php /var/www/html/cron/import_tld_registry.php >> /var/www/html/logs/cron-tld.log 2>&1

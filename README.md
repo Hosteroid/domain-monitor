@@ -91,7 +91,7 @@ Edit `.env` and configure your settings:
 DB_HOST=localhost
 DB_PORT=3306
 DB_DATABASE=domain_monitor
-DB_USERNAME=root
+DB_USERNAME=domain_monitor
 DB_PASSWORD=your_password
 ```
 
