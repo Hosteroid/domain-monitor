@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: domain-monitor-app
+    restart: unless-stopped
+    working_dir: /var/www/html
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ${DB_DATABASE:-domain_monitor}
+      DB_USERNAME: ${DB_USERNAME:-domain_user}
+      DB_PASSWORD: ${DB_PASSWORD:-secure_password_change_me}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    volumes:
+      - ./:/var/www/html
+      - ./logs:/var/www/html/logs
+    depends_on:
+      - db
+    networks:
+      - domain-monitor-network
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(0);"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  db:
+    image: mysql:8.0
+    container_name: domain-monitor-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_secure_password}
+      MYSQL_DATABASE: ${DB_DATABASE:-domain_monitor}
+      MYSQL_USER: ${DB_USERNAME:-domain_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secure_password_change_me}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+      - ./docker/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+    networks:
+      - domain-monitor-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  domain-monitor-network:
+    driver: bridge
+
+volumes:
+  db-data:
+    driver: local
