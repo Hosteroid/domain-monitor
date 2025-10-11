@@ -202,4 +202,92 @@ class NotificationService
             error_log("Failed to send group notification: " . $e->getMessage());
         }
     }
+
+    /**
+     * Send domain expiration alert through multiple channels
+     *
+     * @param array $domain Domain data including expiration details
+     * @param array $channels Array of notification channels to use
+     * @return array Array of notification results with success status and channel type
+     */
+    public function sendDomainExpirationAlert(array $domain, array $channels): array
+    {
+        $results = [];
+        $daysLeft = $this->calculateDaysLeft($domain['expiration_date']);
+
+        // Prepare notification message
+        if ($daysLeft <= 0) {
+            $subject = "Domain Expired: {$domain['domain_name']}";
+            $message = "URGENT: {$domain['domain_name']} has EXPIRED!\n\n" .
+                      "Please take immediate action to prevent domain loss.\n" .
+                      "Registrar: {$domain['registrar']}\n" .
+                      ($domain['registrar_url'] ? "Renewal URL: {$domain['registrar_url']}\n" : "");
+        } else {
+            $subject = "Domain Expiring: {$domain['domain_name']}";
+            $message = "Domain {$domain['domain_name']} expires in $daysLeft day" . ($daysLeft > 1 ? 's' : '') . "\n\n" .
+                      "Expiration Date: {$domain['expiration_date']}\n" .
+                      "Registrar: {$domain['registrar']}\n" .
+                      ($domain['registrar_url'] ? "Renewal URL: {$domain['registrar_url']}\n" : "");
+        }
+
+        foreach ($channels as $channel) {
+            $result = [
+                'channel' => $channel['channel_type'],
+                'success' => false
+            ];
+
+            try {
+                // Get channel configuration
+                $config = json_decode($channel['channel_config'], true);
+                if (!$config) {
+                    $results[] = $result;
+                    continue;
+                }
+
+                // Create channel instance
+                $channelClass = "\\App\\Services\\Channels\\" . ucfirst($channel['channel_type']) . "Channel";
+                if (!class_exists($channelClass)) {
+                    $results[] = $result;
+                    continue;
+                }
+
+                $channelInstance = new $channelClass();
+                
+                // Send notification
+                $data = [
+                    'subject' => $subject,
+                    'message' => $message,
+                    'domain' => $domain
+                ];
+
+                if ($channelInstance->send($config, $message, $data)) {
+                    $result['success'] = true;
+                }
+            } catch (\Exception $e) {
+                error_log("Failed to send expiration alert through {$channel['channel_type']}: " . $e->getMessage());
+            }
+
+            $results[] = $result;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Calculate days until domain expiration
+     *
+     * @param string $expirationDate Expiration date string
+     * @return int|null Number of days until expiration or null if invalid date
+     */
+    private function calculateDaysLeft(string $expirationDate): ?int
+    {
+        try {
+            $expDate = new \DateTime($expirationDate);
+            $now = new \DateTime();
+            $diff = $expDate->diff($now);
+            return $diff->invert ? $diff->days : -$diff->days;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
 }
