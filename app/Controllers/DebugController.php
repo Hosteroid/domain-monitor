@@ -327,9 +327,11 @@ class DebugController extends Controller
                 
                 $response .= $whoisResponse;
                 
-                // Check if domain is not found/available
+                // Check if domain is not found/available (using improved pattern)
                 $whoisResponseLower = strtolower($whoisResponse);
-                if (preg_match('/not found|no match|no entries found|no data found|domain not found|no such domain|not registered|available for registration/i', $whoisResponseLower)) {
+                if (preg_match('/^(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisResponseLower) ||
+                    preg_match('/^status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisResponseLower) ||
+                    preg_match('/^domain status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisResponseLower)) {
                     $response .= "\n\n=== DOMAIN STATUS DETECTED ===\n";
                     $response .= "✓ Domain is AVAILABLE (not registered)\n";
                     $parsedData[] = ['key' => 'Status', 'value' => 'AVAILABLE'];

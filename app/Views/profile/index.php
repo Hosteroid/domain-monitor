@@ -9,6 +9,9 @@ ob_start();
 $twoFactorStatus = $userModel->getTwoFactorStatus($user['id']);
 $twoFactorService = new \App\Services\TwoFactorService();
 $twoFactorPolicy = $twoFactorService->getTwoFactorPolicy();
+
+// Get avatar data
+$avatar = \App\Helpers\AvatarHelper::getAvatar($user, 80);
 ?>
 
 <!-- Main Profile Layout -->
@@ -19,8 +22,28 @@ $twoFactorPolicy = $twoFactorService->getTwoFactorPolicy();
             <!-- User Info Section -->
             <div class="p-6 border-b border-gray-200 bg-gray-50">
                 <div class="flex flex-col items-center text-center">
-                    <div class="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-white text-2xl font-bold">
-                        <?= strtoupper(substr($user['username'] ?? 'U', 0, 1)) ?>
+                    <div class="relative">
+                        <?php if ($avatar['type'] === 'uploaded' || $avatar['type'] === 'gravatar'): ?>
+                            <img src="<?= htmlspecialchars($avatar['url']) ?>" 
+                                 alt="<?= htmlspecialchars($avatar['alt']) ?>" 
+                                 class="w-20 h-20 rounded-full object-cover border-2 border-white shadow-sm"
+                                 loading="lazy">
+                        <?php else: ?>
+                            <div class="w-20 h-20 rounded-full bg-primary flex items-center justify-center text-white text-2xl font-bold border-2 border-white shadow-sm">
+                                <?= $avatar['initials'] ?>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <!-- Avatar type indicator -->
+                        <div class="absolute -bottom-1 -right-1 w-6 h-6 bg-white rounded-full border-2 border-gray-200 flex items-center justify-center">
+                            <?php if ($avatar['type'] === 'uploaded'): ?>
+                                <i class="fas fa-image text-xs text-blue-600" title="Uploaded avatar"></i>
+                            <?php elseif ($avatar['type'] === 'gravatar'): ?>
+                                <i class="fas fa-globe text-xs text-green-600" title="Gravatar"></i>
+                            <?php else: ?>
+                                <i class="fas fa-user text-xs text-gray-500" title="Initials"></i>
+                            <?php endif; ?>
+                        </div>
                     </div>
                     <h3 class="mt-4 text-base font-semibold text-gray-900"><?= htmlspecialchars($user['full_name'] ?? $user['username']) ?></h3>
                     <p class="text-sm text-gray-500 mt-1">@<?= htmlspecialchars($user['username'] ?? '') ?></p>
@@ -88,6 +111,93 @@ $twoFactorPolicy = $twoFactorService->getTwoFactorPolicy();
                 <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
                     <h3 class="text-lg font-semibold text-gray-900">Profile Information</h3>
                     <p class="text-sm text-gray-600 mt-1">Update your personal details and account information</p>
+                </div>
+
+                <!-- Avatar Upload Section -->
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h4 class="text-base font-semibold text-gray-900 mb-3">Profile Picture</h4>
+                    <div class="flex items-center space-x-4">
+                        <!-- Current Avatar Display -->
+                        <div class="relative">
+                            <?php if ($avatar['type'] === 'uploaded' || $avatar['type'] === 'gravatar'): ?>
+                                <img src="<?= htmlspecialchars($avatar['url']) ?>" 
+                                     alt="<?= htmlspecialchars($avatar['alt']) ?>" 
+                                     class="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
+                                     loading="lazy">
+                            <?php else: ?>
+                                <div class="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-white text-lg font-bold border-2 border-gray-200">
+                                    <?= $avatar['initials'] ?>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <!-- Avatar type indicator -->
+                            <div class="absolute -bottom-1 -right-1 w-5 h-5 bg-white rounded-full border-2 border-gray-200 flex items-center justify-center">
+                                <?php if ($avatar['type'] === 'uploaded'): ?>
+                                    <i class="fas fa-image text-xs text-blue-600" title="Uploaded avatar"></i>
+                                <?php elseif ($avatar['type'] === 'gravatar'): ?>
+                                    <i class="fas fa-globe text-xs text-green-600" title="Gravatar"></i>
+                                <?php else: ?>
+                                    <i class="fas fa-user text-xs text-gray-500" title="Initials"></i>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        
+                        <!-- Avatar Controls -->
+                        <div class="flex-1">
+                            <div class="space-y-2">
+                                <!-- Upload Form -->
+                                <form method="POST" action="/profile/upload-avatar" enctype="multipart/form-data" class="inline-block">
+                                    <?= csrf_field() ?>
+                                    <div class="flex items-center space-x-2">
+                                        <input type="file" 
+                                               id="avatar" 
+                                               name="avatar" 
+                                               accept="image/jpeg,image/png,image/gif,image/webp"
+                                               class="hidden"
+                                               onchange="this.form.submit()">
+                                        <label for="avatar" 
+                                               class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 cursor-pointer">
+                                            <i class="fas fa-upload mr-2"></i>
+                                            Upload New
+                                        </label>
+                                    </div>
+                                </form>
+                                
+                                <!-- Delete Avatar Button -->
+                                <?php if ($avatar['type'] === 'uploaded'): ?>
+                                    <form method="POST" action="/profile/delete-avatar" class="inline-block ml-2">
+                                        <?= csrf_field() ?>
+                                        <button type="submit" 
+                                                class="inline-flex items-center px-3 py-2 border border-red-300 rounded-lg text-sm font-medium text-red-700 bg-white hover:bg-red-50"
+                                                onclick="return confirm('Are you sure you want to remove your avatar?')">
+                                            <i class="fas fa-trash mr-2"></i>
+                                            Remove
+                                        </button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                            
+                            <!-- Avatar Info -->
+                            <div class="mt-2 text-xs text-gray-500">
+                                <?php if ($avatar['type'] === 'uploaded'): ?>
+                                    Using uploaded image
+                                <?php elseif ($avatar['type'] === 'gravatar'): ?>
+                                    Using Gravatar from <?= htmlspecialchars($user['email'] ?? '') ?>
+                                <?php else: ?>
+                                    Using initials (upload an image or set up Gravatar)
+                                <?php endif; ?>
+                            </div>
+                            
+                            <!-- Gravatar Info -->
+                            <?php if ($avatar['type'] !== 'gravatar' && !empty($user['email'])): ?>
+                                <div class="mt-1 text-xs text-gray-400">
+                                    <a href="https://gravatar.com" target="_blank" class="text-blue-600 hover:text-blue-800">
+                                        Set up Gravatar for automatic avatar
+                                    </a>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
 
                 <form method="POST" action="/profile/update" class="p-6">

@@ -137,6 +137,8 @@ $router->get('/profile/delete', [ProfileController::class, 'delete']);
 $router->get('/profile/resend-verification', [ProfileController::class, 'resendVerification']);
 $router->post('/profile/logout-other-sessions', [ProfileController::class, 'logoutOtherSessions']);
 $router->post('/profile/logout-session/{sessionId}', [ProfileController::class, 'logoutSession']);
+$router->post('/profile/upload-avatar', [ProfileController::class, 'uploadAvatar']);
+$router->post('/profile/delete-avatar', [ProfileController::class, 'deleteAvatar']);
 
 // Two-Factor Authentication management (protected)
 $router->get('/2fa/setup', [TwoFactorController::class, 'setup']);

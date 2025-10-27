@@ -37,6 +37,9 @@ $settingModel = new Setting();
 $whoisService = new WhoisService();
 $notificationService = new NotificationService();
 
+// Clear TLD cache to ensure fresh server discovery
+WhoisService::clearTldCache();
+
 // Set timezone from settings
 try {
     $appSettings = $settingModel->getAppSettings();
@@ -116,7 +119,10 @@ foreach ($domains as $domain) {
         $status = $whoisService->getDomainStatus($whoisData['expiration_date'], $whoisData['status'] ?? []);
         $domainModel->update($domain['id'], [
             'registrar' => $whoisData['registrar'],
+            'registrar_url' => $whoisData['registrar_url'] ?? null,
             'expiration_date' => $whoisData['expiration_date'],
+            'updated_date' => $whoisData['updated_date'] ?? null,
+            'abuse_email' => $whoisData['abuse_email'] ?? null,
             'last_checked' => date('Y-m-d H:i:s'),
             'status' => $status,
             'whois_data' => json_encode($whoisData)

@@ -51,6 +51,7 @@ class InstallerController extends Controller
             '018_add_user_isolation.sql',
             '019_add_webhook_channel_type.sql',
             '020_create_tags_system.sql',
+            '021_add_avatar_field.sql',
         ];
         
         try {
@@ -187,7 +188,8 @@ class InstallerController extends Controller
                     '017_add_two_factor_authentication.sql',
                     '018_add_user_isolation.sql',
                     '019_add_webhook_channel_type.sql',
-                    '020_create_tags_system.sql'
+                    '020_create_tags_system.sql',
+                    '021_add_avatar_field.sql'
                 ];
             }
             
@@ -370,6 +372,7 @@ class InstallerController extends Controller
                     '018_add_user_isolation.sql',
                     '019_add_webhook_channel_type.sql',
                     '020_create_tags_system.sql',
+                    '021_add_avatar_field.sql',
                 ];
                 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");

@@ -124,30 +124,59 @@
                 <!-- User Dropdown -->
                 <div class="relative">
                     <button onclick="toggleDropdown()" class="flex items-center space-x-3 p-2 hover:bg-gray-100 rounded-lg transition-colors duration-150 focus:outline-none">
-                        <div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-semibold">
-                            <?= strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1)) ?>
-                        </div>
+                        <?php
+                        // Get user data for avatar
+                        $userModel = new \App\Models\User();
+                        $user = $userModel->find($_SESSION['user_id'] ?? 0);
+                        $avatar = $user ? \App\Helpers\AvatarHelper::getAvatar($user, 36) : null;
+                        ?>
+                        <?php if ($avatar && ($avatar['type'] === 'uploaded' || $avatar['type'] === 'gravatar')): ?>
+                            <img src="<?= htmlspecialchars($avatar['url']) ?>" 
+                                 alt="<?= htmlspecialchars($avatar['alt']) ?>" 
+                                 class="w-9 h-9 rounded-full object-cover"
+                                 loading="lazy">
+                        <?php else: ?>
+                            <div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-semibold">
+                                <?= strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1)) ?>
+                            </div>
+                        <?php endif; ?>
                         <div class="hidden lg:block text-left">
-                            <p class="text-sm font-medium text-gray-700"><?= htmlspecialchars($_SESSION['username'] ?? 'User') ?></p>
+                            <p class="text-sm font-medium text-gray-700"><?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User') ?></p>
                             <p class="text-xs text-gray-500"><?= htmlspecialchars($_SESSION['email'] ?? '') ?></p>
                         </div>
                         <i class="fas fa-chevron-down text-gray-400 text-xs hidden md:block"></i>
                     </button>
 
                     <!-- Dropdown Menu -->
-                    <div id="userDropdown" class="dropdown-menu absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg py-2 border border-gray-200">
-                        <div class="px-4 py-3 border-b border-gray-200">
-                            <p class="text-sm font-medium text-gray-900"><?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User') ?></p>
-                            <p class="text-xs text-gray-500 mt-1"><?= htmlspecialchars($_SESSION['email'] ?? 'user@example.com') ?></p>
-                            <div class="flex items-center gap-2 mt-2">
-                                <span class="inline-flex items-center px-2.5 py-1 bg-<?= $_SESSION['role'] === 'admin' ? 'amber' : 'blue' ?>-100 text-<?= $_SESSION['role'] === 'admin' ? 'amber' : 'blue' ?>-800 text-xs font-semibold rounded border border-<?= $_SESSION['role'] === 'admin' ? 'amber' : 'blue' ?>-200">
-                                    <i class="fas fa-<?= $_SESSION['role'] === 'admin' ? 'crown' : 'user' ?> mr-1.5"></i>
-                                    <?= ucfirst($_SESSION['role'] ?? 'user') ?>
-                                </span>
-                                <span class="inline-flex items-center px-2.5 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded border border-green-200">
-                                    <i class="fas fa-circle text-xs mr-1"></i>
-                                    Online
-                                </span>
+                    <div id="userDropdown" class="dropdown-menu absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden pb-2">
+                        <!-- Welcome Header -->
+                        <div class="px-4 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+                            <div class="text-center">
+                                <div class="relative w-12 h-12 mx-auto mb-2">
+                                    <?php if ($avatar && ($avatar['type'] === 'uploaded' || $avatar['type'] === 'gravatar')): ?>
+                                        <img src="<?= htmlspecialchars($avatar['url']) ?>" 
+                                             alt="<?= htmlspecialchars($avatar['alt']) ?>" 
+                                             class="w-12 h-12 rounded-full object-cover"
+                                             loading="lazy">
+                                    <?php else: ?>
+                                        <div class="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg">
+                                            <?= strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1)) ?>
+                                        </div>
+                                    <?php endif; ?>
+                                    <!-- Online status dot -->
+                                    <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white flex items-center justify-center">
+                                        <div class="w-2 h-2 bg-white rounded-full"></div>
+                                    </div>
+                                </div>
+                                <p class="text-sm font-semibold text-gray-900">Welcome back!</p>
+                                <p class="text-xs text-gray-500 mt-1"><?= htmlspecialchars($_SESSION['full_name'] ?? $_SESSION['username'] ?? 'User') ?></p>
+                                <!-- Role indicator -->
+                                <div class="mt-2">
+                                    <span class="inline-flex items-center px-2 py-1 bg-<?= $_SESSION['role'] === 'admin' ? 'amber' : 'blue' ?>-100 text-<?= $_SESSION['role'] === 'admin' ? 'amber' : 'blue' ?>-700 text-xs font-medium rounded-full">
+                                        <i class="fas fa-<?= $_SESSION['role'] === 'admin' ? 'crown' : 'user' ?> mr-1"></i>
+                                        <?= ucfirst($_SESSION['role'] ?? 'user') ?>
+                                    </span>
+                                </div>
                             </div>
                         </div>
                         

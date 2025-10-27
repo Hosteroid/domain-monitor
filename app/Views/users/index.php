@@ -207,10 +207,21 @@ $pagination = $pagination ?? [
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <div class="flex items-center">
-                                <div class="flex-shrink-0 h-10 w-10 bg-primary bg-opacity-10 rounded-lg flex items-center justify-center">
-                                    <span class="text-primary font-semibold text-sm">
-                                        <?= strtoupper(substr($user['username'], 0, 1)) ?>
-                                    </span>
+                                <?php
+                                // Get avatar data for this user (now fast with database caching)
+                                $avatar = \App\Helpers\AvatarHelper::getAvatar($user, 40);
+                                ?>
+                                <div class="flex-shrink-0 h-10 w-10 rounded-lg overflow-hidden bg-primary bg-opacity-10 flex items-center justify-center">
+                                    <?php if ($avatar['type'] === 'uploaded' || $avatar['type'] === 'gravatar'): ?>
+                                        <img src="<?= htmlspecialchars($avatar['url']) ?>" 
+                                             alt="<?= htmlspecialchars($avatar['alt']) ?>" 
+                                             class="w-full h-full object-cover"
+                                             loading="lazy">
+                                    <?php else: ?>
+                                        <span class="text-primary font-semibold text-sm">
+                                            <?= $avatar['initials'] ?>
+                                        </span>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="ml-4">
                                     <div class="text-sm font-semibold text-gray-900"><?= htmlspecialchars($user['full_name'] ?? 'N/A') ?></div>

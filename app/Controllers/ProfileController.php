@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\SessionManager;
 use App\Models\RememberToken;
 use App\Services\Logger;
+use App\Helpers\AvatarHelper;
 
 class ProfileController extends Controller
 {
@@ -403,5 +404,214 @@ class ProfileController extends Controller
         }
 
         $this->redirect('/profile#sessions');
+    }
+
+    /**
+     * Upload avatar
+     */
+    public function uploadAvatar()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/profile');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/profile');
+
+        $userId = Auth::id();
+        $user = $this->userModel->find($userId);
+
+        if (!$user) {
+            $_SESSION['error'] = 'User not found';
+            $this->redirect('/profile');
+            return;
+        }
+
+        // Check if file was uploaded
+        if (!isset($_FILES['avatar']) || $_FILES['avatar']['error'] === UPLOAD_ERR_NO_FILE) {
+            $_SESSION['error'] = 'Please select a file to upload';
+            $this->logger->warning("Avatar upload attempted without file", [
+                'user_id' => $userId,
+                'files' => $_FILES
+            ]);
+            $this->redirect('/profile');
+            return;
+        }
+
+        $file = $_FILES['avatar'];
+
+        // Log file details for debugging
+        $this->logger->info("Avatar upload attempt", [
+            'user_id' => $userId,
+            'file_name' => $file['name'],
+            'file_size' => $file['size'],
+            'file_type' => $file['type'],
+            'file_error' => $file['error'],
+            'tmp_name' => $file['tmp_name']
+        ]);
+
+        // Validate the uploaded file
+        $validation = AvatarHelper::validateAvatarFile($file);
+        if (!$validation['valid']) {
+            $_SESSION['error'] = $validation['error'];
+            $this->logger->warning("Avatar upload validation failed", [
+                'user_id' => $userId,
+                'file_name' => $file['name'],
+                'validation_error' => $validation['error']
+            ]);
+            $this->redirect('/profile');
+            return;
+        }
+
+        try {
+            // Ensure upload directory exists
+            $this->logger->info("Ensuring upload directory exists", [
+                'detected_web_root' => AvatarHelper::getDetectedWebRoot()
+            ]);
+            if (!AvatarHelper::ensureUploadDirectory()) {
+                throw new \Exception('Failed to create upload directory: ' . AvatarHelper::getAvatarPath(''));
+            }
+
+            // Generate unique filename
+            $newFilename = AvatarHelper::generateAvatarFilename($file['name'], $userId);
+            $uploadPath = AvatarHelper::getAvatarPath($newFilename);
+            
+            $this->logger->info("Generated avatar filename", [
+                'user_id' => $userId,
+                'original_name' => $file['name'],
+                'new_filename' => $newFilename,
+                'upload_path' => $uploadPath
+            ]);
+
+            // Check if temp file exists and is readable
+            if (!file_exists($file['tmp_name'])) {
+                throw new \Exception('Temporary file does not exist: ' . $file['tmp_name']);
+            }
+            
+            if (!is_readable($file['tmp_name'])) {
+                throw new \Exception('Temporary file is not readable: ' . $file['tmp_name']);
+            }
+
+            // Move uploaded file
+            $this->logger->info("Attempting to move uploaded file", [
+                'from' => $file['tmp_name'],
+                'to' => $uploadPath
+            ]);
+            
+            if (!move_uploaded_file($file['tmp_name'], $uploadPath)) {
+                throw new \Exception('Failed to save uploaded file from ' . $file['tmp_name'] . ' to ' . $uploadPath);
+            }
+
+            // Verify file was actually saved
+            if (!file_exists($uploadPath)) {
+                throw new \Exception('File was not saved to expected location: ' . $uploadPath);
+            }
+
+            // Delete old avatar if it exists
+            if (!empty($user['avatar']) && $user['avatar'] !== 'gravatar' && $user['avatar'] !== 'no_gravatar') {
+                $this->logger->info("Deleting old avatar", [
+                    'user_id' => $userId,
+                    'old_avatar' => $user['avatar']
+                ]);
+                AvatarHelper::deleteAvatarFile($user['avatar']);
+            }
+
+            // Update user record with new avatar filename
+            $this->logger->info("Updating user record with new avatar", [
+                'user_id' => $userId,
+                'new_avatar' => $newFilename
+            ]);
+            
+            $updateResult = $this->userModel->update($userId, ['avatar' => $newFilename]);
+            
+            if (!$updateResult) {
+                throw new \Exception('Failed to update user record in database');
+            }
+
+            $_SESSION['success'] = 'Avatar updated successfully!';
+            
+            $this->logger->info("Avatar upload completed successfully", [
+                'user_id' => $userId,
+                'filename' => $newFilename,
+                'file_size' => filesize($uploadPath)
+            ]);
+
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to upload avatar: ' . $e->getMessage();
+            $this->logger->error("Avatar upload failed", [
+                'user_id' => $userId,
+                'file_name' => $file['name'],
+                'file_size' => $file['size'],
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+
+        $this->redirect('/profile');
+    }
+
+    /**
+     * Delete avatar
+     */
+    public function deleteAvatar()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/profile');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/profile');
+
+        $userId = Auth::id();
+        $user = $this->userModel->find($userId);
+
+        if (!$user) {
+            $_SESSION['error'] = 'User not found';
+            $this->redirect('/profile');
+            return;
+        }
+
+        try {
+            // Delete avatar file if it exists (only if it's an uploaded file)
+            if (!empty($user['avatar']) && $user['avatar'] !== 'gravatar' && $user['avatar'] !== 'no_gravatar') {
+                $this->logger->info("Deleting avatar file", [
+                    'user_id' => $userId,
+                    'avatar_file' => $user['avatar']
+                ]);
+                AvatarHelper::deleteAvatarFile($user['avatar']);
+            }
+
+            // Clear avatar field in database
+            $this->logger->info("Clearing avatar field in database", [
+                'user_id' => $userId,
+                'current_avatar' => $user['avatar']
+            ]);
+            
+            $updateResult = $this->userModel->update($userId, ['avatar' => null]);
+            
+            if (!$updateResult) {
+                throw new \Exception('Failed to update user record in database');
+            }
+
+            $_SESSION['success'] = 'Avatar removed successfully!';
+            
+            $this->logger->info("Avatar deletion completed successfully", [
+                'user_id' => $userId,
+                'previous_avatar' => $user['avatar']
+            ]);
+
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to delete avatar: ' . $e->getMessage();
+            $this->logger->error("Avatar deletion failed", [
+                'user_id' => $userId,
+                'current_avatar' => $user['avatar'] ?? 'none',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+
+        $this->redirect('/profile');
     }
 }

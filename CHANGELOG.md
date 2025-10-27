@@ -67,6 +67,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Migration tracking system
 - Consolidated database schema for v1.1.0 fresh installs
 - Smart migration system (consolidated for new, incremental for upgrades)
+- **Two-Factor Authentication (2FA) System**:
+  - TOTP (Time-based One-Time Password) implementation
+  - Email backup codes for 2FA recovery
+  - 2FA verification attempts tracking with rate limiting
+  - 2FA policy settings (optional/required/disabled)
+  - Complete 2FA setup, verification, and management flow
+  - Backup codes generation and verification system
+- **CAPTCHA Security System**:
+  - Support for reCAPTCHA v2, reCAPTCHA v3, and Cloudflare Turnstile
+  - Configurable CAPTCHA settings in admin panel
+  - Score-based verification for reCAPTCHA v3
+  - Integration with login and registration forms
+  - CAPTCHA provider selection and configuration
+- **Domain Tags System**:
+  - Domain tagging for organization and categorization
+  - Comma-separated tags field in domains table
+  - Tag-based domain filtering and organization
+  - Indexed tag searches for performance
+- **Advanced Error Logging System**:
+  - Database-backed error logging and tracking
+  - Error deduplication and occurrence counting
+  - Request context capture (method, URI, data)
+  - User context (IP, user agent, session data)
+  - System context (PHP version, memory usage)
+  - Error resolution tracking and management
+  - Admin error log interface for debugging
+- **Enhanced Logger Service**:
+  - Structured logging with context arrays
+  - Multiple log levels (debug, info, warning, error, critical)
+  - Date-based log file rotation
+  - Context-aware logging throughout the application
+  - JSON-formatted log entries with timestamps
+- **User Avatar System**:
+  - Avatar upload and deletion functionality
+  - Gravatar integration with fallback to user initials
+  - Dynamic web root detection for file uploads
+  - Avatar display in profile, navigation, and user listings
+  - File validation and security measures
+- **WHOIS Parsing Improvements**:
+  - Enhanced WHOIS data parsing and processing
+  - Better referral server handling and following
+  - Improved domain availability detection
+  - Status parsing cleanup and consistency
+  - WHOIS server display improvements
 
 ### Changed
 - Profile page completely redesigned with sidebar layout
@@ -81,6 +125,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Profile integrated with dashboard layout
 - Installation now via web UI instead of CLI
 - Auto-redirect to installer on first run
+- Domain management enhanced with tagging system
+- Error handling improved with comprehensive logging
+- WHOIS parsing enhanced with better data extraction
+- User interface updated with avatar display throughout
 
 ### Security
 - **Database Session Storage** - True session control with remote termination
@@ -96,6 +144,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email enumeration protection
 - Session-based verification resend
 - Admin-only route protection
+- **Two-Factor Authentication** - TOTP and email backup codes for enhanced security
+- **CAPTCHA Protection** - Anti-bot protection for login and registration
+- **Advanced Error Logging** - Comprehensive error tracking and debugging
+- **File Upload Security** - Avatar upload validation and secure file handling
 
 ### Technical
 - **MVC Architecture Refactoring** - Complete separation of concerns
@@ -114,6 +166,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Notification system with 7 notification types
 - Welcome notifications on user creation and fresh install
 - Upgrade notifications for admins with version tracking
+- **TwoFactorService** - Complete 2FA implementation with TOTP and backup codes
+- **CaptchaService** - Multi-provider CAPTCHA verification system
+- **ErrorHandler** - Centralized error handling with database logging
+- **Logger** - Enhanced logging service with structured context
+- **AvatarHelper** - User avatar management with Gravatar integration
+- **Tag Model** - Domain tagging system with user isolation
+- **ErrorLog Model** - Error tracking and deduplication system
 
 ### Contributors
 - Special thanks to @jadeops for auto-detected cron path improvement & XSS protection enhancement (PR #1)
@@ -266,6 +325,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Advanced Session Management** - Database-backed sessions with geolocation (country, city, ISP)
 - **Remote Session Control** - Terminate any device instantly with immediate logout validation
 - **Enhanced Profile Page** - Sidebar navigation with 4 tabs, hash-based routing (#profile, #security, #sessions)
+- **Two-Factor Authentication** - Complete TOTP implementation with email backup codes and rate limiting
+- **CAPTCHA Security System** - Support for reCAPTCHA v2/v3 and Cloudflare Turnstile with admin configuration
+- **Domain Tags System** - Organize domains with custom tags for better categorization and filtering
+- **Advanced Error Logging** - Database-backed error tracking with deduplication, context capture, and admin interface
+- **User Avatar System** - Avatar upload with Gravatar integration and fallback to user initials
+- **Enhanced Logger Service** - Structured logging with context arrays and multiple log levels
+- **WHOIS Parsing Improvements** - Enhanced domain data parsing, referral handling, and availability detection
 - **MVC Architecture Refactoring** - 3 new Helpers (Layout, Domain, Session), ~265 lines cleaned from views
 - **Geolocation Tracking** - IP-based location detection using ip-api.com, country flags with flag-icons
 - **Device Detection** - Browser & device type parsing (Chrome/Firefox/Safari, Desktop/Mobile/Tablet)

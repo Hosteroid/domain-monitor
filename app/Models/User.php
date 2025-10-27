@@ -39,7 +39,7 @@ class User extends Model
     /**
      * Create user with hashed password
      */
-    public function createUser(string $username, string $password, ?string $email = null, ?string $fullName = null): int
+    public function createUser(string $username, string $password, ?string $email = null, ?string $fullName = null, ?string $avatar = null): int
     {
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
         
@@ -48,6 +48,7 @@ class User extends Model
             'password' => $hashedPassword,
             'email' => $email,
             'full_name' => $fullName,
+            'avatar' => $avatar,
             'is_active' => 1
         ]);
     }

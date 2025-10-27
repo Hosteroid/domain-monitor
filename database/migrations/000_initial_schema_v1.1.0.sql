@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     two_factor_backup_codes TEXT NULL,
     two_factor_setup_at TIMESTAMP NULL,
     full_name VARCHAR(255),
+    avatar VARCHAR(255) NULL,
     role VARCHAR(50) DEFAULT 'user',
     is_active BOOLEAN DEFAULT TRUE,
     last_login TIMESTAMP NULL,

@@ -9,7 +9,18 @@ class WhoisService
 {
     // Cache for discovered TLD servers to avoid repeated IANA queries
     private static array $tldCache = [];
+    
+    // Cache TTL in seconds (24 hours)
+    private const CACHE_TTL = 86400;
     private TldRegistry $tldModel;
+    
+    /**
+     * Clear TLD cache (useful for testing or forcing fresh lookups)
+     */
+    public static function clearTldCache(): void
+    {
+        self::$tldCache = [];
+    }
 
     public function __construct()
     {
@@ -101,26 +112,84 @@ class WhoisService
             $whoisData = $this->queryWhois($domain, $whoisServer);
 
             if (!$whoisData) {
+                $logger = new \App\Services\Logger();
+                $logger->warning('No WHOIS data received', [
+                    'domain' => $domain,
+                    'server' => $whoisServer
+                ]);
                 return null;
             }
+            
+            $logger = new \App\Services\Logger();
+            $logger->debug('WHOIS data received', [
+                'domain' => $domain,
+                'server' => $whoisServer,
+                'data_length' => strlen($whoisData),
+                'first_200_chars' => substr($whoisData, 0, 200)
+            ]);
 
             // Check if we got a referral to another WHOIS server
             $referralServer = $this->extractReferralServer($whoisData);
             if ($referralServer && $referralServer !== $whoisServer) {
-                // Query the referred server
-                $whoisData = $this->queryWhois($domain, $referralServer);
-                if (!$whoisData) {
-                    return null;
+                // Check if the original response already has complete data
+                $originalInfo = $this->parseWhoisData($domain, $whoisData, $whoisServer);
+                $hasCompleteData = !empty($originalInfo['registrar']) && 
+                                 $originalInfo['registrar'] !== 'Unknown' && 
+                                 !empty($originalInfo['expiration_date']);
+                
+                if (!$hasCompleteData) {
+                    // Only query the referred server if original data is incomplete
+                    $logger = new \App\Services\Logger();
+                    $logger->debug('Following WHOIS referral', [
+                        'domain' => $domain,
+                        'original_server' => $whoisServer,
+                        'referral_server' => $referralServer
+                    ]);
+                    
+                    $referralData = $this->queryWhois($domain, $referralServer);
+                    if ($referralData) {
+                        $whoisData = $referralData;
+                    }
+                } else {
+                    $logger = new \App\Services\Logger();
+                    $logger->debug('Skipping WHOIS referral - original data is complete', [
+                        'domain' => $domain,
+                        'original_server' => $whoisServer,
+                        'referral_server' => $referralServer,
+                        'original_registrar' => $originalInfo['registrar'],
+                        'original_expiration' => $originalInfo['expiration_date']
+                    ]);
+                    $referralServer = null; // Don't use referral server
                 }
             }
 
             // Parse the response
-            $info = $this->parseWhoisData($domain, $whoisData, $referralServer ?? $whoisServer);
+            $actualServer = $referralServer ?? $whoisServer;
+            $info = $this->parseWhoisData($domain, $whoisData, $actualServer);
+            
+            // Override whois_server to reflect the actual server that provided the data
+            $info['whois_server'] = $actualServer;
+            
+            // Debug logging using proper Logger service
+            $logger = new \App\Services\Logger();
+            $logger->debug('WHOIS parsing completed', [
+                'domain' => $domain,
+                'server' => $referralServer ?? $whoisServer,
+                'raw_data_length' => strlen($whoisData),
+                'parsed_registrar' => $info['registrar'] ?? 'null',
+                'parsed_expiration' => $info['expiration_date'] ?? 'null',
+                'parsed_nameservers_count' => count($info['nameservers'] ?? [])
+            ]);
 
             return $info;
 
         } catch (Exception $e) {
-            error_log("WHOIS lookup failed for $domain: " . $e->getMessage());
+            $logger = new \App\Services\Logger();
+            $logger->error('WHOIS lookup failed', [
+                'domain' => $domain,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return null;
         }
     }
@@ -131,9 +200,14 @@ class WhoisService
      */
     private function discoverTldServers(string $tld): array
     {
-        // Check cache first
+        // Check cache first (with TTL)
         if (isset(self::$tldCache[$tld])) {
-            return self::$tldCache[$tld];
+            $cached = self::$tldCache[$tld];
+            if (isset($cached['timestamp']) && (time() - $cached['timestamp']) < self::CACHE_TTL) {
+                return $cached['data'];
+            }
+            // Cache expired, remove it
+            unset(self::$tldCache[$tld]);
         }
 
         $result = [
@@ -160,7 +234,10 @@ class WhoisService
                 }
                 
                 // Cache the result
-                self::$tldCache[$tld] = $result;
+                self::$tldCache[$tld] = [
+                    'data' => $result,
+                    'timestamp' => time()
+                ];
                 return $result;
             }
 
@@ -169,7 +246,10 @@ class WhoisService
             $response = $this->queryWhois($tld, 'whois.iana.org');
             
             if (!$response) {
-                self::$tldCache[$tld] = $result;
+                self::$tldCache[$tld] = [
+                    'data' => $result,
+                    'timestamp' => time()
+                ];
                 return $result;
             }
 
@@ -252,11 +332,17 @@ class WhoisService
             // Guessing often creates invalid URLs that don't resolve in DNS
 
             // Cache the result
-            self::$tldCache[$tld] = $result;
+            self::$tldCache[$tld] = [
+                'data' => $result,
+                'timestamp' => time()
+            ];
 
             return $result;
         } catch (Exception $e) {
-            self::$tldCache[$tld] = $result;
+            self::$tldCache[$tld] = [
+                'data' => $result,
+                'timestamp' => time()
+            ];
             return $result;
         }
     }
@@ -579,7 +665,10 @@ class WhoisService
         
         // Check if domain is not found/available
         $whoisDataLower = strtolower($whoisData);
-        if (preg_match('/not found|no match|no entries found|no data found|domain not found|no such domain|not registered|available for registration|does not exist|queried object does not exist|is free/i', $whoisDataLower)) {
+        // More specific patterns to avoid false positives
+        if (preg_match('/^(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisDataLower) ||
+            preg_match('/^status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisDataLower) ||
+            preg_match('/^domain status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisDataLower)) {
             $data['status'][] = 'AVAILABLE';
             $data['registrar'] = 'Not Registered';
             return $data;
@@ -639,17 +728,17 @@ class WhoisService
                 }
 
                 // Expiration date
-                if (preg_match('/(expir|expiry|expire|paid-till|renewal)/i', $key) && !empty($value)) {
+                if (preg_match('/(expir|expiry|expire|paid-till|renewal|registry.*expir)/i', $key) && !empty($value)) {
                     $data['expiration_date'] = $this->parseDate($value);
                 }
 
                 // Updated date (UK format: "Last updated")
-                if (preg_match('/(updated date|last updated)/i', $key) && !empty($value)) {
+                if (preg_match('/(updated date|last updated|updated)/i', $key) && !empty($value)) {
                     $data['updated_date'] = $this->parseDate($value);
                 }
 
                 // Creation date (UK format: "Registered on")
-                if (preg_match('/(creat|registered|registered on)/i', $key) && !empty($value)) {
+                if (preg_match('/(creat|registered|registered on|creation)/i', $key) && !empty($value)) {
                     $data['creation_date'] = $this->parseDate($value);
                 }
 
@@ -675,8 +764,22 @@ class WhoisService
 
                 // Status (UK format: "Registration status")
                 if (preg_match('/(status|state|registration status)/i', $key) && !empty($value)) {
-                    if (!in_array($value, $data['status'])) {
-                        $data['status'][] = $value;
+                    // Filter out invalid status values and extract just the status name
+                    $cleanValue = trim($value);
+                    if (!empty($cleanValue) && 
+                        !preg_match('/^(NA|REDACTED|N\/A)$/i', $cleanValue) &&
+                        !preg_match('/^\/\//', $cleanValue) &&
+                        !preg_match('/^https?:\/\//', $cleanValue) &&
+                        strlen($cleanValue) > 2) {
+                        
+                        // Extract just the status name, removing URLs and references
+                        $statusName = preg_replace('/\s+https?:\/\/[^\s]+.*$/', '', $cleanValue);
+                        $statusName = preg_replace('/\s+[a-z]+:\/\/[^\s]+.*$/', '', $statusName);
+                        $statusName = trim($statusName);
+                        
+                        if (!empty($statusName) && !in_array($statusName, $data['status'])) {
+                            $data['status'][] = $statusName;
+                        }
                     }
                 }
 
