@@ -51,8 +51,8 @@ class Domain extends Model
                 LEFT JOIN notification_groups ng ON d.notification_group_id = ng.id 
                 WHERE d.is_active = 1 
                 AND d.expiration_date IS NOT NULL 
-                AND d.expiration_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
-                AND d.expiration_date >= CURDATE()";
+                AND d.expiration_date <= DATE_ADD(CURDATE(), INTERVAL ?+1 DAY)
+                AND d.expiration_date > CURDATE()";
         
         $params = [$days];
         
@@ -241,7 +241,7 @@ class Domain extends Model
         $threshold = !empty($notificationDays) ? max($notificationDays) : 30;
         $stats['expiring_threshold'] = $threshold;
 
-        $expiringWhereClause = "WHERE is_active = 1 AND expiration_date IS NOT NULL AND expiration_date <= DATE_ADD(NOW(), INTERVAL ? DAY) AND expiration_date >= NOW()";
+        $expiringWhereClause = "WHERE is_active = 1 AND expiration_date IS NOT NULL AND expiration_date <= DATE_ADD(NOW(), INTERVAL ?+1 DAY) AND expiration_date > NOW()";
         $expiringParams = [$threshold];
         
         if ($userId) {
