@@ -30,6 +30,11 @@ FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE notification_groups 
 ADD INDEX idx_notification_groups_user_id (user_id);
 
+-- Add an optional 'description' column to the settings table
+-- This column stores a human-readable explanation of each setting,
+-- used in newer versions for improved configuration clarity.
+ALTER TABLE settings ADD COLUMN description TEXT NULL AFTER setting_value;
+
 -- Add user isolation mode setting
 INSERT INTO settings (setting_key, setting_value, description) VALUES 
 ('user_isolation_mode', 'shared', 'User data visibility mode: shared (all users see all data) or isolated (users see only their own data)')
