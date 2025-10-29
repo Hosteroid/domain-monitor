@@ -529,10 +529,12 @@ class Domain extends Model
                 FROM domains d 
                 LEFT JOIN notification_groups ng ON d.notification_group_id = ng.id 
                 LEFT JOIN domain_tags dt ON d.id = dt.domain_id
-                LEFT JOIN tags t ON dt.tag_id = t.id";
-        
+                LEFT JOIN tags t ON dt.tag_id = t.id
+                WHERE d.id = ?";
+
+        // First parameter corresponds to d.id
         $params = [$id];
-        
+
         if ($userId) {
             // In isolated mode: only show tags that belong to this user or are global
             $sql .= " AND (t.user_id = ? OR t.user_id IS NULL)";
@@ -540,10 +542,7 @@ class Domain extends Model
             $sql .= " AND d.user_id = ?";
             $params[] = $userId;
         }
-        // In shared mode: show all tags (no additional filtering needed)
-        
-        $sql .= " WHERE d.id = ?";
-        
+
         $sql .= " GROUP BY d.id";
 
         $stmt = $this->db->prepare($sql);
