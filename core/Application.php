@@ -28,7 +28,7 @@ class Application
         
         if ($env === 'production') {
             // In production, suppress deprecation warnings to prevent header issues
-            error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
+            error_reporting(E_ALL & ~E_DEPRECATED);
             ini_set('display_errors', '0');
         } else {
             // In development, show all errors including deprecations
