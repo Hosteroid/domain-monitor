@@ -479,7 +479,7 @@ class TldRegistryService
     /**
      * Get count of TLDs that need WHOIS data
      */
-    public function getTldsNeedingWhoisCount(int $logId = null): int
+    public function getTldsNeedingWhoisCount(?int $logId = null): int
     {
         if ($logId) {
             // For a specific import session, count TLDs that haven't been processed yet

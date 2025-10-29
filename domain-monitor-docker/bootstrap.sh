@@ -114,6 +114,9 @@ for d in logs storage cache tmp runtime; do
   fi
 done
 
+# Allow installer to create .installed at project root
+chmod 775 "$APP_DIR"
+
 # .env readable by root & group only
 chmod 640 "$APP_DIR/.env" || true
 

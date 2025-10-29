@@ -278,7 +278,7 @@ class TwoFactorService
     /**
      * Check rate limiting for 2FA attempts
      */
-    public function checkRateLimit(string $ipAddress, int $userId = null): bool
+    public function checkRateLimit(string $ipAddress, ?int $userId = null): bool
     {
         $rateLimitMinutes = (int)$this->settingModel->getValue('two_factor_rate_limit_minutes', 15);
         $since = date('Y-m-d H:i:s', time() - ($rateLimitMinutes * 60));
