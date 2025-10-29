@@ -144,7 +144,6 @@ CREATE TABLE IF NOT EXISTS domains (
     status ENUM('active', 'expiring_soon', 'expired', 'error', 'available') DEFAULT 'active',
     whois_data JSON,
     notes TEXT,
-    tags TEXT NULL COMMENT 'Comma-separated tags for organization',
     is_active BOOLEAN DEFAULT TRUE,
     user_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -156,7 +155,6 @@ CREATE TABLE IF NOT EXISTS domains (
     INDEX idx_expiration_date (expiration_date),
     INDEX idx_status (status),
     INDEX idx_is_active (is_active),
-    INDEX idx_tags (tags(255)),
     INDEX idx_domains_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -178,6 +176,50 @@ CREATE TABLE IF NOT EXISTS user_notifications (
     INDEX idx_created_at (created_at),
     INDEX idx_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- TAGS SYSTEM (normalized)
+-- =====================================================
+
+-- Tags table
+CREATE TABLE IF NOT EXISTS tags (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    color VARCHAR(50) DEFAULT 'bg-gray-100 text-gray-700 border-gray-300',
+    description TEXT NULL,
+    usage_count INT DEFAULT 0,
+    user_id INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_name (name),
+    INDEX idx_usage_count (usage_count),
+    INDEX idx_user_id (user_id),
+    UNIQUE KEY unique_user_tag (user_id, name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Domain tags junction table
+CREATE TABLE IF NOT EXISTS domain_tags (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    domain_id INT NOT NULL,
+    tag_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+    UNIQUE KEY unique_domain_tag (domain_id, tag_id),
+    INDEX idx_domain_id (domain_id),
+    INDEX idx_tag_id (tag_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Default tags
+INSERT INTO tags (name, color, description, user_id) VALUES
+('production', 'bg-green-100 text-green-700 border-green-300', 'Production environment domains', NULL),
+('staging', 'bg-yellow-100 text-yellow-700 border-yellow-300', 'Staging environment domains', NULL),
+('development', 'bg-blue-100 text-blue-700 border-blue-300', 'Development environment domains', NULL),
+('client', 'bg-purple-100 text-purple-700 border-purple-300', 'Client-related domains', NULL),
+('personal', 'bg-orange-100 text-orange-700 border-orange-300', 'Personal domains', NULL),
+('archived', 'bg-gray-100 text-gray-700 border-gray-300', 'Archived or inactive domains', NULL)
+ON DUPLICATE KEY UPDATE color = VALUES(color), description = VALUES(description);
 
 -- Notification channels table
 CREATE TABLE IF NOT EXISTS notification_channels (
