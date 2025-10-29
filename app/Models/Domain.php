@@ -30,10 +30,12 @@ class Domain extends Model
                 LEFT JOIN tags t ON dt.tag_id = t.id";
         
         if ($userId) {
+            // In isolated mode: only show tags that belong to this user or are global
             $sql .= " WHERE d.user_id = ? AND (t.user_id = ? OR t.user_id IS NULL) GROUP BY d.id ORDER BY d.status DESC, d.expiration_date ASC";
             $stmt = $this->db->prepare($sql);
             $stmt->execute([$userId, $userId]);
         } else {
+            // In shared mode: show all tags
             $sql .= " GROUP BY d.id ORDER BY d.status DESC, d.expiration_date ASC";
             $stmt = $this->db->query($sql);
         }
@@ -371,10 +373,12 @@ class Domain extends Model
         $params = [];
         
         if ($userId) {
+            // In isolated mode: only show tags that belong to this user or are global
             $sql .= " WHERE d.user_id = ? AND (t.user_id = ? OR t.user_id IS NULL)";
             $params[] = $userId;
             $params[] = $userId;
         }
+        // In shared mode: show all tags (no additional filtering needed)
         
         $sql .= " ORDER BY t.name";
         
@@ -403,9 +407,11 @@ class Domain extends Model
         $params = $domainIds;
         
         if ($userId) {
+            // In isolated mode: only show tags that belong to this user or are global
             $sql .= " AND (t.user_id = ? OR t.user_id IS NULL)";
             $params[] = $userId;
         }
+        // In shared mode: show all tags (no additional filtering needed)
         
         $sql .= " ORDER BY t.name";
         
@@ -523,15 +529,20 @@ class Domain extends Model
                 FROM domains d 
                 LEFT JOIN notification_groups ng ON d.notification_group_id = ng.id 
                 LEFT JOIN domain_tags dt ON d.id = dt.domain_id
-                LEFT JOIN tags t ON dt.tag_id = t.id AND (t.user_id = ? OR t.user_id IS NULL)
-                WHERE d.id = ?";
+                LEFT JOIN tags t ON dt.tag_id = t.id";
         
-        $params = [$userId, $id];
+        $params = [$id];
         
         if ($userId) {
+            // In isolated mode: only show tags that belong to this user or are global
+            $sql .= " AND (t.user_id = ? OR t.user_id IS NULL)";
+            $params[] = $userId;
             $sql .= " AND d.user_id = ?";
             $params[] = $userId;
         }
+        // In shared mode: show all tags (no additional filtering needed)
+        
+        $sql .= " WHERE d.id = ?";
         
         $sql .= " GROUP BY d.id";
 
