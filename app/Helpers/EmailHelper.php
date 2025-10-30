@@ -3,6 +3,7 @@
 namespace App\Helpers;
 
 use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\SMTP;
 use PHPMailer\PHPMailer\Exception;
 use App\Models\Setting;
 use App\Services\Logger;
@@ -122,7 +123,7 @@ class EmailHelper
             $mail = self::createMailer();
 
             // Always capture SMTP dialog for test emails (no env flag needed)
-            $mail->SMTPDebug = PHPMailer::DEBUG_SERVER; // verbose for diagnostics
+            $mail->SMTPDebug = SMTP::DEBUG_SERVER; // verbose for diagnostics
             $mail->Debugoutput = function($str, $level) {
                 $lvlMap = [1 => 'CLIENT', 2 => 'SERVER', 3 => 'CONN', 4 => 'LOW'];
                 $label = $lvlMap[$level] ?? (string)$level;
