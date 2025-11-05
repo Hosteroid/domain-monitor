@@ -117,8 +117,12 @@ done
 # Allow installer to create .installed at project root
 chmod 775 "$APP_DIR"
 
-# .env readable by root & group only
-chmod 640 "$APP_DIR/.env" || true
+# .env must be writable by www-data (installer needs to write encryption key)
+if [ -f "$APP_DIR/.env" ]; then
+  echo "   - Making .env writable by ${WWW_UID}:${WWW_GID} for installation"
+  chown ${WWW_UID}:${WWW_GID} "$APP_DIR/.env"
+  chmod 660 "$APP_DIR/.env"
+fi
 
 # Install vendors via Composer container
 echo "==> Installing Composer vendors (composer:2) ..."
