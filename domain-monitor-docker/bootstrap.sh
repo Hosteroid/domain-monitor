@@ -114,6 +114,18 @@ for d in logs storage cache tmp runtime; do
   fi
 done
 
+# Create and set permissions for avatar uploads directory
+UPLOADS_DIR="$APP_DIR/public/assets/uploads/avatars"
+if [ ! -d "$UPLOADS_DIR" ]; then
+  echo "   - Creating avatar uploads directory"
+  mkdir -p "$UPLOADS_DIR" || true
+fi
+if [ -d "$APP_DIR/public/assets/uploads" ]; then
+  echo "   - Making uploads directory writable by ${WWW_UID}:${WWW_GID}"
+  chown -R ${WWW_UID}:${WWW_GID} "$APP_DIR/public/assets/uploads" || true
+  chmod -R 775 "$APP_DIR/public/assets/uploads" || true
+fi
+
 # Allow installer to create .installed at project root
 chmod 775 "$APP_DIR"
 

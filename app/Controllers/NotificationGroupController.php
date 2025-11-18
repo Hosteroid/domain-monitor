@@ -468,6 +468,7 @@ class NotificationGroupController extends Controller
             'discord' => 'Discord',
             'slack' => 'Slack',
             'mattermost' => 'Mattermost',
+            'pushover' => 'Pushover',
             'webhook' => 'Webhook'
         ];
 

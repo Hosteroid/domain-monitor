@@ -673,6 +673,23 @@ function testChannel(channelType, existingConfig = null) {
                     errorMessage = 'Please enter a Webhook URL';
                 }
                 break;
+            case 'pushover':
+                const pushoverApiToken = document.getElementById('pushover_api_token').value.trim();
+                const pushoverUserKey = document.getElementById('pushover_user_key').value.trim();
+                if (!pushoverApiToken) {
+                    isValid = false;
+                    errorMessage = 'Please enter a Pushover API token';
+                } else if (!/^[a-zA-Z0-9]{30}$/.test(pushoverApiToken)) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid Pushover API token (30 alphanumeric characters)';
+                } else if (!pushoverUserKey) {
+                    isValid = false;
+                    errorMessage = 'Please enter a Pushover user key';
+                } else if (!/^[a-zA-Z0-9]{30}$/.test(pushoverUserKey)) {
+                    isValid = false;
+                    errorMessage = 'Please enter a valid Pushover user key (30 alphanumeric characters)';
+                }
+                break;
         }
         
         if (!isValid) {
@@ -725,6 +742,16 @@ function testChannel(channelType, existingConfig = null) {
             case 'webhook':
                 formData.append('webhook_url', existingConfig.webhook_url);
                 break;
+            case 'pushover':
+                formData.append('pushover_api_token', existingConfig.api_token);
+                formData.append('pushover_user_key', existingConfig.user_key);
+                if (existingConfig.device) {
+                    formData.append('pushover_device', existingConfig.device);
+                }
+                if (existingConfig.sound) {
+                    formData.append('pushover_sound', existingConfig.sound);
+                }
+                break;
         }
     } else {
         // Use form values for new channels
@@ -747,6 +774,18 @@ function testChannel(channelType, existingConfig = null) {
                 break;
             case 'webhook':
                 formData.append('webhook_url', document.getElementById('generic_webhook_url').value);
+                break;
+            case 'pushover':
+                formData.append('pushover_api_token', document.getElementById('pushover_api_token').value);
+                formData.append('pushover_user_key', document.getElementById('pushover_user_key').value);
+                const pushoverDevice = document.getElementById('pushover_device');
+                if (pushoverDevice && pushoverDevice.value) {
+                    formData.append('pushover_device', pushoverDevice.value);
+                }
+                const pushoverSound = document.getElementById('pushover_sound');
+                if (pushoverSound && pushoverSound.value) {
+                    formData.append('pushover_sound', pushoverSound.value);
+                }
                 break;
         }
     }
