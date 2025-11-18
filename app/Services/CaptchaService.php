@@ -53,7 +53,8 @@ class CaptchaService
             
             default:
                 // Unknown provider - allow through but log
-                error_log("Unknown CAPTCHA provider: $provider");
+                $logger = new \App\Services\Logger();
+                $logger->warning('Unknown CAPTCHA provider', ['provider' => $provider]);
                 return ['success' => true, 'error' => null, 'score' => null];
         }
     }
@@ -66,7 +67,8 @@ class CaptchaService
         $secretKey = $this->captchaSettings['secret_key'] ?? '';
         
         if (empty($secretKey)) {
-            error_log('reCAPTCHA v2 secret key is not configured');
+            $logger = new \App\Services\Logger();
+            $logger->error('reCAPTCHA v2 secret key is not configured');
             return ['success' => false, 'error' => 'CAPTCHA is misconfigured. Please contact administrator.', 'score' => null];
         }
 
@@ -87,7 +89,8 @@ class CaptchaService
 
         if (!isset($result['success']) || !$result['success']) {
             $errorCodes = $result['error-codes'] ?? [];
-            error_log('reCAPTCHA v2 verification failed: ' . json_encode($errorCodes));
+            $logger = new \App\Services\Logger();
+            $logger->warning('reCAPTCHA v2 verification failed', ['error_codes' => $errorCodes]);
             return ['success' => false, 'error' => 'CAPTCHA verification failed. Please try again.', 'score' => null];
         }
 
@@ -103,7 +106,8 @@ class CaptchaService
         $threshold = floatval($this->captchaSettings['score_threshold'] ?? 0.5);
         
         if (empty($secretKey)) {
-            error_log('reCAPTCHA v3 secret key is not configured');
+            $logger = new \App\Services\Logger();
+            $logger->error('reCAPTCHA v3 secret key is not configured');
             return ['success' => false, 'error' => 'CAPTCHA is misconfigured. Please contact administrator.', 'score' => null];
         }
 
@@ -124,7 +128,8 @@ class CaptchaService
 
         if (!isset($result['success']) || !$result['success']) {
             $errorCodes = $result['error-codes'] ?? [];
-            error_log('reCAPTCHA v3 verification failed: ' . json_encode($errorCodes));
+            $logger = new \App\Services\Logger();
+            $logger->warning('reCAPTCHA v3 verification failed', ['error_codes' => $errorCodes]);
             return ['success' => false, 'error' => 'CAPTCHA verification failed. Please try again.', 'score' => null];
         }
 
@@ -132,7 +137,12 @@ class CaptchaService
         $score = floatval($result['score'] ?? 0);
         
         if ($score < $threshold) {
-            error_log("reCAPTCHA v3 score too low: $score (threshold: $threshold)");
+            $logger = new \App\Services\Logger();
+            $logger->warning('reCAPTCHA v3 score too low', [
+                'score' => $score,
+                'threshold' => $threshold,
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
             return ['success' => false, 'error' => 'Security verification failed. Please try again or contact support.', 'score' => $score];
         }
 
@@ -147,7 +157,8 @@ class CaptchaService
         $secretKey = $this->captchaSettings['secret_key'] ?? '';
         
         if (empty($secretKey)) {
-            error_log('Turnstile secret key is not configured');
+            $logger = new \App\Services\Logger();
+            $logger->error('Turnstile secret key is not configured');
             return ['success' => false, 'error' => 'CAPTCHA is misconfigured. Please contact administrator.', 'score' => null];
         }
 
@@ -168,7 +179,8 @@ class CaptchaService
 
         if (!isset($result['success']) || !$result['success']) {
             $errorCodes = $result['error-codes'] ?? [];
-            error_log('Turnstile verification failed: ' . json_encode($errorCodes));
+            $logger = new \App\Services\Logger();
+            $logger->warning('Turnstile verification failed', ['error_codes' => $errorCodes]);
             return ['success' => false, 'error' => 'CAPTCHA verification failed. Please try again.', 'score' => null];
         }
 
@@ -193,14 +205,18 @@ class CaptchaService
         $response = @file_get_contents($url, false, $context);
 
         if ($response === false) {
-            error_log("Failed to connect to CAPTCHA verification service: $url");
+            $logger = new \App\Services\Logger();
+            $logger->error('Failed to connect to CAPTCHA verification service', ['url' => $url]);
             return null;
         }
 
         $result = json_decode($response, true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
-            error_log("Failed to parse CAPTCHA verification response: " . json_last_error_msg());
+            $logger = new \App\Services\Logger();
+            $logger->error('Failed to parse CAPTCHA verification response', [
+                'error' => json_last_error_msg()
+            ]);
             return null;
         }
 

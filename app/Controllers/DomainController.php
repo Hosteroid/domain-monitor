@@ -212,7 +212,7 @@ class DomainController extends Controller
         }
 
         // Create domain
-        $status = $this->whoisService->getDomainStatus($whoisData['expiration_date'], $whoisData['status'] ?? []);
+        $status = $this->whoisService->getDomainStatus($whoisData['expiration_date'], $whoisData['status'] ?? [], $whoisData);
 
         // Warn if domain is available (not registered)
         if ($status === 'available') {
@@ -462,7 +462,7 @@ class DomainController extends Controller
         // Use WHOIS expiration date if available, otherwise preserve manual expiration date
         $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
         
-        $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? []);
+        $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
 
         $this->domainModel->update($id, [
             'registrar' => $whoisData['registrar'],
@@ -673,7 +673,7 @@ class DomainController extends Controller
                 continue;
             }
 
-            $status = $this->whoisService->getDomainStatus($whoisData['expiration_date'], $whoisData['status'] ?? []);
+            $status = $this->whoisService->getDomainStatus($whoisData['expiration_date'], $whoisData['status'] ?? [], $whoisData);
 
             // Track available domains
             if ($status === 'available') {
@@ -792,7 +792,7 @@ class DomainController extends Controller
             // Use WHOIS expiration date if available, otherwise preserve manual expiration date
             $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
             
-            $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? []);
+            $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
 
             $this->domainModel->update($id, [
                 'registrar' => $whoisData['registrar'],

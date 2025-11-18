@@ -5,6 +5,49 @@ All notable changes to Domain Monitor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2025-11-18
+
+### Added
+- **Pushover Notification Channel** - Send domain expiration alerts via Pushover (iOS, Android, Desktop)
+  - Priority-based notifications (Emergency, High, Normal, Low) based on days until expiration
+  - Emergency alerts (expired or expiring in ≤1 day) with auto-retry every 5 minutes for 1 hour
+  - 23 custom notification sounds to choose from
+  - Device targeting - send to specific devices or all devices
+  - Rich notifications with title, message, and clickable URL to domain details
+  - Optional custom sound and device configuration
+  - Database migration `022_add_pushover_channel_type.sql` to add Pushover support
+
+### Fixed
+- **Security: PHP 8.x URI Injection Vulnerability** - Fixed deprecated `strpos()` null parameter warning
+  - Added early request validation in `public/index.php` to block malformed URIs
+  - Enhanced `core/Auth.php` to handle null values from `parse_url()` gracefully
+  - Malformed requests are now logged and return 400 Bad Request
+  - Prevents attackers from causing PHP warnings via malformed URI probes
+- **PHP 8.x Compatibility: strtotime() Null Parameter** - Fixed deprecated warnings for null expiration dates
+  - Added null checks before calling `strtotime()` in all domain view templates
+  - Displays "Unknown" for domains without expiration dates (e.g., .nl domains)
+  - Updated 9 view files: groups/edit, domains/index, domains/view, domains/edit, dashboard/index, tags/view, search/results
+  - Also fixed `NotificationService::formatExpirationMessage()` to handle null dates
+- **Domain Status Detection for .nl Domains** - Fixed incorrect "available" status for registered .nl domains
+  - `.nl` WHOIS/RDAP doesn't always provide expiration dates or explicit status flags
+  - Improved `WhoisService::getDomainStatus()` to detect registered domains via nameservers and valid registrar
+  - Cron job now preserves existing expiration dates when WHOIS doesn't return one
+  - Prevents false positives for domain availability
+- **Domain Status Detection for .eu Domains** - Fixed incorrect status and registrar parsing for .eu domains
+  - Added specific `.eu` registrar format parsing (`Name: Registrar Name`)
+  - Fixed RDAP vCard parsing to strip "Name:" prefix from registrar field  
+  - Fixed WHOIS parsing to handle "Name: Company" format in registrar sections
+  - Enhanced status detection logic to recognize registered domains without explicit status flags
+  - Consistent behavior between manual refresh and automated cron checks
+- **Logging Consistency** - Replaced all remaining `error_log()` calls with custom Logger service
+  - Updated `WhoisService.php`, `NotificationService.php`, `AuthController.php`, `UserController.php`
+  - Centralized structured logging throughout the application
+  - Better debugging and audit trail capabilities
+
+### Changed
+- **Status Detection** - Unified `DomainHelper::determineStatus()` to use `WhoisService::getDomainStatus()` for consistency
+- **Documentation** - Updated README.md to reflect all available notification channels including Pushover
+
 ## [1.1.0] - 2025-10-09
 
 ### Added

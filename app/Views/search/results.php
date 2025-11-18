@@ -90,7 +90,7 @@ ob_start();
                             <td class="px-6 py-4">
                                 <?php if (!empty($domain['expiration_date'])): ?>
                                     <div class="text-sm">
-                                        <div class="font-medium text-gray-900"><?= date('M d, Y', strtotime($domain['expiration_date'])) ?></div>
+                                        <div class="font-medium text-gray-900"><?= $domain['expiration_date'] ? date('M d, Y', strtotime($domain['expiration_date'])) : 'Unknown' ?></div>
                                         <div class="text-xs <?= $expiryClass ?>">
                                             <?= $daysLeft ?> days
                                         </div>

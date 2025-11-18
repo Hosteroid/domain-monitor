@@ -179,7 +179,11 @@ class UserController extends Controller
                 $notificationService->notifyWelcome($userId, $username);
             } catch (\Exception $e) {
                 // Don't fail user creation if notification fails
-                error_log("Failed to create welcome notification: " . $e->getMessage());
+                $logger = new \App\Services\Logger();
+                $logger->error("Failed to create welcome notification", [
+                    'user_id' => $userId,
+                    'error' => $e->getMessage()
+                ]);
             }
 
             $_SESSION['success'] = 'User created successfully';

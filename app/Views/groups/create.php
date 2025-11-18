@@ -81,7 +81,7 @@ ob_start();
                 <ul class="text-xs text-gray-600 space-y-1">
                     <li class="flex items-center">
                         <i class="fas fa-circle text-blue-500" style="font-size: 6px;"></i>
-                        <span class="ml-2">After creating the group, you'll be able to add notification channels (Email, Telegram, Discord, Slack)</span>
+                        <span class="ml-2">After creating the group, you'll be able to add notification channels (Email, Telegram, Discord, Slack, Mattermost, Pushover, Webhook)</span>
                     </li>
                     <li class="flex items-center">
                         <i class="fas fa-circle text-blue-500" style="font-size: 6px;"></i>

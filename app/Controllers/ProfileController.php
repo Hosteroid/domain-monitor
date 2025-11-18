@@ -45,7 +45,11 @@ class ProfileController extends Controller
             $this->sessionModel->cleanOldSessions();
         } catch (\Exception $e) {
             // Silent fail - don't break the page
-            error_log("Session cleanup failed: " . $e->getMessage());
+            $logger = new \App\Services\Logger();
+            $logger->error('Session cleanup failed', [
+                'user_id' => \Core\Auth::id(),
+                'error' => $e->getMessage()
+            ]);
         }
 
         // Get all active sessions

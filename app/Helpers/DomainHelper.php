@@ -64,6 +64,7 @@ class DomainHelper
     
     /**
      * Determine domain status from WHOIS data
+     * Uses WhoisService for consistent status detection across the application
      */
     private static function determineStatus(array $domain): string
     {
@@ -76,23 +77,14 @@ class DomainHelper
         
         // Parse WHOIS data
         $whoisData = json_decode($domain['whois_data'] ?? '{}', true);
+        
+        // Use WhoisService for consistent status detection
+        // This ensures .eu/.nl domains and others are handled correctly
+        $whoisService = new \App\Services\WhoisService();
+        $expirationDate = $domain['expiration_date'] ?? null;
         $statusArray = $whoisData['status'] ?? [];
         
-        // Check if domain is available
-        foreach ($statusArray as $statusLine) {
-            if (stripos($statusLine, 'AVAILABLE') !== false || stripos($statusLine, 'FREE') !== false) {
-                return 'available';
-            }
-        }
-        
-        // Determine from days left
-        if ($domain['daysLeft'] !== null) {
-            if ($domain['daysLeft'] < 0) return 'expired';
-            if ($domain['daysLeft'] <= 30) return 'expiring_soon';
-            return 'active';
-        }
-        
-        return 'error';
+        return $whoisService->getDomainStatus($expirationDate, $statusArray, $whoisData);
     }
     
     /**

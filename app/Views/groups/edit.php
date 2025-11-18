@@ -77,9 +77,9 @@ ob_start();
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                     <?php foreach ($group['channels'] as $channel): 
                         $config = json_decode($channel['channel_config'], true);
-                        $icons = ['email' => 'fa-envelope', 'telegram' => 'fa-telegram', 'discord' => 'fa-discord', 'slack' => 'fa-slack', 'mattermost' => 'fa-comments', 'webhook' => 'fa-link'];
-                        $iconClasses = ['email' => 'fas', 'telegram' => 'fab', 'discord' => 'fab', 'slack' => 'fab', 'mattermost' => 'fas', 'webhook' => 'fas'];
-                        $colors = ['email' => 'blue', 'telegram' => 'blue', 'discord' => 'indigo', 'slack' => 'teal', 'mattermost' => 'green', 'webhook' => 'purple'];
+                        $icons = ['email' => 'fa-envelope', 'telegram' => 'fa-telegram', 'discord' => 'fa-discord', 'slack' => 'fa-slack', 'mattermost' => 'fa-comments', 'pushover' => 'fa-mobile-alt', 'webhook' => 'fa-link'];
+                        $iconClasses = ['email' => 'fas', 'telegram' => 'fab', 'discord' => 'fab', 'slack' => 'fab', 'mattermost' => 'fas', 'pushover' => 'fas', 'webhook' => 'fas'];
+                        $colors = ['email' => 'blue', 'telegram' => 'blue', 'discord' => 'indigo', 'slack' => 'teal', 'mattermost' => 'green', 'pushover' => 'red', 'webhook' => 'purple'];
                         $icon = $icons[$channel['channel_type']] ?? 'fa-bell';
                         $iconClass = $iconClasses[$channel['channel_type']] ?? 'fas';
                         $color = $colors[$channel['channel_type']] ?? 'gray';
@@ -106,6 +106,8 @@ ob_start();
                                     echo htmlspecialchars($config['email'] ?? 'No email');
                                 } elseif ($channel['channel_type'] === 'telegram') {
                                     echo "Chat: " . htmlspecialchars($config['chat_id'] ?? 'N/A');
+                                } elseif ($channel['channel_type'] === 'pushover') {
+                                    echo "User: " . substr(htmlspecialchars($config['user_key'] ?? 'N/A'), 0, 10) . "...";
                                 } else {
                                     echo "Webhook configured";
                                 }
@@ -164,6 +166,7 @@ ob_start();
                             <option value="discord">Discord</option>
                             <option value="slack">Slack</option>
                             <option value="mattermost">Mattermost</option>
+                            <option value="pushover">Pushover</option>
                             <option value="webhook">Webhook (Custom)</option>
                         </select>
                     </div>
@@ -267,6 +270,90 @@ ob_start();
                         </div>
                     </div>
 
+                    <!-- Pushover Fields -->
+                    <div id="pushover_fields" class="hidden space-y-4">
+                        <div>
+                            <label for="pushover_api_token" class="block text-sm font-medium text-gray-700 mb-1.5">
+                                API Token (Application Key) <span class="text-red-500">*</span>
+                            </label>
+                            <input type="text" 
+                                   id="pushover_api_token" 
+                                   name="pushover_api_token" 
+                                   class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm font-mono" 
+                                   placeholder="azGDORePK8gMaC0QOYAMyEEuzJnyUi"
+                                   autocomplete="off">
+                            <p class="mt-1.5 text-xs text-gray-500">
+                                <i class="fas fa-info-circle text-blue-500 mr-1"></i>
+                                Create an application at <a href="https://pushover.net/apps/build" target="_blank" class="text-blue-600 hover:underline">pushover.net/apps/build</a>
+                            </p>
+                        </div>
+                        <div>
+                            <label for="pushover_user_key" class="block text-sm font-medium text-gray-700 mb-1.5">
+                                User Key <span class="text-red-500">*</span>
+                            </label>
+                            <input type="text" 
+                                   id="pushover_user_key" 
+                                   name="pushover_user_key" 
+                                   class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm font-mono" 
+                                   placeholder="uQiRzpo4DXghDmr9QzzfQu27cmVRsG"
+                                   autocomplete="off">
+                            <p class="mt-1.5 text-xs text-gray-500">
+                                <i class="fas fa-info-circle text-blue-500 mr-1"></i>
+                                Find your user key on your <a href="https://pushover.net/" target="_blank" class="text-blue-600 hover:underline">Pushover dashboard</a>
+                            </p>
+                        </div>
+                        <div>
+                            <label for="pushover_device" class="block text-sm font-medium text-gray-700 mb-1.5">
+                                Device Name (Optional)
+                            </label>
+                            <input type="text" 
+                                   id="pushover_device" 
+                                   name="pushover_device" 
+                                   class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm" 
+                                   placeholder="Leave empty for all devices"
+                                   autocomplete="off">
+                            <p class="mt-1.5 text-xs text-gray-500">
+                                Specify a device name to send to specific device only (e.g., "iPhone", "Desktop")
+                            </p>
+                        </div>
+                        <div>
+                            <label for="pushover_sound" class="block text-sm font-medium text-gray-700 mb-1.5">
+                                Notification Sound (Optional)
+                            </label>
+                            <select id="pushover_sound" 
+                                    name="pushover_sound" 
+                                    class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm">
+                                <option value="">Default (based on priority)</option>
+                                <option value="pushover">Pushover (default)</option>
+                                <option value="bike">Bike</option>
+                                <option value="bugle">Bugle</option>
+                                <option value="cashregister">Cash Register</option>
+                                <option value="classical">Classical</option>
+                                <option value="cosmic">Cosmic</option>
+                                <option value="falling">Falling</option>
+                                <option value="gamelan">Gamelan</option>
+                                <option value="incoming">Incoming</option>
+                                <option value="intermission">Intermission</option>
+                                <option value="magic">Magic</option>
+                                <option value="mechanical">Mechanical</option>
+                                <option value="pianobar">Piano Bar</option>
+                                <option value="siren">Siren</option>
+                                <option value="spacealarm">Space Alarm</option>
+                                <option value="tugboat">Tugboat</option>
+                                <option value="alien">Alien Alarm (long)</option>
+                                <option value="climb">Climb (long)</option>
+                                <option value="persistent">Persistent (long)</option>
+                                <option value="echo">Pushover Echo (long)</option>
+                                <option value="updown">Up Down (long)</option>
+                                <option value="vibrate">Vibrate Only</option>
+                                <option value="none">None (silent)</option>
+                            </select>
+                            <p class="mt-1.5 text-xs text-gray-500">
+                                Custom sound for notifications. If not set, sound will be chosen based on urgency.
+                            </p>
+                        </div>
+                    </div>
+
                     <!-- Generic Webhook Fields -->
                     <div id="webhook_fields" class="hidden space-y-4">
                         <div>
@@ -342,7 +429,7 @@ ob_start();
                             <h3 class="font-semibold text-gray-800 mb-2 truncate"><?= htmlspecialchars($domain['domain_name']) ?></h3>
                             <p class="text-sm text-gray-600 flex items-center">
                                 <i class="far fa-calendar mr-2"></i>
-                                Expires: <?= date('M j, Y', strtotime($domain['expiration_date'])) ?>
+                                Expires: <?= $domain['expiration_date'] ? date('M j, Y', strtotime($domain['expiration_date'])) : 'Unknown' ?>
                             </p>
                         </a>
                     <?php endforeach; ?>
@@ -364,6 +451,8 @@ function toggleChannelFields() {
     const discordWebhook = document.getElementById('discord_webhook');
     const slackWebhook = document.getElementById('slack_webhook');
     const mattermostWebhook = document.getElementById('mattermost_webhook');
+    const pushoverApiToken = document.getElementById('pushover_api_token');
+    const pushoverUserKey = document.getElementById('pushover_user_key');
     const genericWebhook = document.getElementById('generic_webhook_url');
     
     // Remove required from all
@@ -373,6 +462,8 @@ function toggleChannelFields() {
     discordWebhook.removeAttribute('required');
     slackWebhook.removeAttribute('required');
     if (mattermostWebhook) mattermostWebhook.removeAttribute('required');
+    if (pushoverApiToken) pushoverApiToken.removeAttribute('required');
+    if (pushoverUserKey) pushoverUserKey.removeAttribute('required');
     if (genericWebhook) genericWebhook.removeAttribute('required');
     
     // Hide all fields
@@ -381,6 +472,7 @@ function toggleChannelFields() {
     document.getElementById('discord_fields').classList.add('hidden');
     document.getElementById('slack_fields').classList.add('hidden');
     document.getElementById('mattermost_fields').classList.add('hidden');
+    document.getElementById('pushover_fields').classList.add('hidden');
     document.getElementById('webhook_fields').classList.add('hidden');
     
     // Hide test button by default
@@ -412,6 +504,11 @@ function toggleChannelFields() {
                     mattermostWebhook.setAttribute('required', 'required');
                     mattermostWebhook.focus();
                 }
+                break;
+            case 'pushover':
+                if (pushoverApiToken) pushoverApiToken.setAttribute('required', 'required');
+                if (pushoverUserKey) pushoverUserKey.setAttribute('required', 'required');
+                if (pushoverApiToken) pushoverApiToken.focus();
                 break;
             case 'webhook':
                 if (genericWebhook) {

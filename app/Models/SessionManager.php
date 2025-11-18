@@ -120,7 +120,11 @@ class SessionManager extends Model
             ];
             
         } catch (\Exception $e) {
-            error_log("Geolocation lookup failed: " . $e->getMessage());
+            $logger = new \App\Services\Logger();
+            $logger->warning('Geolocation lookup failed', [
+                'ip' => $ip,
+                'error' => $e->getMessage()
+            ]);
             return self::getDefaultGeolocation();
         }
     }

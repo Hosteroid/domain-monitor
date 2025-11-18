@@ -128,7 +128,7 @@ ob_start();
                     <?php if ($domain['expiration_date']): ?>
                         <p class="mt-1 text-xs text-green-600">
                             <i class="fas fa-check-circle mr-1"></i>
-                            Current expiration date: <?= date('M j, Y', strtotime($domain['expiration_date'])) ?>
+                            Current expiration date: <?= $domain['expiration_date'] ? date('M j, Y', strtotime($domain['expiration_date'])) : 'Unknown' ?>
                         </p>
                     <?php else: ?>
                         <p class="mt-1 text-xs text-amber-600">

@@ -225,7 +225,7 @@ ON DUPLICATE KEY UPDATE color = VALUES(color), description = VALUES(description)
 CREATE TABLE IF NOT EXISTS notification_channels (
     id INT AUTO_INCREMENT PRIMARY KEY,
     notification_group_id INT NOT NULL,
-    channel_type ENUM('email', 'telegram', 'discord', 'slack', 'mattermost', 'webhook') NOT NULL,
+    channel_type ENUM('email', 'telegram', 'discord', 'slack', 'mattermost', 'webhook', 'pushover') NOT NULL,
     channel_config JSON NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -362,7 +362,7 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('app_name', 'Domain Monitor', 'string', 'Application name'),
 ('app_url', 'http://localhost:8000', 'string', 'Application URL'),
 ('app_timezone', 'UTC', 'string', 'Application timezone'),
-('app_version', '1.1.0', 'string', 'Application version number'),
+('app_version', '1.1.1', 'string', 'Application version number'),
 
 -- Email settings
 ('mail_host', 'smtp.mailtrap.io', 'string', 'SMTP server host'),

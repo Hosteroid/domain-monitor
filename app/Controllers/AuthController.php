@@ -94,7 +94,11 @@ class AuthController extends Controller
         }
 
         if (!$user) {
-            error_log("Login failed: User '$username' not found or not active");
+            $logger = new \App\Services\Logger();
+            $logger->warning("Login failed - User not found or not active", [
+                'username' => $username,
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
             $_SESSION['error'] = 'Invalid username or password';
             $this->redirect('/login');
             return;
@@ -102,14 +106,22 @@ class AuthController extends Controller
 
         // Verify password
         if (!$this->userModel->verifyPassword($password, $user['password'])) {
-            error_log("Login failed: Password verification failed for user '$username'");
-            error_log("Stored hash: {$user['password']}");
+            $logger = new \App\Services\Logger();
+            $logger->warning("Login failed - Password verification failed", [
+                'username' => $username,
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+            ]);
             $_SESSION['error'] = 'Invalid username or password';
             $this->redirect('/login');
             return;
         }
         
-        error_log("Login successful for user '$username'");
+        $logger = new \App\Services\Logger();
+        $logger->info("Login successful", [
+            'username' => $username,
+            'user_id' => $user['id'],
+            'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+        ]);
 
         // Check if email verification is required
         $requireVerification = $this->settingModel->getValue('require_email_verification');
@@ -310,7 +322,11 @@ class AuthController extends Controller
                 $notificationService->notifyWelcome($userId, $username);
             } catch (\Exception $e) {
                 // Don't fail registration if notification fails
-                error_log("Failed to create welcome notification: " . $e->getMessage());
+                $logger = new \App\Services\Logger();
+                $logger->error("Failed to create welcome notification", [
+                    'user_id' => $userId,
+                    'error' => $e->getMessage()
+                ]);
             }
 
             // Check if email verification is required
@@ -684,7 +700,11 @@ class AuthController extends Controller
 
         } catch (\Exception $e) {
             // Silently fail - remember me is not critical
-            error_log("Failed to create remember token: " . $e->getMessage());
+            $logger = new \App\Services\Logger();
+            $logger->error("Failed to create remember token", [
+                'user_id' => $userId,
+                'error' => $e->getMessage()
+            ]);
         }
     }
 

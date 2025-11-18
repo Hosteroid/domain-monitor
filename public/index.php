@@ -12,6 +12,41 @@ define('PATH_ROOT', __DIR__ . '/../');
 // Register global error handlers FIRST (before anything else can fail)
 ErrorHandler::register();
 
+// === EARLY REQUEST VALIDATION ===
+// Block malformed requests before they cause issues
+// This prevents null pointer errors and logs suspicious activity
+$requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+
+// Validate REQUEST_URI format - reject if parse_url fails
+$parsedPath = parse_url($requestUri, PHP_URL_PATH);
+if ($parsedPath === null || $parsedPath === false) {
+    // Log the suspicious request
+    $logger = new \App\Services\Logger();
+    $logger->warning('Malformed REQUEST_URI blocked', [
+        'uri' => $requestUri,
+        'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
+    ]);
+    
+    // Return 400 Bad Request
+    http_response_code(400);
+    header('Content-Type: text/plain');
+    die('Bad Request: Invalid URI format');
+}
+
+// Additional validation: REQUEST_URI should start with /
+if (!empty($requestUri) && $requestUri[0] !== '/') {
+    $logger = new \App\Services\Logger();
+    $logger->warning('Invalid REQUEST_URI - must start with /', [
+        'uri' => $requestUri,
+        'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+    ]);
+    
+    http_response_code(400);
+    header('Content-Type: text/plain');
+    die('Bad Request: Invalid URI format');
+}
+
 // Load environment variables (using safeLoad to not throw if missing)
 $dotenv = Dotenv::createImmutable(__DIR__ . '/..');
 try {
@@ -40,7 +75,8 @@ Core\SessionConfig::start();
 require_once __DIR__ . '/../app/Helpers/CsrfHelper.php';
 
 // Check if system is installed (using flag file - no DB queries!)
-$currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+// Note: REQUEST_URI has already been validated above, so parse_url won't return null
+$currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 $isInstallerPath = strpos($currentPath, '/install') === 0;
 $installedFlagFile = __DIR__ . '/../.installed';
 

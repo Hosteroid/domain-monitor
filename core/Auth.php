@@ -41,8 +41,15 @@ class Auth
      */
     public static function require(): void
     {
-        // Get current path
-        $currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
+        // Get current path - handle malformed URIs gracefully
+        $requestUri = $_SERVER['REQUEST_URI'] ?? '/';
+        $currentPath = parse_url($requestUri, PHP_URL_PATH);
+        
+        // If parse_url fails (malformed URI), treat as root path
+        // This prevents null from being passed to strpos()
+        if ($currentPath === null || $currentPath === false) {
+            $currentPath = '/';
+        }
         
         // Public paths that don't require authentication
         $publicPaths = [

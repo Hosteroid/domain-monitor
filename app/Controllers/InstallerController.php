@@ -52,6 +52,8 @@ class InstallerController extends Controller
             '019_add_webhook_channel_type.sql',
             '020_create_tags_system.sql',
             '021_add_avatar_field.sql',
+            '022_add_pushover_channel_type.sql',
+            '023_update_app_version_to_1.1.1.sql',
         ];
         
         try {
@@ -175,7 +177,7 @@ class InstallerController extends Controller
                     $stmt->execute([$migration]);
                 }
                 
-                // Return only new migrations for v1.1.0
+                // Return only new migrations for v1.1.x
                 return [
                     '009_add_authentication_features.sql', 
                     '010_add_app_version_setting.sql', 
@@ -189,7 +191,9 @@ class InstallerController extends Controller
                     '018_add_user_isolation.sql',
                     '019_add_webhook_channel_type.sql',
                     '020_create_tags_system.sql',
-                    '021_add_avatar_field.sql'
+                    '021_add_avatar_field.sql',
+                    '022_add_pushover_channel_type.sql',
+                    '023_update_app_version_to_1.1.1.sql',
                 ];
             }
             
@@ -373,6 +377,8 @@ class InstallerController extends Controller
                     '019_add_webhook_channel_type.sql',
                     '020_create_tags_system.sql',
                     '021_add_avatar_field.sql',
+                    '022_add_pushover_channel_type.sql',
+                    '023_update_app_version_to_1.1.1.sql',
                 ];
                 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");
@@ -591,10 +597,12 @@ class InstallerController extends Controller
                     
                     // Determine from/to versions based on migrations
                     $fromVersion = '1.0.0';
-                    $toVersion = '1.1.0';
+                    $toVersion = '1.1.1';
                     
                     // Detect version based on which migrations were run
-                    if (in_array('011_create_sessions_table.sql', $executed) || 
+                    if (in_array('022_add_pushover_channel_type.sql', $executed)) {
+                        $toVersion = '1.1.1';
+                    } elseif (in_array('011_create_sessions_table.sql', $executed) || 
                         in_array('012_link_remember_tokens_to_sessions.sql', $executed) ||
                         in_array('013_create_user_notifications_table.sql', $executed)) {
                         $toVersion = '1.1.0';

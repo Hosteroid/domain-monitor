@@ -203,7 +203,7 @@ $currentFilters = $filters ?? ['search' => '', 'status' => '', 'registrar' => ''
                                 <?php if (!empty($domain['expiration_date'])): ?>
                                     <div class="text-sm">
                                         <div class="font-medium text-gray-900 flex items-center">
-                                            <?= date('M d, Y', strtotime($domain['expiration_date'])) ?>
+                                            <?= $domain['expiration_date'] ? date('M d, Y', strtotime($domain['expiration_date'])) : 'Unknown' ?>
                                         </div>
                                         <div class="text-xs <?= $expiryClass ?>">
                                             <?= $daysLeft ?> days
@@ -282,7 +282,7 @@ $currentFilters = $filters ?? ['search' => '', 'status' => '', 'registrar' => ''
                         <?php if (!empty($domain['expiration_date'])): ?>
                         <div class="flex items-center">
                             <i class="fas fa-calendar-alt text-gray-400 mr-2 w-4"></i>
-                            <span>Expires: <?= date('M d, Y', strtotime($domain['expiration_date'])) ?> (<?= $daysLeft ?> days)</span>
+                            <span>Expires: <?= $domain['expiration_date'] ? date('M d, Y', strtotime($domain['expiration_date'])) : 'Unknown' ?> (<?= $daysLeft ?> days)</span>
                         </div>
                         <?php endif; ?>
                         

@@ -245,7 +245,7 @@ ob_start();
                             <div class="flex-1 min-w-0">
                                 <p class="text-sm font-medium text-gray-900 truncate"><?= htmlspecialchars($domain['domain_name']) ?></p>
                                 <p class="text-xs text-gray-500 mt-0.5">
-                                    <?= date('M d, Y', strtotime($domain['expiration_date'])) ?>
+                                    <?= $domain['expiration_date'] ? date('M d, Y', strtotime($domain['expiration_date'])) : 'Unknown' ?>
                                     <span class="<?= $urgencyClass ?> font-semibold ml-2">
                                         <?= $daysLeft ?> days
                                     </span>

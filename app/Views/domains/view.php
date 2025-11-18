@@ -164,7 +164,7 @@ ob_start();
                                         </span>
                                     <?php endif; ?>
                                 </p>
-                                <p class="text-xs font-semibold text-gray-900"><?= date('M j, Y', strtotime($domain['expiration_date'])) ?></p>
+                                <p class="text-xs font-semibold text-gray-900"><?= $domain['expiration_date'] ? date('M j, Y', strtotime($domain['expiration_date'])) : 'Unknown' ?></p>
                             </div>
                         </div>
                         <span class="px-2 py-1 bg-<?= $expiryColor ?>-100 text-<?= $expiryColor ?>-800 rounded text-xs font-bold">

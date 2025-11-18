@@ -305,6 +305,9 @@ class NotificationGroupController extends Controller
                 case 'webhook':
                     $missingField = 'webhook URL';
                     break;
+                case 'pushover':
+                    $missingField = empty($_POST['pushover_api_token']) ? 'API token' : 'user key';
+                    break;
             }
             
             $_SESSION['error'] = "Invalid channel configuration: Missing {$missingField}";
@@ -544,6 +547,39 @@ class NotificationGroupController extends Controller
                     return null;
                 }
                 return ['webhook_url' => $webhookUrl];
+
+            case 'pushover':
+                $apiToken = trim($data['pushover_api_token'] ?? '');
+                $userKey = trim($data['pushover_user_key'] ?? '');
+                
+                // Both API token and user key are required
+                if (empty($apiToken) || empty($userKey)) {
+                    return null;
+                }
+                
+                // Basic validation for Pushover token format (30 characters, alphanumeric)
+                if (!preg_match('/^[a-zA-Z0-9]{30}$/', $apiToken) || !preg_match('/^[a-zA-Z0-9]{30}$/', $userKey)) {
+                    return null;
+                }
+                
+                $config = [
+                    'api_token' => $apiToken,
+                    'user_key' => $userKey
+                ];
+                
+                // Optional: Device name
+                $device = trim($data['pushover_device'] ?? '');
+                if (!empty($device)) {
+                    $config['device'] = $device;
+                }
+                
+                // Optional: Sound
+                $sound = trim($data['pushover_sound'] ?? '');
+                if (!empty($sound)) {
+                    $config['sound'] = $sound;
+                }
+                
+                return $config;
 
             case 'webhook':
                 $webhookUrl = trim($data['webhook_url'] ?? '');

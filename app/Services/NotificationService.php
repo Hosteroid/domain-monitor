@@ -8,6 +8,7 @@ use App\Services\Channels\DiscordChannel;
 use App\Services\Channels\SlackChannel;
 use App\Services\Channels\MattermostChannel;
 use App\Services\Channels\WebhookChannel;
+use App\Services\Channels\PushoverChannel;
 
 class NotificationService
 {
@@ -22,6 +23,7 @@ class NotificationService
             'slack' => new SlackChannel(),
             'mattermost' => new MattermostChannel(),
             'webhook' => new WebhookChannel(),
+            'pushover' => new PushoverChannel(),
         ];
     }
 
@@ -37,7 +39,11 @@ class NotificationService
         try {
             return $this->channels[$channelType]->send($config, $message, $data);
         } catch (\Exception $e) {
-            error_log("Notification send failed [$channelType]: " . $e->getMessage());
+            $logger = new \App\Services\Logger();
+            $logger->error("Notification send failed", [
+                'channel_type' => $channelType,
+                'error' => $e->getMessage()
+            ]);
             return false;
         }
     }
@@ -119,7 +125,7 @@ class NotificationService
     private function formatExpirationMessage(array $domain, int $daysLeft): string
     {
         $domainName = $domain['domain_name'];
-        $expirationDate = date('F j, Y', strtotime($domain['expiration_date']));
+        $expirationDate = $domain['expiration_date'] ? date('F j, Y', strtotime($domain['expiration_date'])) : 'Unknown';
         $registrar = $domain['registrar'] ?? 'Unknown';
 
         if ($daysLeft <= 0) {
@@ -285,7 +291,10 @@ class NotificationService
                 $this->notifySystemUpgrade($admin['id'], $fromVersion, $toVersion, $migrationsCount);
             }
         } catch (\Exception $e) {
-            error_log("Failed to notify admins about upgrade: " . $e->getMessage());
+            $logger = new \App\Services\Logger();
+            $logger->error("Failed to notify admins about upgrade", [
+                'error' => $e->getMessage()
+            ]);
         }
     }
 
@@ -303,7 +312,10 @@ class NotificationService
             );
             $stmt->execute([$daysOld]);
         } catch (\Exception $e) {
-            error_log("Failed to clean old notifications: " . $e->getMessage());
+            $logger = new \App\Services\Logger();
+            $logger->error("Failed to clean old notifications", [
+                'error' => $e->getMessage()
+            ]);
         }
     }
 }

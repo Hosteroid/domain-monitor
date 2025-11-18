@@ -24,7 +24,7 @@ ob_start();
             <h3 class="text-sm font-semibold text-gray-900 mb-1">About Notification Groups</h3>
             <p class="text-xs text-gray-600 leading-relaxed">
                 Notification groups allow you to organize your notification channels. You can create multiple channels 
-                (Email, Telegram, Discord, Slack) within each group, then assign domains to the group. When a domain 
+                (Email, Telegram, Discord, Slack, Mattermost, Pushover, Webhook) within each group, then assign domains to the group. When a domain 
                 is about to expire, all active channels in its group will receive notifications.
             </p>
         </div>

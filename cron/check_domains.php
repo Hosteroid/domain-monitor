@@ -115,12 +115,16 @@ foreach ($domains as $domain) {
             continue;
         }
 
+        // IMPORTANT: Use WHOIS expiration date if available, otherwise preserve existing expiration date
+        // This handles TLDs like .nl that don't provide expiration dates via RDAP
+        $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
+        
         // Update domain information
-        $status = $whoisService->getDomainStatus($whoisData['expiration_date'], $whoisData['status'] ?? []);
+        $status = $whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
         $domainModel->update($domain['id'], [
             'registrar' => $whoisData['registrar'],
             'registrar_url' => $whoisData['registrar_url'] ?? null,
-            'expiration_date' => $whoisData['expiration_date'],
+            'expiration_date' => $expirationDate,
             'updated_date' => $whoisData['updated_date'] ?? null,
             'abuse_email' => $whoisData['abuse_email'] ?? null,
             'last_checked' => date('Y-m-d H:i:s'),

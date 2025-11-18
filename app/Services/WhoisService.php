@@ -65,7 +65,12 @@ class WhoisService
             if ($rdapUrl) {
                 $rdapData = $this->queryRDAPGeneric($domain, $rdapUrl);
                 if ($rdapData) {
-                    error_log("RDAP Success for $domain - Status: " . json_encode($rdapData['status'] ?? []) . " | Registrar: " . ($rdapData['registrar'] ?? 'null'));
+                    $logger = new \App\Services\Logger();
+                    $logger->debug("RDAP Success", [
+                        'domain' => $domain,
+                        'status' => $rdapData['status'] ?? [],
+                        'registrar' => $rdapData['registrar'] ?? 'null'
+                    ]);
                     // If RDAP succeeded but is missing expiration date, try WHOIS as fallback
                     // But only if the domain is not already marked as available
                     $isAvailable = false;
@@ -88,12 +93,19 @@ class WhoisService
                             }
                             
                             if ($whoisData) {
-                                // Parse WHOIS data to get expiration date
+                                // Parse WHOIS data to get expiration date and cleaner registrar
                                 $whoisInfo = $this->parseWhoisData($domain, $whoisData, $referralServer ?? $whoisServer);
                                 
                                 // Merge expiration date from WHOIS into RDAP data
                                 if (!empty($whoisInfo['expiration_date'])) {
                                     $rdapData['expiration_date'] = $whoisInfo['expiration_date'];
+                                }
+                                
+                                // Also merge registrar if WHOIS has a cleaner version (without "Name:" prefix)
+                                if (!empty($whoisInfo['registrar']) && 
+                                    $whoisInfo['registrar'] !== 'Unknown' &&
+                                    (!empty($rdapData['registrar']) && strpos($rdapData['registrar'], 'Name:') !== false)) {
+                                    $rdapData['registrar'] = $whoisInfo['registrar'];
                                 }
                             }
                         }
@@ -416,11 +428,21 @@ class WhoisService
         curl_close($ch);
         
         // Debug logging for RDAP requests
-        error_log("RDAP Request: $rdapUrl | HTTP: $httpCode | Response Length: " . strlen($response));
+        $logger = new \App\Services\Logger();
+        $logger->debug("RDAP Request", [
+            'url' => $rdapUrl,
+            'http_code' => $httpCode,
+            'response_length' => strlen($response)
+        ]);
+        
         if ($httpCode === 200 && $response) {
             $data = json_decode($response, true);
             if ($data) {
-                error_log("RDAP Success - Domain: $domain | Status: " . json_encode($data['status'] ?? []) . " | Entities: " . count($data['entities'] ?? []));
+                $logger->debug("RDAP Success", [
+                    'domain' => $domain,
+                    'status' => $data['status'] ?? [],
+                    'entities_count' => count($data['entities'] ?? [])
+                ]);
             }
         }
         
@@ -560,7 +582,12 @@ class WhoisService
                         foreach ($entity['vcardArray'][1] as $vcardField) {
                             if (is_array($vcardField) && count($vcardField) >= 4) {
                                 if ($vcardField[0] === 'fn') {
-                                    $info['registrar'] = $vcardField[3];
+                                    $registrarName = $vcardField[3];
+                                    // .eu RDAP returns "Name: Company Name" - strip "Name:" prefix
+                                    if (preg_match('/^Name:\s*(.+)/i', $registrarName, $matches)) {
+                                        $registrarName = trim($matches[1]);
+                                    }
+                                    $info['registrar'] = $registrarName;
                                 } elseif ($vcardField[0] === 'url') {
                                     $info['registrar_url'] = $vcardField[3];
                                 }
@@ -624,7 +651,13 @@ class WhoisService
         $fp = @fsockopen($server, $port, $errno, $errstr, $timeout);
 
         if (!$fp) {
-            error_log("WHOIS connection failed to $server: $errstr ($errno)");
+            $logger = new \App\Services\Logger();
+            $logger->warning("WHOIS connection failed", [
+                'server' => $server,
+                'port' => $port,
+                'error' => $errstr,
+                'errno' => $errno
+            ]);
             return null;
         }
 
@@ -666,9 +699,17 @@ class WhoisService
         // Check if domain is not found/available
         $whoisDataLower = strtolower($whoisData);
         // More specific patterns to avoid false positives
-        if (preg_match('/^(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisDataLower) ||
-            preg_match('/^status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisDataLower) ||
-            preg_match('/^domain status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisDataLower)) {
+        if (preg_match('/^(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered|available)$/m', $whoisDataLower) ||
+            preg_match('/^status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered|available)$/m', $whoisDataLower) ||
+            preg_match('/^domain status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered|available)$/m', $whoisDataLower)) {
+            $data['status'][] = 'AVAILABLE';
+            $data['registrar'] = 'Not Registered';
+            return $data;
+        }
+        
+        // Special handling for .eu domains that are available
+        // EURid returns "Status: AVAILABLE" in a specific format
+        if (preg_match('/status:\s*available/i', $whoisDataLower)) {
             $data['status'][] = 'AVAILABLE';
             $data['registrar'] = 'Not Registered';
             return $data;
@@ -696,6 +737,10 @@ class WhoisService
                         // Extract registrar name (remove [Tag = XXX] part)
                         $registrarName = preg_replace('/\s*\[Tag\s*=\s*[^\]]+\]/i', '', $nextLine);
                         $registrarName = trim($registrarName);
+                        // .eu format: Strip "Name:" prefix if present
+                        if (preg_match('/^Name:\s*(.+)/i', $registrarName, $matches)) {
+                            $registrarName = trim($matches[1]);
+                        }
                         if (!empty($registrarName)) {
                             $data['registrar'] = $registrarName;
                             $registrarFound = true;
@@ -749,9 +794,22 @@ class WhoisService
                         !preg_match('/@/', $value) && 
                         !preg_match('/^\d+$/', $value) &&
                         strlen($value) > 3) {
-                        $data['registrar'] = $value;
-                        $registrarFound = true;
+                        
+                        // .eu format: If value starts with "Name:", extract just the name part
+                        if (preg_match('/^Name:\s*(.+)/i', $value, $matches)) {
+                            $data['registrar'] = trim($matches[1]);
+                            $registrarFound = true;
+                        } else {
+                            $data['registrar'] = $value;
+                            $registrarFound = true;
+                        }
                     }
+                }
+                
+                // .eu specific registrar format: "Name: Registrar Name" (as separate line)
+                if (!$registrarFound && $key === 'name' && $currentSection === 'registrar' && !empty($value)) {
+                    $data['registrar'] = $value;
+                    $registrarFound = true;
                 }
 
                 // Nameservers (standard format)
@@ -861,8 +919,12 @@ class WhoisService
 
     /**
      * Get domain status based on expiration and WHOIS status
+     * 
+     * @param string|null $expirationDate The domain expiration date
+     * @param array $statusArray WHOIS/RDAP status flags
+     * @param array $whoisData Full WHOIS data (optional, for additional checks)
      */
-    public function getDomainStatus(?string $expirationDate, array $statusArray = []): string
+    public function getDomainStatus(?string $expirationDate, array $statusArray = [], array $whoisData = []): string
     {
         // Check if domain is available (not registered)
         foreach ($statusArray as $status) {
@@ -874,34 +936,70 @@ class WhoisService
             }
         }
 
-        // Also check if expiration date is null and no status indicates it's registered
-        if ($expirationDate === null && empty($statusArray)) {
-            return 'available';
-        }
-
         // If domain has "active" status but no expiration date, consider it active
-        // This handles TLDs like .nl that don't provide expiration dates
+        // This handles TLDs like .nl that don't provide expiration dates via RDAP
         foreach ($statusArray as $status) {
             if (stripos($status, 'active') !== false) {
                 return 'active';
             }
         }
 
-        $days = $this->daysUntilExpiration($expirationDate);
-
-        if ($days === null) {
-            return 'error';
+        // Check for other positive status indicators (domain is registered)
+        $registeredIndicators = ['ok', 'registered', 'client', 'server'];
+        foreach ($statusArray as $status) {
+            foreach ($registeredIndicators as $indicator) {
+                if (stripos($status, $indicator) !== false) {
+                    // Domain has a registered status, check expiration
+                    if ($expirationDate === null) {
+                        // Has registered status but no expiration date (like .nl domains)
+                        return 'active';
+                    }
+                    break 2; // Exit both loops
+                }
+            }
         }
 
-        if ($days < 0) {
-            return 'expired';
+        // Check if domain has nameservers (strong indicator it's registered)
+        // This handles TLDs like .eu that don't provide status or expiration dates
+        if (!empty($whoisData['nameservers']) && count($whoisData['nameservers']) > 0) {
+            // Domain has nameservers, so it's registered and active
+            return 'active';
         }
 
-        if ($days <= 30) {
-            return 'expiring_soon';
+        // Check if domain has a registrar that's not "Unknown" or "Not Registered"
+        // Another indicator the domain is registered
+        if (!empty($whoisData['registrar']) && 
+            $whoisData['registrar'] !== 'Unknown' && 
+            $whoisData['registrar'] !== 'Not Registered') {
+            // Has a valid registrar, likely registered
+            if ($expirationDate === null) {
+                return 'active';
+            }
         }
 
-        return 'active';
+        // If we have an expiration date, use it to determine status
+        if ($expirationDate !== null) {
+            $days = $this->daysUntilExpiration($expirationDate);
+
+            if ($days === null) {
+                return 'error';
+            }
+
+            if ($days < 0) {
+                return 'expired';
+            }
+
+            if ($days <= 30) {
+                return 'expiring_soon';
+            }
+
+            return 'active';
+        }
+
+        // No expiration date and no clear status indicators
+        // This should only happen for newly added domains or error cases
+        // Return error to avoid incorrectly marking registered domains as available
+        return 'error';
     }
 
     /**
@@ -920,7 +1018,7 @@ class WhoisService
             ];
         }
 
-        $status = $this->getDomainStatus($info['expiration_date'], $info['status']);
+        $status = $this->getDomainStatus($info['expiration_date'], $info['status'], $info);
         
         return [
             'domain' => $domain,
