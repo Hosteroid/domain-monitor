@@ -14,12 +14,31 @@ class WhoisService
     private const CACHE_TTL = 86400;
     private TldRegistry $tldModel;
     
+    // Track last error type for rate limit detection
+    private static ?string $lastErrorType = null;
+    
     /**
      * Clear TLD cache (useful for testing or forcing fresh lookups)
      */
     public static function clearTldCache(): void
     {
         self::$tldCache = [];
+    }
+    
+    /**
+     * Check if the last getDomainInfo call failed due to rate limiting
+     */
+    public static function wasLastErrorRateLimit(): bool
+    {
+        return self::$lastErrorType === 'rate_limit';
+    }
+    
+    /**
+     * Clear last error type
+     */
+    public static function clearLastError(): void
+    {
+        self::$lastErrorType = null;
     }
 
     public function __construct()
@@ -32,6 +51,9 @@ class WhoisService
      */
     public function getDomainInfo(string $domain): ?array
     {
+        // Clear last error at start of each lookup
+        self::$lastErrorType = null;
+        
         try {
             // Get TLD
             $parts = explode('.', $domain);
@@ -89,12 +111,21 @@ class WhoisService
                             // Check if we got a referral to another WHOIS server
                             $referralServer = $this->extractReferralServer($whoisData);
                             if ($referralServer && $referralServer !== $whoisServer) {
-                                $whoisData = $this->queryWhois($domain, $referralServer);
+                                $referralWhoisData = $this->queryWhois($domain, $referralServer);
+                                if ($referralWhoisData) {
+                                    $whoisData = $referralWhoisData;
+                                }
                             }
                             
                             if ($whoisData) {
                                 // Parse WHOIS data to get expiration date and cleaner registrar
                                 $whoisInfo = $this->parseWhoisData($domain, $whoisData, $referralServer ?? $whoisServer);
+                                
+                                // If rate limited, skip WHOIS merge but keep RDAP data
+                                if ($whoisInfo === null) {
+                                    // Rate limited - return RDAP data as-is
+                                    return $rdapData;
+                                }
                                 
                                 // Merge expiration date from WHOIS into RDAP data
                                 if (!empty($whoisInfo['expiration_date'])) {
@@ -124,6 +155,7 @@ class WhoisService
             $whoisData = $this->queryWhois($domain, $whoisServer);
 
             if (!$whoisData) {
+                self::$lastErrorType = 'no_data';
                 $logger = new \App\Services\Logger();
                 $logger->warning('No WHOIS data received', [
                     'domain' => $domain,
@@ -143,8 +175,14 @@ class WhoisService
             // Check if we got a referral to another WHOIS server
             $referralServer = $this->extractReferralServer($whoisData);
             if ($referralServer && $referralServer !== $whoisServer) {
-                // Check if the original response already has complete data
+                // Check if the original response already has complete data or is rate limited
                 $originalInfo = $this->parseWhoisData($domain, $whoisData, $whoisServer);
+                
+                // If rate limited, return null immediately
+                if ($originalInfo === null) {
+                    return null;
+                }
+                
                 $hasCompleteData = !empty($originalInfo['registrar']) && 
                                  $originalInfo['registrar'] !== 'Unknown' && 
                                  !empty($originalInfo['expiration_date']);
@@ -179,6 +217,11 @@ class WhoisService
             $actualServer = $referralServer ?? $whoisServer;
             $info = $this->parseWhoisData($domain, $whoisData, $actualServer);
             
+            // If rate limited, return null
+            if ($info === null) {
+                return null;
+            }
+            
             // Override whois_server to reflect the actual server that provided the data
             $info['whois_server'] = $actualServer;
             
@@ -196,6 +239,7 @@ class WhoisService
             return $info;
 
         } catch (Exception $e) {
+            self::$lastErrorType = 'exception';
             $logger = new \App\Services\Logger();
             $logger->error('WHOIS lookup failed', [
                 'domain' => $domain,
@@ -434,6 +478,18 @@ class WhoisService
             'http_code' => $httpCode,
             'response_length' => strlen($response)
         ]);
+        
+        // Handle rate limiting (HTTP 429)
+        if ($httpCode === 429) {
+            self::$lastErrorType = 'rate_limit';
+            $logger->warning("RDAP rate limit exceeded", [
+                'domain' => $domain,
+                'url' => $rdapUrl,
+                'http_code' => $httpCode
+            ]);
+            // Return null to indicate rate limit - caller should handle gracefully
+            return null;
+        }
         
         if ($httpCode === 200 && $response) {
             $data = json_decode($response, true);
@@ -676,10 +732,104 @@ class WhoisService
     }
 
     /**
+     * Check if WHOIS response indicates rate limiting
+     */
+    private function isRateLimitError(string $whoisData): bool
+    {
+        $responseLength = strlen($whoisData);
+        
+        // Rate limit errors are typically short error messages (usually <200 chars), not full domain data
+        // If response is very long (>500 chars), it's almost certainly valid domain data, not an error
+        // This is the most reliable check to avoid false positives
+        if ($responseLength > 500) {
+            return false;
+        }
+        
+        // Even for shorter responses, if it contains domain data indicators, it's likely valid
+        $whoisDataLower = strtolower(trim($whoisData));
+        
+        // Check for domain data indicators first (if present, it's not a rate limit error)
+        $domainDataIndicators = [
+            'domain name:',
+            'registrar:',
+            'creation date:',
+            'expiration date:',
+            'updated date:',
+            'nameserver:',
+            'registry domain id:',
+            'registrar whois server:',
+            'registrar url:'
+        ];
+        
+        $hasDomainData = false;
+        foreach ($domainDataIndicators as $indicator) {
+            if (stripos($whoisDataLower, $indicator) !== false) {
+                $hasDomainData = true;
+                break;
+            }
+        }
+        
+        // If it has domain data indicators, it's definitely not a rate limit error
+        if ($hasDomainData) {
+            return false;
+        }
+        
+        // For short responses without domain data, check for specific rate limit error patterns
+        // These are typically short, specific error messages
+        $rateLimitPatterns = [
+            // Exact error messages (most common formats)
+            '/^error:\s*ratelimit/i',
+            '/^error:\s*rate[\s\-_]?limit/i',
+            '/^ratelimit\s+exceeded/i',
+            '/^rate[\s\-_]?limit\s+exceeded/i',
+            '/^rate[\s\-_]?limit\s+error/i',
+            '/error:\s*ratelimit\s+exceeded/i',
+            '/error:\s*rate[\s\-_]?limit\s+exceeded/i',
+            
+            // Other rate limit error formats
+            '/too many requests/i',
+            '/quota exceeded/i',
+            '/^limit exceeded/i',
+            
+            // Rate limit in error context (at start of response)
+            '/^error.*rate[\s\-_]?limit/i',
+            '/^rate[\s\-_]?limit.*error/i',
+        ];
+        
+        // Check for exact patterns
+        foreach ($rateLimitPatterns as $pattern) {
+            if (preg_match($pattern, $whoisDataLower)) {
+                return true;
+            }
+        }
+        
+        // Additional check: if response contains both "rate" and "limit" in close proximity
+        // Only for very short responses (<100 chars) to avoid false positives
+        if ($responseLength < 100 && preg_match('/rate.{0,20}limit|limit.{0,20}rate/i', $whoisDataLower)) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
      * Parse WHOIS data
      */
-    private function parseWhoisData(string $domain, string $whoisData, string $whoisServer = 'Unknown'): array
+    private function parseWhoisData(string $domain, string $whoisData, string $whoisServer = 'Unknown'): ?array
     {
+        // Check for rate limit errors first
+        if ($this->isRateLimitError($whoisData)) {
+            self::$lastErrorType = 'rate_limit';
+            $logger = new \App\Services\Logger();
+            $logger->warning("WHOIS rate limit exceeded", [
+                'domain' => $domain,
+                'server' => $whoisServer,
+                'response_preview' => substr($whoisData, 0, 200)
+            ]);
+            // Return null to indicate rate limit - caller should handle gracefully
+            return null;
+        }
+        
         $lines = explode("\n", $whoisData);
         $data = [
             'domain' => $domain,
