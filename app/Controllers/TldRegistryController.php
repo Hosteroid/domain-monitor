@@ -516,7 +516,15 @@ class TldRegistryController extends Controller
         $status = $tld['is_active'] ? 'disabled' : 'enabled';
         $_SESSION['success'] = "TLD {$tld['tld']} has been {$status}";
         
-        $this->redirect('/tld-registry');
+        // Redirect back to the same page (either view page or index page)
+        $referer = $_SERVER['HTTP_REFERER'] ?? '';
+        if (strpos($referer, '/tld-registry/' . $id) !== false) {
+            // Came from view page, go back to view page
+            $this->redirect('/tld-registry/' . $id);
+        } else {
+            // Came from index page or elsewhere, go to index
+            $this->redirect('/tld-registry');
+        }
     }
 
     /**
@@ -567,7 +575,15 @@ class TldRegistryController extends Controller
             $_SESSION['error'] = 'Failed to refresh TLD data: ' . $e->getMessage();
         }
 
-        $this->redirect('/tld-registry');
+        // Redirect back to the same page (either view page or index page)
+        $referer = $_SERVER['HTTP_REFERER'] ?? '';
+        if (strpos($referer, '/tld-registry/' . $id) !== false) {
+            // Came from view page, go back to view page
+            $this->redirect('/tld-registry/' . $id);
+        } else {
+            // Came from index page or elsewhere, go to index
+            $this->redirect('/tld-registry');
+        }
     }
 
     /**
@@ -666,5 +682,132 @@ class TldRegistryController extends Controller
             return $matches[1];
         }
         return null;
+    }
+
+    /**
+     * Update WHOIS server for a TLD
+     */
+    public function updateWhoisServer($params = [])
+    {
+        Auth::requireAdmin();
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/tld-registry');
+
+        $id = $params['id'] ?? 0;
+        $tld = $this->tldModel->find($id);
+
+        if (!$tld) {
+            $_SESSION['error'] = 'TLD not found';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $whoisServer = trim($_POST['whois_server'] ?? '');
+
+        // Validate WHOIS server format (basic validation)
+        if (!empty($whoisServer) && !preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $whoisServer)) {
+            $_SESSION['error'] = 'Invalid WHOIS server format';
+            $this->redirect('/tld-registry/' . $id);
+            return;
+        }
+
+        try {
+            $this->tldModel->update($id, [
+                'whois_server' => !empty($whoisServer) ? $whoisServer : null,
+                'updated_at' => date('Y-m-d H:i:s')
+            ]);
+
+            $this->logger->info('WHOIS server updated', [
+                'tld_id' => $id,
+                'tld' => $tld['tld'],
+                'whois_server' => $whoisServer,
+                'user_id' => $_SESSION['user_id'] ?? 'unknown'
+            ]);
+
+            $_SESSION['success'] = "WHOIS server updated successfully for {$tld['tld']}";
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to update WHOIS server: ' . $e->getMessage();
+            $this->logger->error('Failed to update WHOIS server', [
+                'tld_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        $this->redirect('/tld-registry/' . $id);
+    }
+
+    /**
+     * Update RDAP servers for a TLD
+     */
+    public function updateRdapServers($params = [])
+    {
+        Auth::requireAdmin();
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/tld-registry');
+
+        $id = $params['id'] ?? 0;
+        $tld = $this->tldModel->find($id);
+
+        if (!$tld) {
+            $_SESSION['error'] = 'TLD not found';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $rdapServersInput = trim($_POST['rdap_servers'] ?? '');
+        $rdapServers = [];
+
+        // Parse RDAP servers (comma or newline separated)
+        if (!empty($rdapServersInput)) {
+            $servers = preg_split('/[,\n\r]+/', $rdapServersInput);
+            foreach ($servers as $server) {
+                $server = trim($server);
+                if (!empty($server)) {
+                    // Basic URL validation
+                    if (filter_var($server, FILTER_VALIDATE_URL) || 
+                        preg_match('/^https?:\/\/[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i', $server)) {
+                        // Ensure URL ends with / if not already
+                        $server = rtrim($server, '/') . '/';
+                        $rdapServers[] = $server;
+                    }
+                }
+            }
+        }
+
+        try {
+            $this->tldModel->update($id, [
+                'rdap_servers' => !empty($rdapServers) ? json_encode($rdapServers) : null,
+                'updated_at' => date('Y-m-d H:i:s')
+            ]);
+
+            $this->logger->info('RDAP servers updated', [
+                'tld_id' => $id,
+                'tld' => $tld['tld'],
+                'rdap_servers_count' => count($rdapServers),
+                'user_id' => $_SESSION['user_id'] ?? 'unknown'
+            ]);
+
+            $_SESSION['success'] = "RDAP servers updated successfully for {$tld['tld']} (" . count($rdapServers) . " server(s))";
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to update RDAP servers: ' . $e->getMessage();
+            $this->logger->error('Failed to update RDAP servers', [
+                'tld_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        $this->redirect('/tld-registry/' . $id);
     }
 }

@@ -82,53 +82,79 @@ ob_start();
         </div>
 
         <!-- RDAP Servers -->
-        <?php if ($tld['rdap_servers']): ?>
-            <?php 
-            $rdapServers = json_decode($tld['rdap_servers'], true);
-            if (is_array($rdapServers) && !empty($rdapServers)):
-            ?>
         <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div class="px-4 py-2 border-b border-gray-200 bg-gray-50">
+            <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
                 <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider flex items-center">
                     <i class="fas fa-database text-gray-400 mr-2" style="font-size: 10px;"></i>
-                    RDAP Servers (<?= count($rdapServers) ?>)
+                    RDAP Servers
+                    <?php if ($tld['rdap_servers']): ?>
+                        <?php 
+                        $rdapServers = json_decode($tld['rdap_servers'], true);
+                        if (is_array($rdapServers) && !empty($rdapServers)):
+                        ?>
+                        (<?= count($rdapServers) ?>)
+                        <?php endif; ?>
+                    <?php endif; ?>
                 </h3>
+                <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+                <button onclick="openEditRdapModal()" class="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-medium">
+                    <i class="fas fa-edit mr-1" style="font-size: 9px;"></i>
+                    Edit
+                </button>
+                <?php endif; ?>
             </div>
             <div class="p-4">
-                <div class="space-y-1.5">
-                    <?php foreach ($rdapServers as $index => $server): ?>
-                    <div class="flex items-center p-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors">
-                        <div class="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center text-white font-bold text-xs mr-2">
-                            <?= $index + 1 ?>
+                <?php if ($tld['rdap_servers']): ?>
+                    <?php 
+                    $rdapServers = json_decode($tld['rdap_servers'], true);
+                    if (is_array($rdapServers) && !empty($rdapServers)):
+                    ?>
+                    <div class="space-y-1.5">
+                        <?php foreach ($rdapServers as $index => $server): ?>
+                        <div class="flex items-center p-2 bg-gray-50 rounded hover:bg-gray-100 transition-colors">
+                            <div class="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center text-white font-bold text-xs mr-2">
+                                <?= $index + 1 ?>
+                            </div>
+                            <p class="font-mono text-xs text-gray-800"><?= htmlspecialchars($server) ?></p>
                         </div>
-                        <p class="font-mono text-xs text-gray-800"><?= htmlspecialchars($server) ?></p>
+                        <?php endforeach; ?>
                     </div>
-                    <?php endforeach; ?>
-                </div>
+                    <?php else: ?>
+                    <p class="text-xs text-gray-400 italic">No RDAP servers configured</p>
+                    <?php endif; ?>
+                <?php else: ?>
+                <p class="text-xs text-gray-400 italic">No RDAP servers configured</p>
+                <?php endif; ?>
             </div>
         </div>
-            <?php endif; ?>
-        <?php endif; ?>
 
         <!-- WHOIS Server -->
-        <?php if ($tld['whois_server']): ?>
         <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
-            <div class="px-4 py-2 border-b border-gray-200 bg-gray-50">
+            <div class="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
                 <h3 class="text-xs font-semibold text-gray-700 uppercase tracking-wider flex items-center">
                     <i class="fas fa-server text-gray-400 mr-2" style="font-size: 10px;"></i>
                     WHOIS Server
                 </h3>
+                <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+                <button onclick="openEditWhoisModal()" class="inline-flex items-center px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-medium">
+                    <i class="fas fa-edit mr-1" style="font-size: 9px;"></i>
+                    Edit
+                </button>
+                <?php endif; ?>
             </div>
             <div class="p-4">
+                <?php if ($tld['whois_server']): ?>
                 <div class="flex items-center p-2 bg-gray-50 rounded">
                     <div class="w-6 h-6 bg-orange-500 rounded flex items-center justify-center text-white font-bold text-xs mr-2">
                         <i class="fas fa-server"></i>
                     </div>
                     <p class="font-mono text-xs text-gray-800"><?= htmlspecialchars($tld['whois_server']) ?></p>
                 </div>
+                <?php else: ?>
+                <p class="text-xs text-gray-400 italic">No WHOIS server configured</p>
+                <?php endif; ?>
             </div>
         </div>
-        <?php endif; ?>
 
     </div>
 
@@ -247,6 +273,104 @@ ob_start();
 
 </div>
 
+<!-- Edit WHOIS Server Modal -->
+<?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+<div id="editWhoisModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 flex items-center">
+                <i class="fas fa-server text-orange-600 mr-2"></i>
+                Edit WHOIS Server
+            </h3>
+            <button onclick="closeEditWhoisModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="/tld-registry/<?= $tld['id'] ?>/update-whois-server" class="p-6">
+            <?= csrf_field() ?>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    WHOIS Server
+                </label>
+                <input type="text" 
+                       name="whois_server" 
+                       id="whois_server_input"
+                       value="<?= htmlspecialchars($tld['whois_server'] ?? '') ?>"
+                       placeholder="whois.example.com"
+                       class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm">
+                <p class="mt-1.5 text-xs text-gray-500">
+                    Enter the WHOIS server hostname (e.g., whois.example.com). Leave empty to remove.
+                </p>
+            </div>
+            <div class="flex gap-3">
+                <button type="submit" 
+                        class="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-sm">
+                    <i class="fas fa-save mr-2"></i>
+                    Save Changes
+                </button>
+                <button type="button" 
+                        onclick="closeEditWhoisModal()"
+                        class="flex-1 inline-flex items-center justify-center px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm">
+                    <i class="fas fa-times mr-2"></i>
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit RDAP Servers Modal -->
+<div id="editRdapModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 flex items-center">
+                <i class="fas fa-database text-indigo-600 mr-2"></i>
+                Edit RDAP Servers
+            </h3>
+            <button onclick="closeEditRdapModal()" class="text-gray-400 hover:text-gray-600 transition-colors">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="/tld-registry/<?= $tld['id'] ?>/update-rdap-servers" class="p-6">
+            <?= csrf_field() ?>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    RDAP Servers
+                </label>
+                <textarea name="rdap_servers" 
+                          id="rdap_servers_input"
+                          rows="6"
+                          placeholder="https://rdap.example.com/&#10;https://rdap2.example.com/"
+                          class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm font-mono"><?php
+                    if ($tld['rdap_servers']):
+                        $rdapServers = json_decode($tld['rdap_servers'], true);
+                        if (is_array($rdapServers) && !empty($rdapServers)):
+                            echo htmlspecialchars(implode("\n", $rdapServers));
+                        endif;
+                    endif;
+                ?></textarea>
+                <p class="mt-1.5 text-xs text-gray-500">
+                    Enter RDAP server URLs (one per line or comma-separated). Must start with http:// or https://. Leave empty to remove all servers.
+                </p>
+            </div>
+            <div class="flex gap-3">
+                <button type="submit" 
+                        class="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors text-sm">
+                    <i class="fas fa-save mr-2"></i>
+                    Save Changes
+                </button>
+                <button type="button" 
+                        onclick="closeEditRdapModal()"
+                        class="flex-1 inline-flex items-center justify-center px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors text-sm">
+                    <i class="fas fa-times mr-2"></i>
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 <script>
 function toggleRawData() {
     const dataDiv = document.getElementById('raw-data');
@@ -254,6 +378,47 @@ function toggleRawData() {
     dataDiv.classList.toggle('hidden');
     chevron.classList.toggle('rotate-180');
 }
+
+<?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+function openEditWhoisModal() {
+    document.getElementById('editWhoisModal').classList.remove('hidden');
+    document.getElementById('whois_server_input').focus();
+}
+
+function closeEditWhoisModal() {
+    document.getElementById('editWhoisModal').classList.add('hidden');
+}
+
+function openEditRdapModal() {
+    document.getElementById('editRdapModal').classList.remove('hidden');
+    document.getElementById('rdap_servers_input').focus();
+}
+
+function closeEditRdapModal() {
+    document.getElementById('editRdapModal').classList.add('hidden');
+}
+
+// Close modals on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeEditWhoisModal();
+        closeEditRdapModal();
+    }
+});
+
+// Close modals when clicking outside
+document.getElementById('editWhoisModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeEditWhoisModal();
+    }
+});
+
+document.getElementById('editRdapModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeEditRdapModal();
+    }
+});
+<?php endif; ?>
 </script>
 
 <?php

@@ -59,7 +59,7 @@ ob_start();
             <i class="fas fa-arrow-left mr-2"></i>
             Check Another Domain
         </a>
-        <button onclick="copyDebugReport()" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium">
+        <button onclick="copyDebugReport(this)" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium">
             <i class="fas fa-copy mr-2"></i>
             Copy Debug Report
         </button>
@@ -196,7 +196,7 @@ ob_start();
     </script>
 
     <script>
-    function copyDebugReport() {
+    function copyDebugReport(button) {
         const data = JSON.parse(document.getElementById('debug-data').textContent);
         
         let report = `=== WHOIS DEBUG REPORT ===\n\n`;
@@ -232,27 +232,27 @@ ob_start();
         report += `\n\n=== END OF REPORT ===`;
         
         // Copy to clipboard with fallback
-        copyToClipboard(report);
+        copyToClipboard(report, button);
     }
 
     // Robust clipboard copy function with fallback
-    function copyToClipboard(text) {
+    function copyToClipboard(text, button) {
         // Try modern clipboard API first
         if (navigator.clipboard && window.isSecureContext) {
             navigator.clipboard.writeText(text).then(() => {
-                showCopySuccess();
+                showCopySuccess(button);
             }).catch(err => {
                 console.error('Modern clipboard API failed:', err);
                 // Fallback to legacy method
-                fallbackCopyTextToClipboard(text);
+                fallbackCopyTextToClipboard(text, button);
             });
         } else {
             // Use fallback for non-HTTPS or older browsers
-            fallbackCopyTextToClipboard(text);
+            fallbackCopyTextToClipboard(text, button);
         }
     }
 
-    function fallbackCopyTextToClipboard(text) {
+    function fallbackCopyTextToClipboard(text, button) {
         // Create a temporary textarea
         const textArea = document.createElement('textarea');
         textArea.value = text;
@@ -276,35 +276,34 @@ ob_start();
         try {
             const successful = document.execCommand('copy');
             if (successful) {
-                showCopySuccess();
+                showCopySuccess(button);
             } else {
-                showCopyError();
+                showCopyError(button);
             }
         } catch (err) {
             console.error('Fallback copy failed:', err);
-            showCopyError();
+            showCopyError(button);
         }
         
         document.body.removeChild(textArea);
     }
 
-    function showCopySuccess() {
-        const btn = event.target.closest('button');
-        if (!btn) return;
+    function showCopySuccess(button) {
+        if (!button) return;
         
-        const originalHTML = btn.innerHTML;
-        btn.innerHTML = '<i class="fas fa-check mr-2"></i>Copied!';
-        btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-        btn.classList.add('bg-green-600', 'hover:bg-green-700');
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check mr-2"></i>Copied!';
+        button.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        button.classList.add('bg-green-600', 'hover:bg-green-700');
         
         setTimeout(() => {
-            btn.innerHTML = originalHTML;
-            btn.classList.remove('bg-green-600', 'hover:bg-green-700');
-            btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            button.innerHTML = originalHTML;
+            button.classList.remove('bg-green-600', 'hover:bg-green-700');
+            button.classList.add('bg-blue-600', 'hover:bg-blue-700');
         }, 2000);
     }
 
-    function showCopyError() {
+    function showCopyError(button) {
         alert('Failed to copy to clipboard.\n\nYour browser may not support this feature, or the site needs HTTPS.\n\nPlease manually select and copy the text from the Raw WHOIS Response section below.');
     }
     </script>
