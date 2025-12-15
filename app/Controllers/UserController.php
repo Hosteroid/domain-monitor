@@ -306,6 +306,14 @@ class UserController extends Controller
      */
     public function delete($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/users');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/users');
+
         $userId = $params['id'] ?? 0;
         $user = $this->userModel->find($userId);
 
@@ -348,6 +356,14 @@ class UserController extends Controller
      */
     public function toggleStatus($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/users');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/users');
+
         $userId = $params['id'] ?? 0;
         $user = $this->userModel->find($userId);
 

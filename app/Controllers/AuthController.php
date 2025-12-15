@@ -167,6 +167,11 @@ class AuthController extends Controller
         $_SESSION['email'] = $user['email'];
         $_SESSION['role'] = $user['role'];
 
+        // Clear any existing session messages before successful login
+        unset($_SESSION['error']);
+        unset($_SESSION['success']);
+        unset($_SESSION['info']);
+
         // Session is automatically tracked by DatabaseSessionHandler
         // No need to manually create session record
 
@@ -177,6 +182,9 @@ class AuthController extends Controller
 
         // Update last login
         $this->userModel->updateLastLogin($user['id']);
+
+        // Set success message for login
+        $_SESSION['success'] = 'Login successful! Welcome back, ' . htmlspecialchars($user['full_name']) . '.';
 
         // Redirect to dashboard
         $this->redirect('/');

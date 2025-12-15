@@ -295,7 +295,7 @@ class TwoFactorController extends Controller
                 'method' => $method
             ]);
 
-            $_SESSION['success'] = 'Login successful!';
+            $_SESSION['success'] = 'Login successful! Welcome back, ' . htmlspecialchars($user['full_name']) . '.';
             $this->redirect('/');
         } else {
             $_SESSION['error'] = 'Invalid verification code. Please try again.';

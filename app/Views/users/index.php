@@ -273,15 +273,16 @@ $pagination = $pagination ?? [
                                     <i class="fas fa-edit"></i>
                                 </a>
                                 <?php if ($user['id'] != \Core\Auth::id()): ?>
-                                    <a href="/users/<?= $user['id'] ?>/toggle-status" 
+                                    <a href="#" 
                                        class="text-orange-600 hover:text-orange-800" 
-                                       title="<?= $user['is_active'] ? 'Deactivate' : 'Activate' ?>">
+                                       title="<?= $user['is_active'] ? 'Deactivate' : 'Activate' ?>"
+                                       onclick="toggleUserStatus(<?= $user['id'] ?>); return false;">
                                         <i class="fas fa-<?= $user['is_active'] ? 'user-slash' : 'user-check' ?>"></i>
                                     </a>
-                                    <a href="/users/<?= $user['id'] ?>/delete" 
+                                    <a href="#" 
                                        class="text-red-600 hover:text-red-800" 
                                        title="Delete"
-                                       onclick="return confirm('Are you sure you want to delete this user?')">
+                                       onclick="deleteUser(<?= $user['id'] ?>); return false;">
                                         <i class="fas fa-trash"></i>
                                     </a>
                                 <?php else: ?>
@@ -474,6 +475,40 @@ function bulkToggleStatus(action) {
     actionInput.name = 'action';
     actionInput.value = action;
     form.appendChild(actionInput);
+    
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function toggleUserStatus(userId) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/users/' + userId + '/toggle-status';
+    
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '<?= csrf_token() ?>';
+    form.appendChild(csrfInput);
+    
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function deleteUser(userId) {
+    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+        return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/users/' + userId + '/delete';
+    
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '<?= csrf_token() ?>';
+    form.appendChild(csrfInput);
     
     document.body.appendChild(form);
     form.submit();
