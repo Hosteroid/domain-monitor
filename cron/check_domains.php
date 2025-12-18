@@ -16,8 +16,10 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use Dotenv\Dotenv;
 use App\Models\Domain;
 use App\Models\NotificationChannel;
+use App\Models\NotificationGroup;
 use App\Models\NotificationLog;
 use App\Models\Setting;
+use App\Models\User;
 use App\Services\WhoisService;
 use App\Services\NotificationService;
 use Core\Database;
@@ -32,8 +34,11 @@ new Database();
 // Initialize services
 $domainModel = new Domain();
 $channelModel = new NotificationChannel();
+$groupModel = new NotificationGroup();
 $logModel = new NotificationLog();
+$notificationModel = new \App\Models\Notification();
 $settingModel = new Setting();
+$userModel = new User();
 $whoisService = new WhoisService();
 $notificationService = new NotificationService();
 
@@ -93,7 +98,11 @@ $stats = [
     'notifications_sent' => 0,
     'errors' => 0,
     'retried' => 0,
-    'retry_succeeded' => 0
+    'retry_succeeded' => 0,
+    'in_app_notifications_created' => 0,
+    'domains_with_notifications' => 0,
+    'notification_groups_used' => [],
+    'domains_notified' => []
 ];
 
 // Retry queue: domains that failed due to rate limiting
@@ -202,53 +211,162 @@ foreach ($domains as $domain) {
             continue;
         }
 
-        // Check if notification was already sent recently (within last 23 hours)
-        if ($logModel->wasSentRecently($domain['id'], $notificationType, 23)) {
-            logMessage("  → Notification already sent recently");
-            continue;
-        }
-
-        // Get notification channels for this domain's group
-        if (!$domain['notification_group_id']) {
-            logMessage("  → No notification group assigned");
-            continue;
-        }
-
-        $channels = $channelModel->getActiveByGroupId($domain['notification_group_id']);
-
-        if (empty($channels)) {
-            logMessage("  → No active notification channels configured");
-            continue;
-        }
-
-        logMessage("  📤 Sending notifications to " . count($channels) . " channel(s)");
-
         // Refresh domain data with group info
         $domainData = $domainModel->find($domain['id']);
         
-        // Send notifications
-        $results = $notificationService->sendDomainExpirationAlert($domainData, $channels);
-
-        foreach ($results as $result) {
-            $success = $result['success'];
-            $channel = $result['channel'];
-
-            if ($success) {
-                logMessage("    ✓ Sent to $channel");
-                $stats['notifications_sent']++;
+        // Send external notifications (email, telegram, etc.) if notification group is assigned
+        // Check if external alert was already sent recently (within last 23 hours)
+        $shouldSendExternal = false;
+        if ($domain['notification_group_id']) {
+            if (!$logModel->wasSentRecently($domain['id'], $notificationType, 23)) {
+                $shouldSendExternal = true;
             } else {
-                logMessage("    ✗ Failed to send to $channel");
+                logMessage("  → External notification already sent recently (skipping external alerts)");
             }
+        }
+        
+        if ($shouldSendExternal) {
+            $channels = $channelModel->getActiveByGroupId($domain['notification_group_id']);
 
-            // Log the notification attempt
-            $logModel->log(
-                $domain['id'],
-                $notificationType,
-                $channel,
-                "Domain $domainName expires in $daysLeft days",
-                $success,
-                $success ? null : "Failed to send notification"
-            );
+            if (!empty($channels)) {
+                logMessage("  📤 Sending external notifications to " . count($channels) . " channel(s)");
+                
+                // Send external notifications (email, telegram, etc.)
+                $results = $notificationService->sendDomainExpirationAlert($domainData, $channels);
+
+                foreach ($results as $result) {
+                    $success = $result['success'];
+                    $channel = $result['channel'];
+
+                    if ($success) {
+                        logMessage("    ✓ Sent to $channel");
+                        $stats['notifications_sent']++;
+                    } else {
+                        logMessage("    ✗ Failed to send to $channel");
+                    }
+
+                    // Log the notification attempt
+                    $logModel->log(
+                        $domain['id'],
+                        $notificationType,
+                        $channel,
+                        "Domain $domainName expires in $daysLeft days",
+                        $success,
+                        $success ? null : "Failed to send notification"
+                    );
+                }
+            } else {
+                logMessage("  → No active notification channels configured in group");
+            }
+        } elseif (!$domain['notification_group_id']) {
+            logMessage("  → No notification group assigned (skipping external alerts, but will create in-app notification)");
+        }
+
+        // Create in-app notification (bell icon) for users
+        // Handle user isolation: 
+        // - Isolated mode: send only to domain owner
+        // - Shared mode: send to all active users (company-wide notifications)
+        $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+        $usersToNotify = [];
+        
+        if ($isolationMode === 'isolated') {
+            // Isolated mode: only notify the domain owner
+            $notificationUserId = null;
+            
+            if (!empty($domainData['user_id'])) {
+                $notificationUserId = $domainData['user_id'];
+            } elseif (!empty($domain['notification_group_id'])) {
+                // Fallback to notification group owner
+                $group = $groupModel->find($domain['notification_group_id']);
+                if ($group && !empty($group['user_id'])) {
+                    $notificationUserId = $group['user_id'];
+                }
+            }
+            
+            if ($notificationUserId) {
+                $usersToNotify[] = $notificationUserId;
+            }
+        } else {
+            // Shared mode: notify all active users (company-wide)
+            $allUsers = $userModel->where('is_active', 1);
+            foreach ($allUsers as $user) {
+                $usersToNotify[] = $user['id'];
+            }
+            logMessage("  → Shared mode: Notifying all " . count($usersToNotify) . " active user(s)");
+        }
+        
+        // Send notifications to all identified users
+        // Check if in-app notification was already created recently (within last 23 hours) to prevent duplicates
+        if (!empty($usersToNotify)) {
+            $notifiedCount = 0;
+            $notificationTypeForInApp = $daysLeft <= 0 ? 'domain_expired' : 'domain_expiring';
+            
+            foreach ($usersToNotify as $userId) {
+                // Check if this user already has a notification for this domain and type within last 23 hours
+                $db = \Core\Database::getConnection();
+                $stmt = $db->prepare(
+                    "SELECT COUNT(*) as count FROM user_notifications 
+                     WHERE user_id = ? 
+                     AND domain_id = ? 
+                     AND type = ?
+                     AND created_at >= DATE_SUB(NOW(), INTERVAL 23 HOUR)"
+                );
+                $stmt->execute([$userId, $domain['id'], $notificationTypeForInApp]);
+                $result = $stmt->fetch();
+                
+                if ($result && $result['count'] > 0) {
+                    // Notification already exists for this user, skip
+                    continue;
+                }
+                
+                try {
+                    if ($daysLeft <= 0) {
+                        $notificationService->notifyDomainExpired(
+                            $userId,
+                            $domainName,
+                            $domain['id']
+                        );
+                    } else {
+                        $notificationService->notifyDomainExpiring(
+                            $userId,
+                            $domainName,
+                            $daysLeft,
+                            $domain['id']
+                        );
+                    }
+                    $notifiedCount++;
+                } catch (Exception $e) {
+                    logMessage("  ⚠ Failed to create in-app notification for user $userId: " . $e->getMessage());
+                }
+            }
+            if ($notifiedCount > 0) {
+                $statusText = $daysLeft <= 0 ? "Domain expired" : "Domain expiring in $daysLeft days";
+                logMessage("  🔔 Created in-app notifications for $notifiedCount user(s): $statusText");
+                $stats['in_app_notifications_created'] += $notifiedCount;
+                $stats['domains_with_notifications']++;
+                
+                // Track which domain got notifications
+                $stats['domains_notified'][] = [
+                    'domain' => $domainName,
+                    'days_left' => $daysLeft,
+                    'users_notified' => $notifiedCount,
+                    'has_group' => !empty($domain['notification_group_id']),
+                    'group_id' => $domain['notification_group_id'] ?? null
+                ];
+                
+                // Track notification groups used
+                if (!empty($domain['notification_group_id'])) {
+                    $groupId = $domain['notification_group_id'];
+                    if (!isset($stats['notification_groups_used'][$groupId])) {
+                        $stats['notification_groups_used'][$groupId] = 0;
+                    }
+                    $stats['notification_groups_used'][$groupId]++;
+                }
+            } elseif (count($usersToNotify) > 0) {
+                logMessage("  → In-app notifications already exist for all users (skipping duplicates)");
+            }
+        } else {
+            logMessage("  → No users to notify, skipping in-app notification (external alerts still sent)");
         }
 
     } catch (Exception $e) {
@@ -386,10 +504,12 @@ if (!empty($retryQueue)) {
                         }
                         
                         if ($shouldNotify && !$logModel->wasSentRecently($domain['id'], $notificationType, 23)) {
+                            $domainData = $domainModel->find($domain['id']);
+                            
+                            // Send external notifications (email, telegram, etc.) if notification group is assigned
                             if ($domain['notification_group_id']) {
                                 $channels = $channelModel->getActiveByGroupId($domain['notification_group_id']);
                                 if (!empty($channels)) {
-                                    $domainData = $domainModel->find($domain['id']);
                                     $results = $notificationService->sendDomainExpirationAlert($domainData, $channels);
                                     
                                     foreach ($results as $result) {
@@ -404,6 +524,62 @@ if (!empty($retryQueue)) {
                                             $result['success'],
                                             $result['success'] ? null : "Failed to send notification"
                                         );
+                                    }
+                                }
+                            }
+
+                            // Create in-app notification (bell icon) for users
+                            // Handle user isolation: 
+                            // - Isolated mode: send only to domain owner
+                            // - Shared mode: send to all active users (company-wide notifications)
+                            $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+                            $usersToNotify = [];
+                            
+                            if ($isolationMode === 'isolated') {
+                                // Isolated mode: only notify the domain owner
+                                $notificationUserId = null;
+                                
+                                if (!empty($domainData['user_id'])) {
+                                    $notificationUserId = $domainData['user_id'];
+                                } elseif (!empty($domain['notification_group_id'])) {
+                                    // Fallback to notification group owner
+                                    $group = $groupModel->find($domain['notification_group_id']);
+                                    if ($group && !empty($group['user_id'])) {
+                                        $notificationUserId = $group['user_id'];
+                                    }
+                                }
+                                
+                                if ($notificationUserId) {
+                                    $usersToNotify[] = $notificationUserId;
+                                }
+                            } else {
+                                // Shared mode: notify all active users (company-wide)
+                                $allUsers = $userModel->where('is_active', 1);
+                                foreach ($allUsers as $user) {
+                                    $usersToNotify[] = $user['id'];
+                                }
+                            }
+                            
+                            // Send notifications to all identified users
+                            if (!empty($usersToNotify)) {
+                                foreach ($usersToNotify as $userId) {
+                                    try {
+                                        if ($daysLeft <= 0) {
+                                            $notificationService->notifyDomainExpired(
+                                                $userId,
+                                                $domainName,
+                                                $domain['id']
+                                            );
+                                        } else {
+                                            $notificationService->notifyDomainExpiring(
+                                                $userId,
+                                                $domainName,
+                                                $daysLeft,
+                                                $domain['id']
+                                            );
+                                        }
+                                    } catch (Exception $e) {
+                                        // Silently fail for retry queue to avoid interrupting retry process
                                     }
                                 }
                             }
@@ -470,11 +646,50 @@ $formattedTime = formatElapsedTime($elapsedTime);
 logMessage("\n=== Cron job completed ===");
 logMessage("Domains checked: {$stats['checked']}");
 logMessage("Domains updated: {$stats['updated']}");
-logMessage("Notifications sent: {$stats['notifications_sent']}");
+logMessage("External notifications sent: {$stats['notifications_sent']}");
+logMessage("In-app notifications created: {$stats['in_app_notifications_created']}");
+logMessage("Domains with notifications: {$stats['domains_with_notifications']}");
 logMessage("Errors: {$stats['errors']}");
 logMessage("Domains queued for retry: {$stats['retried']}");
 logMessage("Retries succeeded: {$stats['retry_succeeded']}");
 logMessage("Execution time: $formattedTime");
+
+// Detailed notification statistics
+if ($stats['domains_with_notifications'] > 0) {
+    logMessage("\n--- Notification Details ---");
+    
+    // Group statistics
+    if (!empty($stats['notification_groups_used'])) {
+        logMessage("Notification groups used: " . count($stats['notification_groups_used']));
+        foreach ($stats['notification_groups_used'] as $groupId => $count) {
+            $group = $groupModel->find($groupId);
+            $groupName = $group ? $group['name'] : "Group #$groupId";
+            logMessage("  - $groupName: $count domain(s)");
+        }
+    } else {
+        logMessage("Notification groups used: 0 (domains without groups)");
+    }
+    
+    // Domain breakdown
+    if (count($stats['domains_notified']) <= 10) {
+        // Show all if 10 or fewer
+        logMessage("\nDomains that received notifications:");
+        foreach ($stats['domains_notified'] as $domainInfo) {
+            $groupInfo = $domainInfo['has_group'] ? " (Group #{$domainInfo['group_id']})" : " (No Group)";
+            logMessage("  - {$domainInfo['domain']}: {$domainInfo['days_left']} days left, {$domainInfo['users_notified']} user(s) notified$groupInfo");
+        }
+    } else {
+        // Show summary if more than 10
+        logMessage("\nDomains that received in-app notifications: " . count($stats['domains_notified']));
+        $expiringCount = count(array_filter($stats['domains_notified'], fn($d) => $d['days_left'] > 0));
+        $expiredCount = count($stats['domains_notified']) - $expiringCount;
+        logMessage("  - Expiring soon: $expiringCount domain(s)");
+        if ($expiredCount > 0) {
+            logMessage("  - Expired: $expiredCount domain(s)");
+        }
+    }
+}
+
 logMessage("==========================\n");
 
 exit(0);

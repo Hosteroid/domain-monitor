@@ -153,12 +153,15 @@ class Notification extends Model
      */
     public function createNotification(int $userId, string $type, string $title, string $message, ?int $domainId = null): int
     {
+        // Use PHP's current time (respects timezone setting) instead of database's CURRENT_TIMESTAMP
+        // This ensures timezone consistency between cron job and web interface
         return $this->create([
             'user_id' => $userId,
             'type' => $type,
             'title' => $title,
             'message' => $message,
-            'domain_id' => $domainId
+            'domain_id' => $domainId,
+            'created_at' => date('Y-m-d H:i:s') // Use PHP timezone, not database timezone
         ]);
     }
     
