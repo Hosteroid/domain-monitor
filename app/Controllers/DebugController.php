@@ -229,9 +229,20 @@ class DebugController extends Controller
                                 if (isset($entity['vcardArray'][1])) {
                                     foreach ($entity['vcardArray'][1] as $field) {
                                         if (is_array($field) && count($field) >= 4) {
+                                            // Handle nested arrays by flattening them recursively
+                                            $value = $field[3];
+                                            if (is_array($value)) {
+                                                $flattened = [];
+                                                array_walk_recursive($value, function($item) use (&$flattened) {
+                                                    if (!is_array($item)) {
+                                                        $flattened[] = $item;
+                                                    }
+                                                });
+                                                $value = !empty($flattened) ? implode(', ', $flattened) : json_encode($value);
+                                            }
                                             $parsedData[] = [
                                                 'key' => $field[0],
-                                                'value' => is_array($field[3]) ? implode(', ', $field[3]) : $field[3]
+                                                'value' => $value
                                             ];
                                         }
                                     }

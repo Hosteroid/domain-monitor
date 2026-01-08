@@ -15,51 +15,52 @@ class ErrorLog extends Model
 
     /**
      * Log an error to database
-     * If the same error exists (same file + line + type), increment occurrence count
+     * If the same error exists (same type + file + line + message), increment occurrence count
+     * Otherwise, create a new record with unique error_id
      */
     public function logError(array $errorData): ?int
     {
-        // Generate unique error signature for deduplication
-        $signature = md5($errorData['error_type'] . $errorData['error_file'] . $errorData['error_line']);
-        
-        // Check if this error already exists
+        // Check if this error already exists (same type, file, line, and message)
         $existing = $this->findBySimilar(
             $errorData['error_type'],
             $errorData['error_file'],
-            $errorData['error_line']
+            $errorData['error_line'],
+            $errorData['error_message']
         );
         
         if ($existing) {
-            // Update existing error
+            // Update existing error: increment occurrence and update timestamp
+            // Keep the original error_id (don't use the new one from errorData)
             $this->incrementOccurrence($existing['id']);
             return $existing['id'];
         }
         
-        // Create new error log
+        // Create new error log with the unique error_id
         return $this->create($errorData);
     }
 
     /**
-     * Find similar error (same type, file, line)
+     * Find similar error (same type, file, line, and message)
      */
-    private function findBySimilar(string $type, string $file, int $line): ?array
+    private function findBySimilar(string $type, string $file, int $line, string $message): ?array
     {
         $sql = "SELECT * FROM error_logs 
                 WHERE error_type = ? 
                 AND error_file = ? 
                 AND error_line = ?
+                AND error_message = ?
                 AND is_resolved = FALSE
                 LIMIT 1";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([$type, $file, $line]);
+        $stmt->execute([$type, $file, $line, $message]);
         $result = $stmt->fetch();
         
         return $result ?: null;
     }
 
     /**
-     * Increment occurrence counter
+     * Increment occurrence counter and update last occurrence timestamp
      */
     private function incrementOccurrence(int $id): void
     {
@@ -71,6 +72,7 @@ class ErrorLog extends Model
         $stmt = $this->db->prepare($sql);
         $stmt->execute([$id]);
     }
+
 
     /**
      * Find error by error_id (unique reference)
@@ -256,12 +258,11 @@ class ErrorLog extends Model
                 error_file,
                 error_line,
                 is_resolved,
-                MIN(occurred_at) as occurred_at,
-                MAX(occurred_at) as last_occurred_at,
-                COUNT(*) as occurrences
+                occurred_at,
+                last_occurred_at,
+                occurrences
             FROM error_logs
             $whereClause
-            GROUP BY error_id
             ORDER BY $sortColumn $sortOrder
             LIMIT ? OFFSET ?
         ";
@@ -291,7 +292,7 @@ class ErrorLog extends Model
 
         $whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
 
-        $query = "SELECT COUNT(DISTINCT error_id) as total FROM error_logs $whereClause";
+        $query = "SELECT COUNT(*) as total FROM error_logs $whereClause";
         $stmt = $this->db->prepare($query);
         $stmt->execute($params);
         return (int)$stmt->fetch()['total'];
@@ -299,16 +300,19 @@ class ErrorLog extends Model
 
     /**
      * Get all occurrences of a specific error
+     * Since we deduplicate errors, this returns a single record (or empty if not found)
+     * The occurrences count shows how many times this error happened
      */
     public function getOccurrencesByErrorId(string $errorId): array
     {
         $stmt = $this->db->prepare("
             SELECT * FROM error_logs 
             WHERE error_id = ? 
-            ORDER BY occurred_at DESC
+            LIMIT 1
         ");
         $stmt->execute([$errorId]);
-        return $stmt->fetchAll();
+        $result = $stmt->fetch();
+        return $result ? [$result] : [];
     }
 
     /**
@@ -316,16 +320,16 @@ class ErrorLog extends Model
      */
     public function getAdminStats(): array
     {
-        // Total unique errors
-        $stmt = $this->db->query("SELECT COUNT(DISTINCT error_id) as total FROM error_logs");
+        // Total unique errors (one record per unique error signature)
+        $stmt = $this->db->query("SELECT COUNT(*) as total FROM error_logs");
         $totalErrors = $stmt->fetch()['total'];
 
         // Unresolved errors
-        $stmt = $this->db->query("SELECT COUNT(DISTINCT error_id) as total FROM error_logs WHERE is_resolved = 0");
+        $stmt = $this->db->query("SELECT COUNT(*) as total FROM error_logs WHERE is_resolved = 0");
         $unresolved = $stmt->fetch()['total'];
 
-        // Errors in last 24h
-        $stmt = $this->db->query("SELECT COUNT(DISTINCT error_id) as total FROM error_logs WHERE occurred_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)");
+        // Errors in last 24h (errors that occurred or were last seen in last 24h)
+        $stmt = $this->db->query("SELECT COUNT(*) as total FROM error_logs WHERE last_occurred_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)");
         $last24h = $stmt->fetch()['total'];
 
         // Total occurrences
@@ -342,45 +346,99 @@ class ErrorLog extends Model
 
     /**
      * Mark all occurrences of an error as resolved
+     * Resolves all errors with the same type, file, line, and message as the given error_id
      */
     public function markErrorResolved(string $errorId, int $userId, ?string $notes): bool
     {
+        // First get the error details to find all similar errors
+        $error = $this->findByErrorId($errorId);
+        if (!$error) {
+            return false;
+        }
+        
+        // Mark all errors with the same signature as resolved
         $stmt = $this->db->prepare("
             UPDATE error_logs 
             SET is_resolved = 1, 
                 resolved_at = NOW(), 
                 resolved_by = ?,
                 notes = ?
-            WHERE error_id = ?
+            WHERE error_type = ? 
+            AND error_file = ? 
+            AND error_line = ?
+            AND error_message = ?
         ");
         
-        return $stmt->execute([$userId, $notes, $errorId]);
+        return $stmt->execute([
+            $userId, 
+            $notes, 
+            $error['error_type'],
+            $error['error_file'],
+            $error['error_line'],
+            $error['error_message']
+        ]);
     }
 
     /**
      * Mark all occurrences of an error as unresolved
+     * Unresolves all errors with the same type, file, line, and message as the given error_id
      */
     public function markErrorUnresolved(string $errorId): bool
     {
+        // First get the error details to find all similar errors
+        $error = $this->findByErrorId($errorId);
+        if (!$error) {
+            return false;
+        }
+        
+        // Mark all errors with the same signature as unresolved
         $stmt = $this->db->prepare("
             UPDATE error_logs 
             SET is_resolved = 0, 
                 resolved_at = NULL, 
                 resolved_by = NULL,
                 notes = NULL
-            WHERE error_id = ?
+            WHERE error_type = ? 
+            AND error_file = ? 
+            AND error_line = ?
+            AND error_message = ?
         ");
         
-        return $stmt->execute([$errorId]);
+        return $stmt->execute([
+            $error['error_type'],
+            $error['error_file'],
+            $error['error_line'],
+            $error['error_message']
+        ]);
     }
 
     /**
      * Delete all occurrences of an error
+     * Deletes all errors with the same type, file, line, and message as the given error_id
      */
     public function deleteByErrorId(string $errorId): bool
     {
-        $stmt = $this->db->prepare("DELETE FROM error_logs WHERE error_id = ?");
-        return $stmt->execute([$errorId]);
+        // First get the error details to find all similar errors
+        $error = $this->findByErrorId($errorId);
+        if (!$error) {
+            return false;
+        }
+        
+        // Delete all errors with the same signature
+        $stmt = $this->db->prepare("
+            DELETE FROM error_logs 
+            WHERE error_type = ? 
+            AND error_file = ? 
+            AND error_line = ?
+            AND error_message = ?
+        ");
+        
+        return $stmt->execute([
+            $error['error_type'],
+            $error['error_file'],
+            $error['error_line'],
+            $error['error_message']
+        ]);
     }
 
     /**

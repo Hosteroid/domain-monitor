@@ -72,11 +72,11 @@ $errorTypeShort = substr(strrchr($error['error_type'], '\\'), 1) ?: $error['erro
                     </div>
                     <div class="flex items-center">
                         <i class="fas fa-redo mr-1.5"></i>
-                        <span><?= count($errorOccurrences) ?> occurrence<?= count($errorOccurrences) != 1 ? 's' : '' ?></span>
+                        <span><?= $error['occurrences'] ?? 1 ?> occurrence<?= ($error['occurrences'] ?? 1) != 1 ? 's' : '' ?></span>
                     </div>
                     <div class="flex items-center">
                         <i class="far fa-clock mr-1.5"></i>
-                        <span>Last: <?= date('M d, Y H:i:s', strtotime($error['occurred_at'])) ?></span>
+                        <span>Last: <?= date('M d, Y H:i:s', strtotime($error['last_occurred_at'] ?? $error['occurred_at'])) ?></span>
                     </div>
                 </div>
             </div>
@@ -134,7 +134,7 @@ $errorTypeShort = substr(strrchr($error['error_type'], '\\'), 1) ?: $error['erro
             </button>
             <button onclick="switchTab('occurrences')" id="tab-occurrences" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
                 <i class="fas fa-history mr-2"></i>
-                All Occurrences (<?= count($errorOccurrences) ?>)
+                Occurrence Details (<?= $error['occurrences'] ?? 1 ?>)
             </button>
         </nav>
     </div>
@@ -212,24 +212,47 @@ $errorTypeShort = substr(strrchr($error['error_type'], '\\'), 1) ?: $error['erro
 
         <!-- Occurrences Tab -->
         <div id="content-occurrences" class="tab-content hidden">
-            <div class="space-y-2">
-                <?php foreach ($errorOccurrences as $occurrence): ?>
-                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-sm font-semibold text-gray-900"><?= date('M d, Y H:i:s', strtotime($occurrence['occurred_at'])) ?></p>
-                                <p class="text-xs text-gray-500 mt-1">
-                                    <?= htmlspecialchars($occurrence['request_method']) ?> 
-                                    <?= htmlspecialchars($occurrence['request_uri']) ?> 
-                                    from <?= htmlspecialchars($occurrence['ip_address']) ?>
-                                </p>
-                            </div>
-                            <div class="text-xs text-gray-500">
-                                ID: <span class="font-mono"><?= $occurrence['id'] ?></span>
-                            </div>
+            <div class="space-y-4">
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <div class="flex items-start">
+                        <i class="fas fa-info-circle text-blue-600 mt-0.5 mr-3"></i>
+                        <div>
+                            <p class="text-sm font-semibold text-blue-900 mb-1">Error Occurrence Tracking</p>
+                            <p class="text-sm text-blue-800">
+                                This error has occurred <strong><?= $error['occurrences'] ?? 1 ?> time<?= ($error['occurrences'] ?? 1) != 1 ? 's' : '' ?></strong>.
+                                Similar errors are automatically grouped together and the occurrence count is incremented.
+                            </p>
                         </div>
                     </div>
-                <?php endforeach; ?>
+                </div>
+                
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h3 class="text-sm font-semibold text-gray-900 mb-3">Occurrence Information</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">First Occurred</p>
+                            <p class="text-sm text-gray-900"><?= date('M d, Y H:i:s', strtotime($error['occurred_at'])) ?></p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Last Occurred</p>
+                            <p class="text-sm text-gray-900"><?= date('M d, Y H:i:s', strtotime($error['last_occurred_at'] ?? $error['occurred_at'])) ?></p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total Occurrences</p>
+                            <p class="text-sm text-gray-900"><?= $error['occurrences'] ?? 1 ?></p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Request Details</p>
+                            <p class="text-xs text-gray-600">
+                                <?= htmlspecialchars($error['request_method']) ?> 
+                                <?= htmlspecialchars($error['request_uri']) ?>
+                            </p>
+                            <p class="text-xs text-gray-600 mt-1">
+                                IP: <?= htmlspecialchars($error['ip_address']) ?>
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -249,7 +272,7 @@ $errorTypeShort = substr(strrchr($error['error_type'], '\\'), 1) ?: $error['erro
         </div>
         <div>
             <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">First Occurred</p>
-            <p class="text-sm text-gray-900"><?= date('M d, Y H:i:s', strtotime($errorOccurrences[count($errorOccurrences)-1]['occurred_at'])) ?></p>
+            <p class="text-sm text-gray-900"><?= date('M d, Y H:i:s', strtotime($error['occurred_at'])) ?></p>
         </div>
     </div>
 </div>
