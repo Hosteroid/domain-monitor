@@ -56,6 +56,22 @@ class Router
 
         if ($callback === null) {
             http_response_code(404);
+            
+            // Log 404 errors for debugging
+            try {
+                $logger = new \App\Services\Logger('router');
+                $logger->warning('404 Not Found', [
+                    'path' => $path,
+                    'method' => $method,
+                    'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
+                    'referer' => $_SERVER['HTTP_REFERER'] ?? null,
+                    'user_id' => $_SESSION['user_id'] ?? null
+                ]);
+            } catch (\Exception $e) {
+                // Silently fail if logging is not available
+            }
+            
             require_once __DIR__ . '/../app/Views/errors/404.php';
             return;
         }
