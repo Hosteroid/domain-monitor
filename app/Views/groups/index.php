@@ -122,7 +122,8 @@ ob_start();
                                     <?php endif; ?>
                                     <form method="POST" action="/groups/<?= $group['id'] ?>/delete" class="inline" onsubmit="return confirm('Are you sure? Domains will be unassigned from this group.')">
                                         <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
-                                        <button type="submit" class="text-red-600 hover:text-red-800" title="Delete">
+                                        <button type="submit" class="text-red-600 hover:text-red-800" title="Delete"
+                                                aria-label="Delete group <?= htmlspecialchars($group['name']) ?>">
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </form>
