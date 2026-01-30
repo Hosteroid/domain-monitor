@@ -60,3 +60,4 @@ yarn.lock
 # Build artifacts
 dist/
 build/
+.agent

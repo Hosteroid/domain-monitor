@@ -120,12 +120,12 @@ ob_start();
                                             <i class="fas fa-exchange-alt"></i>
                                         </button>
                                     <?php endif; ?>
-                                    <a href="/groups/<?= $group['id'] ?>/delete" 
-                                       class="text-red-600 hover:text-red-800" 
-                                       title="Delete"
-                                       onclick="return confirm('Are you sure? Domains will be unassigned from this group.')">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
+                                    <form method="POST" action="/groups/<?= $group['id'] ?>/delete" class="inline" onsubmit="return confirm('Are you sure? Domains will be unassigned from this group.')">
+                                        <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                                        <button type="submit" class="text-red-600 hover:text-red-800" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
@@ -165,11 +165,12 @@ ob_start();
                         <a href="/groups/<?= $group['id'] ?>/edit" class="flex-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded text-center text-sm hover:bg-blue-100 transition-colors">
                             <i class="fas fa-cog mr-1"></i> Manage
                         </a>
-                        <a href="/groups/<?= $group['id'] ?>/delete" 
-                           class="flex-1 px-3 py-1.5 bg-red-50 text-red-600 rounded text-center text-sm hover:bg-red-100 transition-colors"
-                           onclick="return confirm('Are you sure? Domains will be unassigned from this group.')">
-                            <i class="fas fa-trash mr-1"></i> Delete
-                        </a>
+                        <form method="POST" action="/groups/<?= $group['id'] ?>/delete" class="flex-1" onsubmit="return confirm('Are you sure? Domains will be unassigned from this group.')">
+                            <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+                            <button type="submit" class="w-full px-3 py-1.5 bg-red-50 text-red-600 rounded text-center text-sm hover:bg-red-100 transition-colors">
+                                <i class="fas fa-trash mr-1"></i> Delete
+                            </button>
+                        </form>
                     </div>
                 </div>
             <?php endforeach; ?>
