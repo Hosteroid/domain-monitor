@@ -110,6 +110,15 @@ class NotificationController extends Controller
      */
     public function delete($params = [])
     {
+        // Ensure POST method
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/notifications');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/notifications');
+
         $userId = Auth::id();
         $notificationId = (int)($params['id'] ?? 0);
         
@@ -129,6 +138,15 @@ class NotificationController extends Controller
      */
     public function clearAll()
     {
+        // Ensure POST method
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/notifications');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/notifications');
+
         $userId = Auth::id();
         $this->notificationModel->clearAll($userId);
         $_SESSION['success'] = 'All notifications cleared';

@@ -93,7 +93,22 @@ if (!isset($appName)) {
             transition: transform 0.3s ease-in-out;
         }
         
-        @media (max-width: 768px) {
+        /* Mobile sidebar overlay */
+        .sidebar-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 25;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+        .sidebar-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        @media (max-width: 767px) {
             .sidebar {
                 transform: translateX(-100%);
             }
@@ -120,11 +135,26 @@ if (!isset($appName)) {
             background: #374151;
             border-left: 4px solid #4A90E2;
         }
+        
+        /* Mobile-friendly dropdown widths */
+        @media (max-width: 480px) {
+            #notificationsDropdown {
+                width: calc(100vw - 2rem);
+                right: -0.5rem;
+            }
+            #userDropdown {
+                width: calc(100vw - 2rem);
+                right: -0.5rem;
+            }
+        }
     </style>
 </head>
 <body class="bg-gray-50">
     
     <?php include __DIR__ . '/top-nav.php'; ?>
+    
+    <!-- Mobile Sidebar Overlay -->
+    <div id="sidebarOverlay" class="sidebar-overlay md:hidden" onclick="closeSidebar()"></div>
     
     <?php include __DIR__ . '/sidebar.php'; ?>
     
@@ -145,8 +175,70 @@ if (!isset($appName)) {
     <script>
         // Toggle sidebar on mobile
         function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('open');
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.toggle('open');
+            overlay.classList.toggle('show');
+            // Prevent body scroll when sidebar is open
+            document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
         }
+        
+        // Close sidebar (for overlay click and link clicks)
+        function closeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            sidebar.classList.remove('open');
+            overlay.classList.remove('show');
+            document.body.style.overflow = '';
+        }
+        
+        // Close sidebar when clicking a link (mobile only)
+        document.addEventListener('DOMContentLoaded', function() {
+            const sidebarLinks = document.querySelectorAll('#sidebar a');
+            sidebarLinks.forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth < 768) {
+                        closeSidebar();
+                    }
+                });
+            });
+            
+            // Handle swipe to close sidebar on mobile
+            let touchStartX = 0;
+            let touchEndX = 0;
+            const sidebar = document.getElementById('sidebar');
+            
+            sidebar.addEventListener('touchstart', function(e) {
+                touchStartX = e.changedTouches[0].screenX;
+            }, { passive: true });
+            
+            sidebar.addEventListener('touchend', function(e) {
+                touchEndX = e.changedTouches[0].screenX;
+                handleSwipe();
+            }, { passive: true });
+            
+            function handleSwipe() {
+                const swipeThreshold = 50;
+                if (touchStartX - touchEndX > swipeThreshold) {
+                    // Swiped left - close sidebar
+                    closeSidebar();
+                }
+            }
+            
+            // Responsive search placeholder
+            const searchInput = document.getElementById('globalSearchInput');
+            if (searchInput) {
+                function updateSearchPlaceholder() {
+                    if (window.innerWidth < 640) {
+                        searchInput.placeholder = 'Search...';
+                    } else {
+                        searchInput.placeholder = 'Search domains or lookup WHOIS...';
+                    }
+                }
+                updateSearchPlaceholder();
+                window.addEventListener('resize', updateSearchPlaceholder);
+            }
+        });
 
         // Toggle user dropdown
         function toggleDropdown() {

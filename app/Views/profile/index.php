@@ -644,10 +644,13 @@ $avatar = \App\Helpers\AvatarHelper::getAvatar($user, 80);
                                     This action cannot be undone
                                 </p>
                             </div>
-                            <button onclick="confirmDelete()" class="ml-4 inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium whitespace-nowrap">
-                                <i class="fas fa-trash-alt mr-2"></i>
-                                Delete Account
-                            </button>
+                            <form id="deleteAccountForm" method="POST" action="/profile/delete" class="inline">
+                                <?= csrf_field() ?>
+                                <button type="button" onclick="confirmDelete()" class="ml-4 inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium whitespace-nowrap">
+                                    <i class="fas fa-trash-alt mr-2"></i>
+                                    Delete Account
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -734,7 +737,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function confirmDelete() {
     if (confirm('Are you absolutely sure you want to delete your account?\n\nThis action is PERMANENT and cannot be undone!')) {
         if (confirm('FINAL WARNING: This will permanently delete all your data.\n\nClick OK to proceed.')) {
-            window.location.href = '/profile/delete';
+            document.getElementById('deleteAccountForm').submit();
         }
     }
 }

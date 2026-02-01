@@ -135,7 +135,7 @@ $router->post('/settings/toggle-isolation', [SettingsController::class, 'toggleI
 $router->get('/profile', [ProfileController::class, 'index']);
 $router->post('/profile/update', [ProfileController::class, 'update']);
 $router->post('/profile/change-password', [ProfileController::class, 'changePassword']);
-$router->get('/profile/delete', [ProfileController::class, 'delete']);
+$router->post('/profile/delete', [ProfileController::class, 'delete']);
 $router->get('/profile/resend-verification', [ProfileController::class, 'resendVerification']);
 $router->post('/profile/logout-other-sessions', [ProfileController::class, 'logoutOtherSessions']);
 $router->post('/profile/logout-session/{sessionId}', [ProfileController::class, 'logoutSession']);
@@ -154,8 +154,8 @@ $router->post('/2fa/regenerate-backup-codes', [TwoFactorController::class, 'rege
 $router->get('/notifications', [NotificationController::class, 'index']);
 $router->get('/notifications/{id}/mark-read', [NotificationController::class, 'markAsRead']);
 $router->get('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
-$router->get('/notifications/{id}/delete', [NotificationController::class, 'delete']);
-$router->get('/notifications/clear-all', [NotificationController::class, 'clearAll']);
+$router->post('/notifications/{id}/delete', [NotificationController::class, 'delete']);
+$router->post('/notifications/clear-all', [NotificationController::class, 'clearAll']);
 $router->get('/api/notifications/unread-count', [NotificationController::class, 'getUnreadCount']);
 $router->get('/api/notifications/recent', [NotificationController::class, 'getRecent']);
 

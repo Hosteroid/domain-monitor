@@ -24,15 +24,15 @@
             </div>
 
             <!-- Center: Search Bar -->
-            <div class="flex-1 max-w-2xl mx-8">
-                <form action="/search" method="GET" class="relative hidden md:block" id="globalSearchForm">
+            <div class="flex-1 max-w-2xl mx-2 sm:mx-4 lg:mx-8">
+                <form action="/search" method="GET" class="relative" id="globalSearchForm">
                     <input type="text" 
                            name="q"
-                           placeholder="Search domains or lookup WHOIS..." 
-                           class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
+                           placeholder="Search..." 
+                           class="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm"
                            id="globalSearchInput"
                            autocomplete="off">
-                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
                     
                     <!-- Search Results Dropdown -->
                     <div id="searchDropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-white rounded-lg shadow-xl border border-gray-200 max-h-96 overflow-y-auto z-50">
@@ -49,7 +49,7 @@
             </div>
 
             <!-- Right: Actions & User -->
-            <div class="flex items-center space-x-2">
+            <div class="flex items-center space-x-1 sm:space-x-2">
                 <!-- Quick Add Domain -->
                 <a href="/domains/create" title="Add Domain" class="flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-150">
                     <i class="fas fa-plus"></i>
@@ -68,7 +68,7 @@
                     </button>
                     
                     <!-- Notifications Dropdown -->
-                    <div id="notificationsDropdown" class="dropdown-menu absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 max-h-[32rem] overflow-hidden">
+                    <div id="notificationsDropdown" class="dropdown-menu absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl border border-gray-200 max-h-[32rem] overflow-hidden">
                         <!-- Header -->
                         <div class="px-4 py-3 border-b border-gray-200 bg-gray-50">
                             <div class="flex items-center justify-between">

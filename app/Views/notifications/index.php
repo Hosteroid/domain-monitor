@@ -162,9 +162,12 @@ $offset = $pagination['showing_from'] - 1;
                                     <i class="fas fa-check text-xs"></i>
                                 </a>
                             <?php endif; ?>
-                            <a href="/notifications/<?= $notification['id'] ?>/delete" onclick="return confirm('Delete this notification?')" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete">
-                                <i class="fas fa-times text-xs"></i>
-                            </a>
+                            <form method="POST" action="/notifications/<?= $notification['id'] ?>/delete" class="inline" onsubmit="return confirm('Delete this notification?')">
+                                <?= csrf_field() ?>
+                                <button type="submit" class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete">
+                                    <i class="fas fa-times text-xs"></i>
+                                </button>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -266,6 +269,11 @@ $offset = $pagination['showing_from'] - 1;
 </div>
 <?php endif; ?>
 
+<!-- Hidden form for clear all -->
+<form id="clearAllForm" method="POST" action="/notifications/clear-all" class="hidden">
+    <?= csrf_field() ?>
+</form>
+
 <script>
 function markAllAsRead() {
     if (confirm('Mark all notifications as read?')) {
@@ -275,7 +283,7 @@ function markAllAsRead() {
 
 function clearAll() {
     if (confirm('Clear all notifications? This action cannot be undone.')) {
-        window.location.href = '/notifications/clear-all';
+        document.getElementById('clearAllForm').submit();
     }
 }
 </script>

@@ -232,6 +232,15 @@ class ProfileController extends Controller
      */
     public function delete()
     {
+        // Ensure POST method
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/profile');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/profile');
+
         $userId = Auth::id();
         $user = $this->userModel->find($userId);
 
@@ -243,14 +252,14 @@ class ProfileController extends Controller
         }
 
         // Delete user (cascade will handle related records)
-            $this->userModel->delete($userId);
+        $this->userModel->delete($userId);
 
         // Logout
-            session_destroy();
-            session_start();
+        session_destroy();
+        session_start();
 
         $_SESSION['success'] = 'Your account has been deleted';
-            $this->redirect('/login');
+        $this->redirect('/login');
     }
 
     /**

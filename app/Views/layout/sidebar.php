@@ -3,13 +3,17 @@
     <div class="h-full overflow-y-auto flex flex-col">
         
         <!-- Logo Section -->
-        <div class="h-16 px-5 border-b border-gray-800 flex items-center">
-            <div class="flex items-center">
-                <div class="w-9 h-9 bg-primary rounded-lg flex items-center justify-center mr-3">
+        <div class="h-16 px-4 sm:px-5 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
+            <div class="flex items-center min-w-0">
+                <div class="w-9 h-9 bg-primary rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
                     <i class="fas fa-globe text-white text-sm"></i>
                 </div>
-                <h1 class="text-sm font-semibold text-white"><?= $appName ?? 'Domain Monitor' ?></h1>
+                <h1 class="text-sm font-semibold text-white truncate"><?= $appName ?? 'Domain Monitor' ?></h1>
             </div>
+            <!-- Close button for mobile -->
+            <button onclick="closeSidebar()" class="md:hidden w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors flex-shrink-0 ml-2">
+                <i class="fas fa-times text-lg"></i>
+            </button>
         </div>
         
         <!-- Navigation Links -->
