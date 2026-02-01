@@ -108,6 +108,14 @@ ob_start();
                                     echo "Chat: " . htmlspecialchars($config['chat_id'] ?? 'N/A');
                                 } elseif ($channel['channel_type'] === 'pushover') {
                                     echo "User: " . substr(htmlspecialchars($config['user_key'] ?? 'N/A'), 0, 10) . "...";
+                                } elseif ($channel['channel_type'] === 'webhook') {
+                                    $formatLabels = [
+                                        'generic' => 'Generic',
+                                        'google_chat' => 'Google Chat',
+                                        'simple_text' => 'Simple Text'
+                                    ];
+                                    $format = $config['format'] ?? 'generic';
+                                    echo "Format: " . ($formatLabels[$format] ?? ucfirst($format));
                                 } else {
                                     echo "Webhook configured";
                                 }
@@ -357,8 +365,24 @@ ob_start();
                     <!-- Generic Webhook Fields -->
                     <div id="webhook_fields" class="hidden space-y-4">
                         <div>
+                            <label for="webhook_format" class="block text-sm font-medium text-gray-700 mb-1.5">
+                                Webhook Format
+                            </label>
+                            <select id="webhook_format" 
+                                    name="webhook_format" 
+                                    class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm"
+                                    onchange="updateWebhookPlaceholder()">
+                                <option value="generic">Generic (n8n/Zapier/Make)</option>
+                                <option value="google_chat">Google Chat</option>
+                                <option value="simple_text">Simple Text ({"text":"..."})</option>
+                            </select>
+                            <p id="webhook_format_help" class="mt-1.5 text-xs text-gray-500">
+                                Choose the payload format for your webhook endpoint.
+                            </p>
+                        </div>
+                        <div>
                             <label for="generic_webhook_url" class="block text-sm font-medium text-gray-700 mb-1.5">
-                                Webhook URL
+                                Webhook URL <span class="text-red-500">*</span>
                             </label>
                             <input type="text" 
                                    id="generic_webhook_url" 
@@ -366,9 +390,25 @@ ob_start();
                                    class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm font-mono" 
                                    placeholder="https://example.com/webhook-endpoint"
                                    autocomplete="off">
-                            <p class="mt-1.5 text-xs text-gray-500">
+                            <p id="webhook_url_help" class="mt-1.5 text-xs text-gray-500">
                                 Will receive JSON payload compatible with n8n/Zapier/Make.
                             </p>
+                        </div>
+                        
+                        <!-- Google Chat specific help -->
+                        <div id="google_chat_help" class="hidden bg-green-50 border border-green-200 rounded-lg p-4">
+                            <h4 class="text-sm font-medium text-green-800 flex items-center mb-2">
+                                <i class="fas fa-info-circle mr-2"></i>
+                                Google Chat Setup Instructions
+                            </h4>
+                            <ol class="text-xs text-green-700 space-y-1 list-decimal list-inside">
+                                <li>Open your Google Chat space</li>
+                                <li>Click the space name → <strong>Apps & integrations</strong></li>
+                                <li>Click <strong>+ Add webhooks</strong></li>
+                                <li>Enter a name (e.g., "Domain Monitor") and optionally add an avatar</li>
+                                <li>Click <strong>Save</strong> and copy the webhook URL</li>
+                                <li>Paste the URL above (starts with <code>https://chat.googleapis.com/v1/spaces/...</code>)</li>
+                            </ol>
                         </div>
                     </div>
 
@@ -741,6 +781,9 @@ function testChannel(channelType, existingConfig = null) {
                 break;
             case 'webhook':
                 formData.append('webhook_url', existingConfig.webhook_url);
+                if (existingConfig.format) {
+                    formData.append('webhook_format', existingConfig.format);
+                }
                 break;
             case 'pushover':
                 formData.append('pushover_api_token', existingConfig.api_token);
@@ -774,6 +817,10 @@ function testChannel(channelType, existingConfig = null) {
                 break;
             case 'webhook':
                 formData.append('webhook_url', document.getElementById('generic_webhook_url').value);
+                const webhookFormat = document.getElementById('webhook_format');
+                if (webhookFormat && webhookFormat.value) {
+                    formData.append('webhook_format', webhookFormat.value);
+                }
                 break;
             case 'pushover':
                 formData.append('pushover_api_token', document.getElementById('pushover_api_token').value);
@@ -893,6 +940,37 @@ function showToast(message, type = 'info') {
             toast.remove();
         }, 300);
     }, 5000);
+}
+
+// Update webhook placeholder and help text based on selected format
+function updateWebhookPlaceholder() {
+    const format = document.getElementById('webhook_format').value;
+    const urlInput = document.getElementById('generic_webhook_url');
+    const urlHelp = document.getElementById('webhook_url_help');
+    const formatHelp = document.getElementById('webhook_format_help');
+    const googleChatHelp = document.getElementById('google_chat_help');
+    
+    // Update placeholder and help based on format
+    switch(format) {
+        case 'google_chat':
+            urlInput.placeholder = 'https://chat.googleapis.com/v1/spaces/XXXXX/messages?key=...';
+            urlHelp.innerHTML = '<i class="fas fa-info-circle text-green-500 mr-1"></i>Paste your Google Chat webhook URL from space settings.';
+            formatHelp.textContent = 'Sends messages in Google Chat format with rich cards for domain alerts.';
+            googleChatHelp.classList.remove('hidden');
+            break;
+        case 'simple_text':
+            urlInput.placeholder = 'https://example.com/webhook-endpoint';
+            urlHelp.innerHTML = 'Sends simple JSON payload: <code class="bg-gray-100 px-1 rounded">{"text":"message"}</code>';
+            formatHelp.textContent = 'Compatible with services expecting simple text payloads.';
+            googleChatHelp.classList.add('hidden');
+            break;
+        default: // generic
+            urlInput.placeholder = 'https://example.com/webhook-endpoint';
+            urlHelp.textContent = 'Will receive JSON payload compatible with n8n/Zapier/Make.';
+            formatHelp.textContent = 'Sends structured JSON with event type, message, data, and timestamp.';
+            googleChatHelp.classList.add('hidden');
+            break;
+    }
 }
 </script>
 

@@ -591,7 +591,26 @@ class NotificationGroupController extends Controller
                 if (!str_starts_with($webhookUrl, 'https://') && !str_starts_with($webhookUrl, 'http://')) {
                     return null;
                 }
-                return ['webhook_url' => $webhookUrl];
+                
+                $config = ['webhook_url' => $webhookUrl];
+                
+                // Add format option (generic, google_chat, simple_text)
+                $format = trim($data['webhook_format'] ?? 'generic');
+                $validFormats = ['generic', 'google_chat', 'simple_text'];
+                if (in_array($format, $validFormats)) {
+                    $config['format'] = $format;
+                }
+                
+                // Validate Google Chat webhook URL format if that format is selected
+                if ($format === 'google_chat' && !str_contains($webhookUrl, 'chat.googleapis.com')) {
+                    // Allow it but log a warning - user might have a proxy
+                    $logger = new \App\Services\Logger();
+                    $logger->warning('Google Chat format selected but URL does not appear to be a Google Chat webhook', [
+                        'url' => $webhookUrl
+                    ]);
+                }
+                
+                return $config;
 
             default:
                 return null;
