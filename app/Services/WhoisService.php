@@ -1041,6 +1041,27 @@ class WhoisService
         $dateString = preg_replace('/^(before|after):/i', '', $dateString);
         $dateString = trim($dateString);
 
+        // Handle DD/MM/YYYY format (European format used by many WHOIS servers like .pt, .es, .fr, etc.)
+        // Pattern: DD/MM/YYYY or DD/MM/YYYY HH:MM:SS
+        if (preg_match('#^(\d{1,2})/(\d{1,2})/(\d{4})(.*)$#', $dateString, $matches)) {
+            $day = (int)$matches[1];
+            $month = (int)$matches[2];
+            $year = (int)$matches[3];
+            $timePart = trim($matches[4]);
+            
+            // If day > 12, it's definitely DD/MM/YYYY format
+            // If month > 12, it's definitely MM/DD/YYYY format (invalid day, so swap)
+            // If both <= 12, assume DD/MM/YYYY (European format) as it's more common globally for WHOIS
+            if ($day > 12 || ($day <= 12 && $month <= 12)) {
+                // Treat as DD/MM/YYYY - convert to YYYY-MM-DD format
+                $dateString = sprintf('%04d-%02d-%02d', $year, $month, $day);
+                if (!empty($timePart)) {
+                    $dateString .= ' ' . $timePart;
+                }
+            }
+            // If month > 12, strtotime will fail or we let it try MM/DD/YYYY naturally
+        }
+
         // Try to parse the date
         $timestamp = strtotime($dateString);
 
