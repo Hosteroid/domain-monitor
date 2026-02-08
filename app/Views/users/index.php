@@ -230,7 +230,18 @@ $pagination = $pagination ?? [
                             </div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm text-gray-900"><?= htmlspecialchars($user['username']) ?></div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm text-gray-900"><?= htmlspecialchars($user['username']) ?></span>
+                                <?php if (!empty($user['two_factor_enabled'])): ?>
+                                    <span class="inline-flex items-center px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-semibold border border-green-200" title="Two-factor authentication enabled">
+                                        <i class="fas fa-shield-alt mr-0.5"></i>2FA
+                                    </span>
+                                <?php else: ?>
+                                    <span class="inline-flex items-center px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded text-[10px] font-medium border border-gray-200" title="Two-factor authentication not enabled">
+                                        <i class="fas fa-shield-alt mr-0.5"></i>No 2FA
+                                    </span>
+                                <?php endif; ?>
+                            </div>
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                             <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border 

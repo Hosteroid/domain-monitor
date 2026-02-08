@@ -432,16 +432,39 @@ function copyToClipboard(text) {
 }
 
 function showCopySuccess() {
-    const message = document.createElement('div');
-    message.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 flex items-center';
-    message.innerHTML = '<i class="fas fa-check mr-2"></i>Copied to clipboard!';
-    document.body.appendChild(message);
-    
+    // Use the existing toast container from messages.php
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'fixed bottom-4 right-4 z-[9999] space-y-3 max-w-sm';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast bg-white border-l-4 border-green-500 rounded-lg shadow-lg p-4 flex items-start animate-slide-in';
+    toast.innerHTML = `
+        <div class="flex-shrink-0">
+            <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-check text-green-600 text-sm"></i>
+            </div>
+        </div>
+        <div class="ml-3 flex-1">
+            <p class="text-sm font-medium text-gray-900">Success</p>
+            <p class="text-sm text-gray-600 mt-0.5">Copied to clipboard!</p>
+        </div>
+        <button onclick="this.parentElement.remove()" class="ml-3 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors">
+            <i class="fas fa-times text-sm"></i>
+        </button>
+    `;
+    container.appendChild(toast);
+
     setTimeout(() => {
-        message.style.opacity = '0';
-        message.style.transition = 'opacity 0.3s';
-        setTimeout(() => message.remove(), 300);
-    }, 2000);
+        toast.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 let currentErrorId = null;

@@ -372,6 +372,93 @@ foreach ($notificationPresets as $key => $preset) {
 
             <div class="border-t border-gray-200 my-6"></div>
 
+            <!-- Status Change Notifications -->
+            <div class="mb-6">
+                <h4 class="text-base font-semibold text-gray-900 mb-2 flex items-center">
+                    <i class="fas fa-exchange-alt text-primary mr-2"></i>
+                    Status Change Notifications
+                </h4>
+                <p class="text-sm text-gray-600 mb-4">Choose which domain status changes should trigger notifications (both in-app and external channels).</p>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <!-- Available -->
+                    <label class="flex items-start p-3 bg-blue-50 border border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors">
+                        <input type="checkbox" name="notification_status_triggers[]" value="available"
+                               <?= in_array('available', $statusTriggers) ? 'checked' : '' ?>
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mt-0.5">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-blue-800">
+                                <i class="fas fa-check-circle mr-1"></i> Available
+                            </span>
+                            <p class="text-xs text-blue-600 mt-0.5">Domain becomes available for registration</p>
+                        </div>
+                    </label>
+
+                    <!-- Registered -->
+                    <label class="flex items-start p-3 bg-green-50 border border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-colors">
+                        <input type="checkbox" name="notification_status_triggers[]" value="registered"
+                               <?= in_array('registered', $statusTriggers) ? 'checked' : '' ?>
+                               class="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500 mt-0.5">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-green-800">
+                                <i class="fas fa-globe mr-1"></i> Registered
+                            </span>
+                            <p class="text-xs text-green-600 mt-0.5">Domain becomes registered / active</p>
+                        </div>
+                    </label>
+
+                    <!-- Expired -->
+                    <label class="flex items-start p-3 bg-red-50 border border-red-200 rounded-lg cursor-pointer hover:bg-red-100 transition-colors">
+                        <input type="checkbox" name="notification_status_triggers[]" value="expired"
+                               <?= in_array('expired', $statusTriggers) ? 'checked' : '' ?>
+                               class="w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 mt-0.5">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-red-800">
+                                <i class="fas fa-times-circle mr-1"></i> Expired
+                            </span>
+                            <p class="text-xs text-red-600 mt-0.5">Domain status changes to expired</p>
+                        </div>
+                    </label>
+
+                    <!-- Redemption Period -->
+                    <label class="flex items-start p-3 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors">
+                        <input type="checkbox" name="notification_status_triggers[]" value="redemption_period"
+                               <?= in_array('redemption_period', $statusTriggers) ? 'checked' : '' ?>
+                               class="w-4 h-4 text-amber-600 border-gray-300 rounded focus:ring-amber-500 mt-0.5">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-amber-800">
+                                <i class="fas fa-hourglass-half mr-1"></i> Redemption Period
+                            </span>
+                            <p class="text-xs text-amber-600 mt-0.5">Domain enters redemption period (recovery fees apply)</p>
+                        </div>
+                    </label>
+
+                    <!-- Pending Delete -->
+                    <label class="flex items-start p-3 bg-rose-50 border border-rose-200 rounded-lg cursor-pointer hover:bg-rose-100 transition-colors">
+                        <input type="checkbox" name="notification_status_triggers[]" value="pending_delete"
+                               <?= in_array('pending_delete', $statusTriggers) ? 'checked' : '' ?>
+                               class="w-4 h-4 text-rose-600 border-gray-300 rounded focus:ring-rose-500 mt-0.5">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-rose-800">
+                                <i class="fas fa-trash-alt mr-1"></i> Pending Delete
+                            </span>
+                            <p class="text-xs text-rose-600 mt-0.5">Domain is scheduled for deletion</p>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-3">
+                    <p class="text-xs text-gray-600">
+                        <i class="fas fa-info-circle text-gray-400 mr-1"></i>
+                        <strong>Note:</strong> These notifications are triggered when a domain's status changes during a WHOIS check. 
+                        Redemption Period and Pending Delete detection depends on the TLD registry reporting EPP statuses. 
+                        Most gTLDs (.com, .net, .org) support this, but some ccTLDs may not.
+                    </p>
+                </div>
+            </div>
+
+            <div class="border-t border-gray-200 my-6"></div>
+
             <!-- Check Interval -->
             <div class="mb-6">
                 <h4 class="text-base font-semibold text-gray-900 mb-4 flex items-center">

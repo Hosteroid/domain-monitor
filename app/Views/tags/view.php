@@ -72,7 +72,10 @@ $currentFilters = $filters ?? ['search' => '', 'status' => '', 'registrar' => ''
                     <option value="">All Statuses</option>
                     <option value="active" <?= $currentFilters['status'] === 'active' ? 'selected' : '' ?>>Active</option>
                     <option value="expiring_soon" <?= $currentFilters['status'] === 'expiring_soon' ? 'selected' : '' ?>>Expiring Soon</option>
+                    <option value="expired" <?= $currentFilters['status'] === 'expired' ? 'selected' : '' ?>>Expired</option>
                     <option value="available" <?= $currentFilters['status'] === 'available' ? 'selected' : '' ?>>Available</option>
+                    <option value="redemption_period" <?= $currentFilters['status'] === 'redemption_period' ? 'selected' : '' ?>>Redemption Period</option>
+                    <option value="pending_delete" <?= $currentFilters['status'] === 'pending_delete' ? 'selected' : '' ?>>Pending Delete</option>
                     <option value="error" <?= $currentFilters['status'] === 'error' ? 'selected' : '' ?>>Error</option>
                     <option value="inactive" <?= $currentFilters['status'] === 'inactive' ? 'selected' : '' ?>>Inactive</option>
                 </select>

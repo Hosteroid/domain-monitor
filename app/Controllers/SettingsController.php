@@ -66,6 +66,9 @@ class SettingsController extends Controller
             ['label' => 'Weekly (168 hours)', 'value' => 168]
         ];
 
+        // Status notification triggers
+        $statusTriggers = $this->settingModel->getNotificationStatusTriggers();
+
         $this->view('settings/index', [
             'settings' => $settings,
             'appSettings' => $appSettings,
@@ -75,6 +78,7 @@ class SettingsController extends Controller
             'isolationSettings' => $isolationSettings,
             'notificationPresets' => $notificationPresets,
             'checkIntervalPresets' => $checkIntervalPresets,
+            'statusTriggers' => $statusTriggers,
             'title' => 'Settings'
         ]);
     }
@@ -132,9 +136,16 @@ class SettingsController extends Controller
                 return;
             }
 
+            // Update status notification triggers
+            $statusTriggers = $_POST['notification_status_triggers'] ?? [];
+            if (!is_array($statusTriggers)) {
+                $statusTriggers = [];
+            }
+            
             // Save settings
             $this->settingModel->setValue('notification_days_before', $notificationDays);
             $this->settingModel->setValue('check_interval_hours', $checkInterval);
+            $this->settingModel->updateNotificationStatusTriggers($statusTriggers);
 
             $_SESSION['success'] = 'Settings updated successfully';
             $this->redirect('/settings#monitoring');

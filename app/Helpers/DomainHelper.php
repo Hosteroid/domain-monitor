@@ -145,6 +145,16 @@ class DomainHelper
                 'text' => 'Expired',
                 'icon' => 'fa-times-circle'
             ],
+            'redemption_period' => [
+                'class' => 'bg-amber-100 text-amber-700 border-amber-200',
+                'text' => 'Redemption Period',
+                'icon' => 'fa-hourglass-half'
+            ],
+            'pending_delete' => [
+                'class' => 'bg-rose-100 text-rose-700 border-rose-200',
+                'text' => 'Pending Delete',
+                'icon' => 'fa-trash-alt'
+            ],
             'error' => [
                 'class' => 'bg-gray-100 text-gray-700 border-gray-200',
                 'text' => 'Error',

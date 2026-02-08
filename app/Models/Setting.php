@@ -122,7 +122,7 @@ class Setting extends Model
      */
     public function getAppVersion(): string
     {
-        return $this->getValue('app_version', '1.1.1');
+        return $this->getValue('app_version', '1.1.2');
     }
 
     /**
@@ -299,6 +299,27 @@ class Setting extends Model
         }
         
         return $result;
+    }
+
+    /**
+     * Get notification status triggers as array
+     * Returns which domain status changes should trigger notifications
+     */
+    public function getNotificationStatusTriggers(): array
+    {
+        $value = $this->getValue('notification_status_triggers', 'available,registered,expired,redemption_period,pending_delete');
+        return array_map('trim', explode(',', $value));
+    }
+
+    /**
+     * Update notification status triggers
+     */
+    public function updateNotificationStatusTriggers(array $triggers): bool
+    {
+        $validTriggers = ['available', 'registered', 'expired', 'redemption_period', 'pending_delete'];
+        $triggers = array_intersect($triggers, $validTriggers);
+        $value = implode(',', $triggers);
+        return $this->setValue('notification_status_triggers', $value);
     }
 
     /**

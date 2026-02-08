@@ -94,10 +94,10 @@ class AuthController extends Controller
         }
 
         if (!$user) {
-            $logger = new \App\Services\Logger();
-            $logger->warning("Login failed - User not found or not active", [
+            $this->logger->warning("Login failed - User not found or not active", [
                 'username' => $username,
-                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
             ]);
             $_SESSION['error'] = 'Invalid username or password';
             $this->redirect('/login');
@@ -106,11 +106,23 @@ class AuthController extends Controller
 
         // Verify password
         if (!$this->userModel->verifyPassword($password, $user['password'])) {
-            $logger = new \App\Services\Logger();
-            $logger->warning("Login failed - Password verification failed", [
+            $this->logger->warning("Login failed - Wrong password", [
                 'username' => $username,
-                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+                'user_id' => $user['id'],
+                'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
             ]);
+
+            // Notify the target user about failed login attempt (wrong password)
+            try {
+                $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+                $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+                $notificationService = new \App\Services\NotificationService();
+                $notificationService->notifyFailedLogin($user['id'], 'Wrong password', $ipAddress, $userAgent, $username);
+            } catch (\Exception $e) {
+                // Don't block response if notification fails
+            }
+
             $_SESSION['error'] = 'Invalid username or password';
             $this->redirect('/login');
             return;
@@ -182,6 +194,16 @@ class AuthController extends Controller
 
         // Update last login
         $this->userModel->updateLastLogin($user['id']);
+
+        // Create login notification
+        try {
+            $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+            $notificationService = new \App\Services\NotificationService();
+            $notificationService->notifyNewLogin($user['id'], 'Direct login', $ipAddress, $userAgent);
+        } catch (\Exception $e) {
+            // Don't block login if notification fails
+        }
 
         // Set success message for login
         $_SESSION['success'] = 'Login successful! Welcome back, ' . htmlspecialchars($user['full_name']) . '.';
@@ -743,6 +765,19 @@ class AuthController extends Controller
 
                     // Session is automatically tracked by DatabaseSessionHandler
                     // No need to manually create session record
+
+                    // Update last login timestamp
+                    $this->userModel->updateLastLogin($user['id']);
+
+                    // Create login notification for remember-me auto-login
+                    try {
+                        $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+                        $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+                        $notificationService = new \App\Services\NotificationService();
+                        $notificationService->notifyNewLogin($user['id'], 'Remember me', $ipAddress, $userAgent);
+                    } catch (\Exception $e) {
+                        // Don't block login if notification fails
+                    }
 
                     return true;
                 }

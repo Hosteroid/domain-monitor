@@ -9,14 +9,18 @@ $isResolved = (bool)$error['is_resolved'];
 $errorTypeShort = substr(strrchr($error['error_type'], '\\'), 1) ?: $error['error_type'];
 ?>
 
-<!-- Action Buttons -->
+<!-- Back Navigation -->
 <div class="mb-4 flex items-center justify-between">
-    <a href="/errors" class="text-gray-600 hover:text-primary">
+    <a href="/errors" class="inline-flex items-center px-3 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition-colors font-medium">
         <i class="fas fa-arrow-left mr-2"></i>
         Back to Error Logs
     </a>
     
     <div class="flex items-center space-x-2">
+        <button onclick="copyErrorReport()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+            <i class="fas fa-clipboard mr-2"></i>
+            Copy Error Report
+        </button>
         <?php if ($isResolved): ?>
             <form method="POST" action="/errors/<?= htmlspecialchars($error['error_id']) ?>/unresolve" class="inline">
                 <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
@@ -354,31 +358,157 @@ function copyToClipboard(text) {
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(text).then(() => {
             showCopySuccess();
+        }).catch(() => {
+            fallbackCopy(text);
         });
     } else {
-        const textArea = document.createElement('textarea');
-        textArea.value = text;
-        textArea.style.position = 'fixed';
-        textArea.style.left = '-999999px';
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand('copy');
-        document.body.removeChild(textArea);
-        showCopySuccess();
+        fallbackCopy(text);
     }
 }
 
+function fallbackCopy(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+        document.execCommand('copy');
+        showCopySuccess();
+    } catch (err) {
+        console.error('Copy failed:', err);
+    }
+    document.body.removeChild(textArea);
+}
+
+function copyErrorReport() {
+    const errorType = <?= json_encode($error['error_type'] ?? 'Error') ?>;
+    const errorMessage = <?= json_encode($error['error_message'] ?? 'Unknown error') ?>;
+    const errorFile = <?= json_encode($error['error_file'] ?? 'Unknown') ?>;
+    const errorLine = <?= json_encode($error['error_line'] ?? '?') ?>;
+    const errorId = <?= json_encode($error['error_id'] ?? 'N/A') ?>;
+    const phpVersion = <?= json_encode($error['php_version'] ?? 'Unknown') ?>;
+    const memoryUsage = <?= json_encode($error['memory_usage'] ?? 'Unknown') ?>;
+    const requestMethod = <?= json_encode($error['request_method'] ?? 'GET') ?>;
+    const requestUri = <?= json_encode($error['request_uri'] ?? '/') ?>;
+    const userAgent = <?= json_encode($error['user_agent'] ?? 'Unknown') ?>;
+    const ipAddress = <?= json_encode($error['ip_address'] ?? 'Unknown') ?>;
+    const occurredAt = <?= json_encode(date('Y-m-d H:i:s', strtotime($error['occurred_at']))) ?>;
+    const lastOccurredAt = <?= json_encode(date('Y-m-d H:i:s', strtotime($error['last_occurred_at'] ?? $error['occurred_at']))) ?>;
+    const occurrences = <?= json_encode($error['occurrences'] ?? 1) ?>;
+    const isResolved = <?= json_encode($isResolved) ?>;
+    const requestData = <?= json_encode($error['request_data'] ?? null) ?>;
+    const sessionData = <?= json_encode($error['session_data'] ?? null) ?>;
+
+    // Get stack trace from the rendered elements
+    const traceFrames = document.querySelectorAll('#content-stack-trace .bg-gray-50');
+    let stackTrace = 'Not available';
+    if (traceFrames.length > 0) {
+        let traceLines = [];
+        traceFrames.forEach((frame, i) => {
+            const fileLine = frame.querySelector('.font-mono.text-xs');
+            const funcLine = frame.querySelector('.font-mono.text-sm');
+            let line = '#' + i + ' ';
+            if (fileLine) line += fileLine.textContent.trim().replace(/\s+/g, ' ');
+            if (funcLine) line += ' ' + funcLine.textContent.trim().replace(/\s+/g, '');
+            traceLines.push(line);
+        });
+        stackTrace = traceLines.join('\n');
+    }
+
+    // Format request data sections
+    let requestDataText = 'Not available';
+    if (requestData && typeof requestData === 'object' && Object.keys(requestData).length > 0) {
+        let sections = [];
+        for (const [key, value] of Object.entries(requestData)) {
+            sections.push(`  [${key.toUpperCase()}]\n  ${JSON.stringify(value, null, 2).split('\n').join('\n  ')}`);
+        }
+        requestDataText = sections.join('\n\n');
+    }
+
+    // Format session data
+    let sessionDataText = 'Not available';
+    if (sessionData && typeof sessionData === 'object' && Object.keys(sessionData).length > 0) {
+        sessionDataText = '  ' + JSON.stringify(sessionData, null, 2).split('\n').join('\n  ');
+    }
+
+    const errorReport = `=== DOMAIN MONITOR ERROR REPORT ===
+
+ERROR INFORMATION:
+- Error ID: ${errorId}
+- Type: ${errorType}
+- Message: ${errorMessage}
+- Status: ${isResolved ? 'Resolved' : 'Unresolved'}
+- Occurrences: ${occurrences}
+
+LOCATION:
+- File: ${errorFile}
+- Line: ${errorLine}
+
+REQUEST DETAILS:
+- Method: ${requestMethod}
+- URI: ${requestUri}
+- IP Address: ${ipAddress}
+- User Agent: ${userAgent}
+- First Occurred: ${occurredAt}
+- Last Occurred: ${lastOccurredAt}
+
+REQUEST DATA:
+${requestDataText}
+
+SESSION DATA:
+${sessionDataText}
+
+SYSTEM INFORMATION:
+- PHP Version: ${phpVersion}
+- Memory Usage: ${memoryUsage}
+
+STACK TRACE:
+${stackTrace}
+
+=== END OF ERROR REPORT ===
+
+Reference ID: ${errorId}
+Please include this report when reporting bugs.`;
+
+    copyToClipboard(errorReport);
+}
+
 function showCopySuccess() {
-    const message = document.createElement('div');
-    message.className = 'fixed top-4 right-4 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 flex items-center';
-    message.innerHTML = '<i class="fas fa-check mr-2"></i>Copied to clipboard!';
-    document.body.appendChild(message);
-    
+    // Use the existing toast container from messages.php
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'fixed bottom-4 right-4 z-[9999] space-y-3 max-w-sm';
+        document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast bg-white border-l-4 border-green-500 rounded-lg shadow-lg p-4 flex items-start animate-slide-in';
+    toast.innerHTML = `
+        <div class="flex-shrink-0">
+            <div class="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                <i class="fas fa-check text-green-600 text-sm"></i>
+            </div>
+        </div>
+        <div class="ml-3 flex-1">
+            <p class="text-sm font-medium text-gray-900">Success</p>
+            <p class="text-sm text-gray-600 mt-0.5">Copied to clipboard!</p>
+        </div>
+        <button onclick="this.parentElement.remove()" class="ml-3 flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors">
+            <i class="fas fa-times text-sm"></i>
+        </button>
+    `;
+    container.appendChild(toast);
+
     setTimeout(() => {
-        message.style.opacity = '0';
-        message.style.transition = 'opacity 0.3s';
-        setTimeout(() => message.remove(), 300);
-    }, 2000);
+        toast.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 function markResolved() {

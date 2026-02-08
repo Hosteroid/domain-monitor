@@ -120,6 +120,95 @@ class NotificationService
     }
 
     /**
+     * Send domain status change notification via external channels
+     */
+    public function sendDomainStatusAlert(array $domain, array $notificationChannels, string $newStatus, string $oldStatus): array
+    {
+        $message = $this->formatStatusChangeMessage($domain, $newStatus, $oldStatus);
+
+        $results = [];
+
+        foreach ($notificationChannels as $channel) {
+            $config = json_decode($channel['channel_config'], true);
+            $success = $this->send(
+                $channel['channel_type'],
+                $config,
+                $message,
+                [
+                    'domain' => $domain['domain_name'],
+                    'domain_id' => $domain['id'],
+                    'new_status' => $newStatus,
+                    'old_status' => $oldStatus,
+                    'registrar' => $domain['registrar'] ?? 'Unknown'
+                ]
+            );
+
+            $results[] = [
+                'channel' => $channel['channel_type'],
+                'success' => $success
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Format status change notification message
+     */
+    private function formatStatusChangeMessage(array $domain, string $newStatus, string $oldStatus): string
+    {
+        $domainName = $domain['domain_name'];
+        $registrar = $domain['registrar'] ?? 'Unknown';
+        $oldStatusLabel = self::getStatusLabel($oldStatus);
+        $newStatusLabel = self::getStatusLabel($newStatus);
+
+        return match($newStatus) {
+            'available' => "🟢 AVAILABLE: Domain '$domainName' is now available for registration!\n\n" .
+                           "Previous status: $oldStatusLabel\n" .
+                           "This domain can now be registered.",
+
+            'active' => "✅ REGISTERED: Domain '$domainName' is now registered and active.\n\n" .
+                        "Previous status: $oldStatusLabel\n" .
+                        "Registrar: $registrar",
+
+            'expired' => "🚨 EXPIRED: Domain '$domainName' has expired!\n\n" .
+                         "Previous status: $oldStatusLabel\n" .
+                         "Registrar: $registrar\n" .
+                         "Please renew immediately to avoid losing your domain.",
+
+            'redemption_period' => "⚠️ REDEMPTION PERIOD: Domain '$domainName' has entered the redemption period!\n\n" .
+                                   "Previous status: $oldStatusLabel\n" .
+                                   "Registrar: $registrar\n" .
+                                   "The domain can still be recovered, but additional fees may apply. Act quickly!",
+
+            'pending_delete' => "🔴 PENDING DELETE: Domain '$domainName' is scheduled for deletion!\n\n" .
+                                "Previous status: $oldStatusLabel\n" .
+                                "Registrar: $registrar\n" .
+                                "The domain will be released for public registration soon.",
+
+            default => "ℹ️ STATUS CHANGE: Domain '$domainName' status changed from $oldStatusLabel to $newStatusLabel.\n\n" .
+                       "Registrar: $registrar"
+        };
+    }
+
+    /**
+     * Get human-readable status label
+     */
+    public static function getStatusLabel(string $status): string
+    {
+        return match($status) {
+            'active' => 'Active',
+            'expiring_soon' => 'Expiring Soon',
+            'expired' => 'Expired',
+            'available' => 'Available',
+            'redemption_period' => 'Redemption Period',
+            'pending_delete' => 'Pending Delete',
+            'error' => 'Error',
+            default => ucfirst(str_replace('_', ' ', $status))
+        };
+    }
+
+    /**
      * Format expiration message
      */
     private function formatExpirationMessage(array $domain, int $daysLeft): string
@@ -196,6 +285,67 @@ class NotificationService
     }
 
     /**
+     * Create a domain available notification (in-app)
+     */
+    public function notifyDomainAvailable(int $userId, string $domainName, int $domainId): void
+    {
+        $notificationModel = new \App\Models\Notification();
+        $notificationModel->createNotification(
+            $userId,
+            'domain_available',
+            'Domain Available',
+            "{$domainName} is now available for registration",
+            $domainId
+        );
+    }
+
+    /**
+     * Create a domain registered notification (in-app)
+     * Triggered when a domain transitions from available/expired/pending_delete to active
+     */
+    public function notifyDomainRegistered(int $userId, string $domainName, int $domainId): void
+    {
+        $notificationModel = new \App\Models\Notification();
+        $notificationModel->createNotification(
+            $userId,
+            'domain_registered',
+            'Domain Registered',
+            "{$domainName} has been registered and is now active",
+            $domainId
+        );
+    }
+
+    /**
+     * Create a domain redemption period notification (in-app)
+     */
+    public function notifyDomainRedemption(int $userId, string $domainName, int $domainId): void
+    {
+        $notificationModel = new \App\Models\Notification();
+        $notificationModel->createNotification(
+            $userId,
+            'domain_redemption',
+            'Domain in Redemption Period',
+            "{$domainName} has entered the redemption period - recovery fees may apply",
+            $domainId
+        );
+    }
+
+    /**
+     * Create a domain pending delete notification (in-app)
+     */
+    public function notifyDomainPendingDelete(int $userId, string $domainName, int $domainId): void
+    {
+        $notificationModel = new \App\Models\Notification();
+        $notificationModel->createNotification(
+            $userId,
+            'domain_pending_delete',
+            'Domain Pending Deletion',
+            "{$domainName} is scheduled for deletion and will be available soon",
+            $domainId
+        );
+    }
+
+    /**
      * Create a domain WHOIS updated notification (in-app)
      */
     public function notifyDomainUpdated(int $userId, string $domainName, int $domainId, string $changes = ''): void
@@ -234,19 +384,173 @@ class NotificationService
     }
 
     /**
-     * Create a new login notification (in-app)
+     * Create a new login notification (in-app) with rich geolocation data
      */
-    public function notifyNewLogin(int $userId, string $location, string $ipAddress): void
+    public function notifyNewLogin(int $userId, string $method, string $ipAddress, ?string $userAgent = null): void
     {
+        // Get geolocation data
+        $geo = \App\Models\SessionManager::getGeolocationData($ipAddress);
+        
+        // Parse browser/device from user agent
+        $browser = 'Unknown Browser';
+        $device = 'Desktop';
+        $deviceIcon = 'desktop';
+        
+        if ($userAgent) {
+            $ua = strtolower($userAgent);
+            
+            // Browser detection
+            if (strpos($ua, 'edg') !== false) {
+                $browser = 'Edge';
+            } elseif (strpos($ua, 'opr') !== false || strpos($ua, 'opera') !== false) {
+                $browser = 'Opera';
+            } elseif (strpos($ua, 'chrome') !== false) {
+                $browser = 'Chrome';
+            } elseif (strpos($ua, 'safari') !== false) {
+                $browser = 'Safari';
+            } elseif (strpos($ua, 'firefox') !== false) {
+                $browser = 'Firefox';
+            }
+            
+            // Device detection
+            if (strpos($ua, 'mobile') !== false || strpos($ua, 'android') !== false || strpos($ua, 'iphone') !== false) {
+                $device = 'Mobile';
+                $deviceIcon = 'mobile-alt';
+            } elseif (strpos($ua, 'tablet') !== false || strpos($ua, 'ipad') !== false) {
+                $device = 'Tablet';
+                $deviceIcon = 'tablet-alt';
+            }
+            
+            // OS detection
+            $os = 'Unknown';
+            if (strpos($ua, 'windows') !== false) $os = 'Windows';
+            elseif (strpos($ua, 'macintosh') !== false || strpos($ua, 'mac os') !== false) $os = 'macOS';
+            elseif (strpos($ua, 'linux') !== false) $os = 'Linux';
+            elseif (strpos($ua, 'android') !== false) $os = 'Android';
+            elseif (strpos($ua, 'iphone') !== false || strpos($ua, 'ipad') !== false) $os = 'iOS';
+        }
+
+        // Build location string
+        $locationParts = [];
+        if ($geo['city'] !== 'Unknown' && $geo['city'] !== 'Local') {
+            $locationParts[] = $geo['city'];
+        }
+        if ($geo['country'] !== 'Unknown' && $geo['country'] !== 'Local') {
+            $locationParts[] = $geo['country'];
+        }
+        $locationStr = !empty($locationParts) ? implode(', ', $locationParts) : 'Unknown location';
+
+        // Store rich data as JSON in message field
+        $messageData = json_encode([
+            'method' => $method,
+            'ip' => $ipAddress,
+            'country' => $geo['country'],
+            'country_code' => $geo['country_code'],
+            'city' => $geo['city'],
+            'region' => $geo['region'],
+            'isp' => $geo['isp'],
+            'browser' => $browser,
+            'device' => $device,
+            'device_icon' => $deviceIcon,
+            'os' => $os ?? 'Unknown',
+            'location' => $locationStr,
+        ]);
+
         $notificationModel = new \App\Models\Notification();
         $notificationModel->createNotification(
             $userId,
             'session_new',
             'New Login Detected',
-            "Login from {$location} ({$ipAddress})",
+            $messageData,
             null
         );
     }
+
+    /**
+     * Create a failed login notification (in-app) with rich geolocation data
+     */
+    public function notifyFailedLogin(int $userId, string $reason, string $ipAddress, ?string $userAgent = null, ?string $attemptedUsername = null): void
+    {
+        // Get geolocation data
+        $geo = \App\Models\SessionManager::getGeolocationData($ipAddress);
+        
+        // Parse browser/device from user agent
+        $browser = 'Unknown Browser';
+        $device = 'Desktop';
+        $deviceIcon = 'desktop';
+        
+        if ($userAgent) {
+            $ua = strtolower($userAgent);
+            
+            // Browser detection
+            if (strpos($ua, 'edg') !== false) {
+                $browser = 'Edge';
+            } elseif (strpos($ua, 'opr') !== false || strpos($ua, 'opera') !== false) {
+                $browser = 'Opera';
+            } elseif (strpos($ua, 'chrome') !== false) {
+                $browser = 'Chrome';
+            } elseif (strpos($ua, 'safari') !== false) {
+                $browser = 'Safari';
+            } elseif (strpos($ua, 'firefox') !== false) {
+                $browser = 'Firefox';
+            }
+            
+            // Device detection
+            if (strpos($ua, 'mobile') !== false || strpos($ua, 'android') !== false || strpos($ua, 'iphone') !== false) {
+                $device = 'Mobile';
+                $deviceIcon = 'mobile-alt';
+            } elseif (strpos($ua, 'tablet') !== false || strpos($ua, 'ipad') !== false) {
+                $device = 'Tablet';
+                $deviceIcon = 'tablet-alt';
+            }
+            
+            // OS detection
+            $os = 'Unknown';
+            if (strpos($ua, 'windows') !== false) $os = 'Windows';
+            elseif (strpos($ua, 'macintosh') !== false || strpos($ua, 'mac os') !== false) $os = 'macOS';
+            elseif (strpos($ua, 'linux') !== false) $os = 'Linux';
+            elseif (strpos($ua, 'android') !== false) $os = 'Android';
+            elseif (strpos($ua, 'iphone') !== false || strpos($ua, 'ipad') !== false) $os = 'iOS';
+        }
+
+        // Build location string
+        $locationParts = [];
+        if ($geo['city'] !== 'Unknown' && $geo['city'] !== 'Local') {
+            $locationParts[] = $geo['city'];
+        }
+        if ($geo['country'] !== 'Unknown' && $geo['country'] !== 'Local') {
+            $locationParts[] = $geo['country'];
+        }
+        $locationStr = !empty($locationParts) ? implode(', ', $locationParts) : 'Unknown location';
+
+        // Store rich data as JSON in message field
+        $messageData = json_encode([
+            'reason' => $reason,
+            'attempted_username' => $attemptedUsername,
+            'ip' => $ipAddress,
+            'country' => $geo['country'],
+            'country_code' => $geo['country_code'],
+            'city' => $geo['city'],
+            'region' => $geo['region'],
+            'isp' => $geo['isp'],
+            'browser' => $browser,
+            'device' => $device,
+            'device_icon' => $deviceIcon,
+            'os' => $os ?? 'Unknown',
+            'location' => $locationStr,
+        ]);
+
+        $notificationModel = new \App\Models\Notification();
+        $notificationModel->createNotification(
+            $userId,
+            'session_failed',
+            'Failed Login Attempt',
+            $messageData,
+            null
+        );
+    }
+
+    // Future improvement: Add notifyAdminsFailedLogin() to send in-app alerts to all admins on failed login attempts (e.g. unknown usernames, brute-force detection)
 
     /**
      * Create welcome notification for new users/fresh install (in-app)

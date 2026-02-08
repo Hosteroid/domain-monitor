@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS domains (
     updated_date DATE,
     abuse_email VARCHAR(255),
     last_checked TIMESTAMP NULL,
-    status ENUM('active', 'expiring_soon', 'expired', 'error', 'available') DEFAULT 'active',
+    status ENUM('active', 'expiring_soon', 'expired', 'error', 'available', 'redemption_period', 'pending_delete') DEFAULT 'active',
     whois_data JSON,
     notes TEXT,
     is_active BOOLEAN DEFAULT TRUE,
@@ -362,7 +362,7 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('app_name', 'Domain Monitor', 'string', 'Application name'),
 ('app_url', 'http://localhost:8000', 'string', 'Application URL'),
 ('app_timezone', 'UTC', 'string', 'Application timezone'),
-('app_version', '1.1.1', 'string', 'Application version number'),
+('app_version', '1.1.2', 'string', 'Application version number'),
 
 -- Email settings
 ('mail_host', 'smtp.mailtrap.io', 'string', 'SMTP server host'),
@@ -375,6 +375,7 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 
 -- Monitoring settings
 ('notification_days_before', '60,30,21,14,7,5,3,2,1', 'string', 'Notification days before expiration'),
+('notification_status_triggers', 'available,registered,expired,redemption_period,pending_delete', 'string', 'Domain status changes that trigger notifications'),
 ('check_interval_hours', '24', 'string', 'Domain check interval in hours'),
 ('last_check_run', NULL, 'datetime', 'Last time cron job ran'),
 

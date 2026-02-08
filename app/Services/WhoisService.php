@@ -1107,6 +1107,29 @@ class WhoisService
             }
         }
 
+        // Check for pending delete status (EPP: pendingDelete)
+        // Must check before active/registered indicators since a domain can have both
+        foreach ($statusArray as $status) {
+            if (stripos($status, 'pendingDelete') !== false || 
+                stripos($status, 'pending delete') !== false ||
+                stripos($status, 'pending_delete') !== false ||
+                stripos($status, 'PENDING-DELETE') !== false) {
+                return 'pending_delete';
+            }
+        }
+
+        // Check for redemption period status (EPP: redemptionPeriod)
+        // Must check before active/registered indicators
+        foreach ($statusArray as $status) {
+            if (stripos($status, 'redemptionPeriod') !== false || 
+                stripos($status, 'redemption period') !== false ||
+                stripos($status, 'redemption_period') !== false ||
+                stripos($status, 'REDEMPTION-PERIOD') !== false ||
+                stripos($status, 'pendingRestore') !== false) {
+                return 'redemption_period';
+            }
+        }
+
         // If domain has "active" status but no expiration date, consider it active
         // This handles TLDs like .nl that don't provide expiration dates via RDAP
         foreach ($statusArray as $status) {

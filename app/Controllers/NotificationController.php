@@ -57,6 +57,7 @@ class NotificationController extends Controller
             $notification['time_ago'] = $this->timeAgo($notification['created_at']);
             $notification['icon'] = $this->getNotificationIcon($notification['type']);
             $notification['color'] = $this->getNotificationColor($notification['type']);
+            $notification['login_data'] = \App\Helpers\LayoutHelper::parseLoginData($notification);
         }
         
         $this->view('notifications/index', [
@@ -77,6 +78,7 @@ class NotificationController extends Controller
 
     /**
      * Mark notification as read
+     * Supports optional redirect to domain if ?redirect=domain
      */
     public function markAsRead($params = [])
     {
@@ -90,6 +92,27 @@ class NotificationController extends Controller
         }
         
         $this->notificationModel->markAsRead($notificationId, $userId);
+        
+        // If redirect=domain, go to the domain view page
+        $redirect = $_GET['redirect'] ?? '';
+        if ($redirect === 'domain') {
+            $domainId = (int)($_GET['domain_id'] ?? 0);
+            if ($domainId > 0) {
+                $this->redirect('/domains/' . $domainId);
+                return;
+            }
+        }
+        
+        // AJAX request - return JSON (check multiple detection methods)
+        $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+                || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
+                || !empty($_GET['ajax']);
+        if ($isAjax) {
+            $unreadCount = $this->notificationModel->getUnreadCount($userId);
+            $this->json(['success' => true, 'id' => $notificationId, 'unread_count' => $unreadCount]);
+            return;
+        }
+        
         $_SESSION['success'] = 'Notification marked as read';
         $this->redirect('/notifications');
     }
@@ -191,9 +214,14 @@ class NotificationController extends Controller
     {
         return match($type) {
             'domain_expiring' => 'exclamation-triangle',
-            'domain_expired' => 'times-circle',
+            'domain_expired', 'domain_expired_status' => 'times-circle',
+            'domain_available' => 'check-circle',
+            'domain_registered' => 'globe',
+            'domain_redemption' => 'hourglass-half',
+            'domain_pending_delete' => 'trash-alt',
             'domain_updated' => 'sync-alt',
             'session_new' => 'sign-in-alt',
+            'session_failed' => 'shield-alt',
             'whois_failed' => 'exclamation-circle',
             'system_welcome' => 'hand-sparkles',
             'system_upgrade' => 'arrow-up',
@@ -208,9 +236,14 @@ class NotificationController extends Controller
     {
         return match($type) {
             'domain_expiring' => 'orange',
-            'domain_expired' => 'red',
+            'domain_expired', 'domain_expired_status' => 'red',
+            'domain_available' => 'blue',
+            'domain_registered' => 'green',
+            'domain_redemption' => 'amber',
+            'domain_pending_delete' => 'rose',
             'domain_updated' => 'green',
             'session_new' => 'blue',
+            'session_failed' => 'red',
             'whois_failed' => 'gray',
             'system_welcome' => 'purple',
             'system_upgrade' => 'indigo',

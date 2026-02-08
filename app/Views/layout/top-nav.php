@@ -74,7 +74,7 @@
                             <div class="flex items-center justify-between">
                                 <h3 class="text-sm font-semibold text-gray-900">Notifications</h3>
                                 <?php if ($unreadNotifications > 0): ?>
-                                    <span class="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-semibold rounded"><?= $unreadNotifications ?> new</span>
+                                    <span id="dropdownHeaderBadge" class="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs font-semibold rounded"><?= $unreadNotifications ?> new</span>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -83,19 +83,84 @@
                         <div class="max-h-96 overflow-y-auto">
                             <?php if (!empty($recentNotifications)): ?>
                                 <?php foreach ($recentNotifications as $notif): ?>
-                                    <div class="px-4 py-3 hover:bg-gray-50 border-b border-gray-100 bg-blue-50 transition-colors cursor-pointer">
+                                    <?php
+                                    // Build the click URL: if domain notification, go to domain; otherwise just mark as read
+                                    $hasDomain = !empty($notif['domain_id']);
+                                    $notifUrl = $hasDomain 
+                                        ? '/notifications/' . $notif['id'] . '/mark-read?redirect=domain&domain_id=' . $notif['domain_id']
+                                        : '/notifications/' . $notif['id'] . '/mark-read';
+                                    ?>
+                                    <div class="px-4 py-3 hover:bg-gray-50 border-b border-gray-100 bg-blue-50 transition-colors notification-item" data-id="<?= $notif['id'] ?>">
                                         <div class="flex items-start space-x-3">
-                                            <div class="w-8 h-8 bg-<?= $notif['color'] ?>-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                                <i class="fas fa-<?= $notif['icon'] ?> text-<?= $notif['color'] ?>-600 text-sm"></i>
-                                            </div>
-                                            <div class="flex-1 min-w-0">
-                                                <div class="flex items-center gap-2">
-                                                    <p class="text-sm font-semibold text-gray-900"><?= htmlspecialchars($notif['title']) ?></p>
-                                                    <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
-                                                </div>
-                                                <p class="text-xs text-gray-600 mt-0.5"><?= htmlspecialchars($notif['message']) ?></p>
-                                                <p class="text-xs text-gray-400 mt-1"><?= $notif['time_ago'] ?></p>
-                                            </div>
+                                            <?php $loginData = $notif['login_data'] ?? null; ?>
+                                            <?php if ($loginData && $notif['type'] === 'session_failed'): ?>
+                                                <!-- Failed login notification (mirrors successful login layout) -->
+                                                <a href="<?= $notifUrl ?>" class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                    <?php if (($loginData['country_code'] ?? 'xx') !== 'xx'): ?>
+                                                        <span class="fi fi-<?= strtolower($loginData['country_code']) ?> text-base rounded-sm"></span>
+                                                    <?php else: ?>
+                                                        <i class="fas fa-shield-alt text-red-600 text-sm"></i>
+                                                    <?php endif; ?>
+                                                </a>
+                                                <a href="<?= $notifUrl ?>" class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="text-sm font-semibold text-red-700"><?= htmlspecialchars($notif['title']) ?></p>
+                                                        <span class="w-2 h-2 bg-red-500 rounded-full flex-shrink-0"></span>
+                                                    </div>
+                                                    <p class="text-xs text-gray-600 mt-0.5">
+                                                        <?= htmlspecialchars(\App\Helpers\LayoutHelper::formatLoginDropdown($loginData)) ?>
+                                                    </p>
+                                                    <p class="text-xs text-gray-400 mt-1">
+                                                        <i class="fas fa-<?= htmlspecialchars($loginData['device_icon'] ?? 'desktop') ?> mr-0.5"></i>
+                                                        <?= htmlspecialchars($loginData['reason'] ?? 'Failed') ?> · <?= $notif['time_ago'] ?>
+                                                    </p>
+                                                </a>
+                                            <?php elseif ($loginData && $notif['type'] === 'session_new'): ?>
+                                                <!-- Session notification with flag icon -->
+                                                <a href="<?= $notifUrl ?>" class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                    <?php if ($loginData['country_code'] !== 'xx'): ?>
+                                                        <span class="fi fi-<?= strtolower($loginData['country_code']) ?> text-base rounded-sm"></span>
+                                                    <?php else: ?>
+                                                        <i class="fas fa-sign-in-alt text-blue-600 text-sm"></i>
+                                                    <?php endif; ?>
+                                                </a>
+                                                <a href="<?= $notifUrl ?>" class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="text-sm font-semibold text-gray-900"><?= htmlspecialchars($notif['title']) ?></p>
+                                                        <span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+                                                    </div>
+                                                    <p class="text-xs text-gray-600 mt-0.5">
+                                                        <?= htmlspecialchars(\App\Helpers\LayoutHelper::formatLoginDropdown($loginData)) ?>
+                                                    </p>
+                                                    <p class="text-xs text-gray-400 mt-1">
+                                                        <i class="fas fa-<?= htmlspecialchars($loginData['device_icon'] ?? 'desktop') ?> mr-0.5"></i>
+                                                        <?= htmlspecialchars($loginData['method'] ?? 'Login') ?> · <?= $notif['time_ago'] ?>
+                                                    </p>
+                                                </a>
+                                            <?php else: ?>
+                                                <!-- Standard notification -->
+                                                <a href="<?= $notifUrl ?>" class="w-8 h-8 bg-<?= $notif['color'] ?>-100 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                    <i class="fas fa-<?= $notif['icon'] ?> text-<?= $notif['color'] ?>-600 text-sm"></i>
+                                                </a>
+                                                <a href="<?= $notifUrl ?>" class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="text-sm font-semibold text-gray-900"><?= htmlspecialchars($notif['title']) ?></p>
+                                                        <span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+                                                    </div>
+                                                    <p class="text-xs text-gray-600 mt-0.5"><?= htmlspecialchars($notif['message']) ?></p>
+                                                    <p class="text-xs text-gray-400 mt-1">
+                                                        <?= $notif['time_ago'] ?>
+                                                        <?php if ($hasDomain): ?>
+                                                            <span class="text-primary ml-1"><i class="fas fa-external-link-alt text-[10px]"></i> View domain</span>
+                                                        <?php endif; ?>
+                                                    </p>
+                                                </a>
+                                            <?php endif; ?>
+                                            <button onclick="event.stopPropagation(); markNotifRead(<?= $notif['id'] ?>, this)" 
+                                                    class="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors flex-shrink-0" 
+                                                    title="Mark as read">
+                                                <i class="fas fa-check text-xs"></i>
+                                            </button>
                                         </div>
                                     </div>
                                 <?php endforeach; ?>
@@ -194,7 +259,7 @@
                             <i class="fas fa-bell w-5 text-gray-400 mr-3"></i>
                             Notifications
                             <?php if ($unreadNotifications > 0): ?>
-                                <span class="ml-auto px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-full">
+                                <span id="userDropdownNotifBadge" class="ml-auto px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-full">
                                     <?= $unreadNotifications ?>
                                 </span>
                             <?php endif; ?>
@@ -220,3 +285,69 @@
         </div>
     </div>
 </nav>
+
+<!-- Notification AJAX handler -->
+<script>
+function markNotifRead(notifId, btn) {
+    fetch('/notifications/' + notifId + '/mark-read?ajax=1', {
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(r => {
+        if (!r.ok) throw new Error('Request failed');
+        return r.json();
+    })
+    .then(data => {
+        if (!data.success) return;
+
+        const newCount = data.unread_count ?? 0;
+
+        // Remove the notification item from dropdown
+        const item = btn.closest('.notification-item');
+        if (item) {
+            const scrollable = document.querySelector('#notificationsDropdown .max-h-96');
+            const isLast = scrollable && scrollable.querySelectorAll('.notification-item').length <= 1;
+
+            if (isLast && scrollable) {
+                scrollable.style.transition = 'opacity 0.2s';
+                scrollable.style.opacity = '0';
+                setTimeout(() => {
+                    scrollable.innerHTML = '<div class="px-4 py-8 text-center">' +
+                        '<i class="fas fa-bell-slash text-gray-300 text-3xl mb-2"></i>' +
+                        '<p class="text-sm text-gray-600">No new notifications</p>' +
+                        '<p class="text-xs text-gray-400 mt-0.5">You\'re all caught up!</p>' +
+                        '</div>';
+                    scrollable.style.opacity = '1';
+                }, 200);
+            } else {
+                item.style.transition = 'opacity 0.2s, max-height 0.3s';
+                item.style.opacity = '0';
+                item.style.maxHeight = '0';
+                item.style.overflow = 'hidden';
+                item.style.padding = '0';
+                item.style.margin = '0';
+                setTimeout(() => item.remove(), 300);
+            }
+        }
+
+        // Update all badges using server-returned count
+        const headerBadge = document.getElementById('dropdownHeaderBadge');
+        const userBadge = document.getElementById('userDropdownNotifBadge');
+        const bellDot = document.querySelector('[onclick="toggleNotifications()"] .absolute.top-1');
+
+        if (newCount <= 0) {
+            if (headerBadge) headerBadge.remove();
+            if (userBadge) userBadge.remove();
+            if (bellDot) bellDot.remove();
+        } else {
+            if (headerBadge) headerBadge.textContent = newCount + ' new';
+            if (userBadge) userBadge.textContent = newCount;
+        }
+    })
+    .catch(() => {
+        window.location.href = '/notifications/' + notifId + '/mark-read';
+    });
+}
+</script>

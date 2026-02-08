@@ -22,6 +22,7 @@ class LayoutHelper
                 $notif['time_ago'] = self::timeAgo($notif['created_at']);
                 $notif['icon'] = self::getNotificationIcon($notif['type']);
                 $notif['color'] = self::getNotificationColor($notif['type']);
+                $notif['login_data'] = self::parseLoginData($notif);
             }
             
             return [
@@ -50,6 +51,43 @@ class LayoutHelper
         } else {
             return $domainModel->getStatistics();
         }
+    }
+
+    /**
+     * Parse session_new notification message (JSON)
+     * Returns structured data for rich display, or null if not parseable
+     */
+    public static function parseLoginData(array $notification): ?array
+    {
+        if ($notification['type'] !== 'session_new' && $notification['type'] !== 'session_failed') {
+            return null;
+        }
+        
+        $data = json_decode($notification['message'] ?? '', true);
+        
+        if (is_array($data) && isset($data['ip'])) {
+            return $data;
+        }
+        
+        return null;
+    }
+
+    /**
+     * Format session_new notification for dropdown display (compact)
+     */
+    public static function formatLoginDropdown(array $loginData): string
+    {
+        $parts = [];
+        if ($loginData['city'] !== 'Unknown' && $loginData['city'] !== 'Local') {
+            $parts[] = $loginData['city'];
+        }
+        if ($loginData['country'] !== 'Unknown' && $loginData['country'] !== 'Local') {
+            $parts[] = $loginData['country'];
+        }
+        $location = !empty($parts) ? implode(', ', $parts) : $loginData['ip'];
+        
+        $browser = $loginData['browser'] ?? 'Unknown';
+        return "{$location} · {$browser}";
     }
 
     /**
@@ -83,9 +121,14 @@ class LayoutHelper
     {
         return match($type) {
             'domain_expiring' => 'exclamation-triangle',
-            'domain_expired' => 'times-circle',
+            'domain_expired', 'domain_expired_status' => 'times-circle',
+            'domain_available' => 'check-circle',
+            'domain_registered' => 'globe',
+            'domain_redemption' => 'hourglass-half',
+            'domain_pending_delete' => 'trash-alt',
             'domain_updated' => 'sync-alt',
             'session_new' => 'sign-in-alt',
+            'session_failed' => 'shield-alt',
             'whois_failed' => 'exclamation-circle',
             'system_welcome' => 'hand-sparkles',
             'system_upgrade' => 'arrow-up',
@@ -100,9 +143,14 @@ class LayoutHelper
     {
         return match($type) {
             'domain_expiring' => 'orange',
-            'domain_expired' => 'red',
+            'domain_expired', 'domain_expired_status' => 'red',
+            'domain_available' => 'blue',
+            'domain_registered' => 'green',
+            'domain_redemption' => 'amber',
+            'domain_pending_delete' => 'rose',
             'domain_updated' => 'green',
             'session_new' => 'blue',
+            'session_failed' => 'red',
             'whois_failed' => 'gray',
             'system_welcome' => 'purple',
             'system_upgrade' => 'indigo',

@@ -680,28 +680,41 @@ class DomainController extends Controller
                 $availableCount++;
             }
 
-            $domainId = $this->domainModel->create([
-                'domain_name' => $domainName,
-                'notification_group_id' => $groupId,
-                'registrar' => $whoisData['registrar'],
-                'registrar_url' => $whoisData['registrar_url'] ?? null,
-                'expiration_date' => $whoisData['expiration_date'],
-                'updated_date' => $whoisData['updated_date'] ?? null,
-                'abuse_email' => $whoisData['abuse_email'] ?? null,
-                'last_checked' => date('Y-m-d H:i:s'),
-                'status' => $status,
-                'whois_data' => json_encode($whoisData),
-                'is_active' => 1,
-                'user_id' => \Core\Auth::id()
-            ]);
+            try {
+                $domainId = $this->domainModel->create([
+                    'domain_name' => $domainName,
+                    'notification_group_id' => $groupId,
+                    'registrar' => $whoisData['registrar'],
+                    'registrar_url' => $whoisData['registrar_url'] ?? null,
+                    'expiration_date' => $whoisData['expiration_date'],
+                    'updated_date' => $whoisData['updated_date'] ?? null,
+                    'abuse_email' => $whoisData['abuse_email'] ?? null,
+                    'last_checked' => date('Y-m-d H:i:s'),
+                    'status' => $status,
+                    'whois_data' => json_encode($whoisData),
+                    'is_active' => 1,
+                    'user_id' => \Core\Auth::id()
+                ]);
 
-            // Handle tags using the new tag system
-            if (!empty($tags) && $domainId) {
-                $tagModel = new \App\Models\Tag();
-                $tagModel->updateDomainTags($domainId, $tags, $userId);
+                // Handle tags using the new tag system
+                if (!empty($tags) && $domainId) {
+                    $tagModel = new \App\Models\Tag();
+                    $tagModel->updateDomainTags($domainId, $tags, $userId);
+                }
+
+                $added++;
+            } catch (\PDOException $e) {
+                // Handle duplicate key (race condition between existsByDomain check and insert)
+                if (str_contains($e->getMessage(), 'Duplicate entry')) {
+                    $skipped++;
+                } else {
+                    $logger->error('Failed to add domain in bulk', [
+                        'domain' => $domainName,
+                        'error' => $e->getMessage()
+                    ]);
+                    $errors[] = $domainName;
+                }
             }
-
-            $added++;
         }
 
         // Log bulk add completion

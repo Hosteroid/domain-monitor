@@ -295,9 +295,30 @@ class TwoFactorController extends Controller
                 'method' => $method
             ]);
 
+            // Update last login timestamp
+            $this->userModel->updateLastLogin($userId);
+
+            // Create login notification
+            try {
+                $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+                $notificationService = new \App\Services\NotificationService();
+                $notificationService->notifyNewLogin($userId, "2FA ($method)", $ipAddress, $userAgent);
+            } catch (\Exception $e) {
+                // Don't block login if notification fails
+            }
+
             $_SESSION['success'] = 'Login successful! Welcome back, ' . htmlspecialchars($user['full_name']) . '.';
             $this->redirect('/');
         } else {
+            // Notify user about failed 2FA attempt
+            try {
+                $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? null;
+                $notificationService = new \App\Services\NotificationService();
+                $notificationService->notifyFailedLogin($userId, 'Failed 2FA verification', $ipAddress, $userAgent, $user['username']);
+            } catch (\Exception $e) {
+                // Don't block response if notification fails
+            }
+
             $_SESSION['error'] = 'Invalid verification code. Please try again.';
             $this->redirect('/2fa/verify');
         }

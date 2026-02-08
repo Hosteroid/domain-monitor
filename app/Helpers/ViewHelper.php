@@ -53,6 +53,9 @@ class ViewHelper
             'active' => 'bg-green-100 text-green-800 border-green-200',
             'expiring_soon' => 'bg-orange-100 text-orange-800 border-orange-200',
             'expired' => 'bg-red-100 text-red-800 border-red-200',
+            'available' => 'bg-blue-100 text-blue-800 border-blue-200',
+            'redemption_period' => 'bg-amber-100 text-amber-800 border-amber-200',
+            'pending_delete' => 'bg-rose-100 text-rose-800 border-rose-200',
             'inactive' => 'bg-gray-100 text-gray-800 border-gray-200',
         ];
 
@@ -60,6 +63,9 @@ class ViewHelper
             'active' => 'Active',
             'expiring_soon' => 'Expiring Soon',
             'expired' => 'Expired',
+            'available' => 'Available',
+            'redemption_period' => 'Redemption Period',
+            'pending_delete' => 'Pending Delete',
             'inactive' => 'Inactive',
         ];
 
