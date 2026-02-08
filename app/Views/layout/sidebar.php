@@ -3,13 +3,14 @@
     <div class="h-full overflow-y-auto flex flex-col">
         
         <!-- Logo Section -->
-        <div class="h-16 px-4 sm:px-5 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
-            <div class="flex items-center min-w-0">
-                <div class="w-9 h-9 bg-primary rounded-lg flex items-center justify-center mr-3 flex-shrink-0">
-                    <i class="fas fa-globe text-white text-sm"></i>
+        <div class="px-4 sm:px-5 py-4 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
+            <a href="/" class="flex items-center min-w-0 group">
+                <img src="/assets/logo.svg" alt="Domain Monitor" class="w-9 h-9 mr-3 flex-shrink-0">
+                <div class="min-w-0">
+                    <h1 class="text-base font-bold text-white truncate group-hover:text-primary transition-colors">Domain Monitor</h1>
+                    <p class="text-xs text-gray-500 truncate">Track your domains</p>
                 </div>
-                <h1 class="text-sm font-semibold text-white truncate"><?= $appName ?? 'Domain Monitor' ?></h1>
-            </div>
+            </a>
             <!-- Close button for mobile -->
             <button onclick="closeSidebar()" class="md:hidden w-9 h-9 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors flex-shrink-0 ml-2">
                 <i class="fas fa-times text-lg"></i>
