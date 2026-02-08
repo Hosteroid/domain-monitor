@@ -57,6 +57,37 @@ class DashboardController extends Controller
         $formattedRecentDomains = \App\Helpers\DomainHelper::formatMultiple($recentDomains);
         $formattedExpiringDomains = \App\Helpers\DomainHelper::formatMultiple($expiringThisMonth);
         
+        // Get all domains for registrar distribution & notification coverage
+        if ($isolationMode === 'isolated') {
+            $allDomains = $this->domainModel->getAllWithGroups($userId);
+        } else {
+            $allDomains = $this->domainModel->getAllWithGroups();
+        }
+        
+        // Registrar distribution
+        $registrarCounts = [];
+        foreach ($allDomains as $d) {
+            $reg = !empty($d['registrar']) ? $d['registrar'] : 'Unknown';
+            $registrarCounts[$reg] = ($registrarCounts[$reg] ?? 0) + 1;
+        }
+        arsort($registrarCounts);
+        
+        // Notification coverage
+        $domainsWithGroup = count(array_filter($allDomains, fn($d) => !empty($d['group_name'])));
+        $totalDomainCount = count($allDomains);
+        
+        // Total channels
+        $totalChannels = 0;
+        foreach ($groups as $g) { $totalChannels += ($g['channel_count'] ?? 0); }
+        
+        // Get user's tags with usage
+        $tagModel = new \App\Models\Tag();
+        if ($isolationMode === 'isolated') {
+            $dashTags = $tagModel->getAllWithUsage($userId);
+        } else {
+            $dashTags = $tagModel->getAllWithUsage();
+        }
+        
         $this->view('dashboard/index', [
             'recentDomains' => $formattedRecentDomains,
             'expiringThisMonth' => $formattedExpiringDomains,
@@ -64,6 +95,11 @@ class DashboardController extends Controller
             'recentLogs' => $recentLogs,
             'groups' => $groups,
             'systemStatus' => $systemStatus,
+            'registrarCounts' => $registrarCounts,
+            'domainsWithGroup' => $domainsWithGroup,
+            'totalDomainCount' => $totalDomainCount,
+            'totalChannels' => $totalChannels,
+            'dashTags' => $dashTags,
             'title' => 'Dashboard'
         ]);
     }

@@ -16,7 +16,7 @@ ob_start();
         </div>
 
         <div class="p-6">
-            <form method="POST" action="/users/update" class="space-y-5">
+            <form method="POST" action="/users/<?= $user['id'] ?>/update" class="space-y-5">
                 <?= csrf_field() ?>
                 <input type="hidden" name="id" value="<?= $user['id'] ?>">
 

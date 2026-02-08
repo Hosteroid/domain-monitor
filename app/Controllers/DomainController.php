@@ -531,7 +531,7 @@ class DomainController extends Controller
         }
 
         if (!$domain) {
-            $_SESSION['error'] = 'Domain not found';
+            $_SESSION['error'] = 'You do not have permission to view this domain.';
             $this->redirect('/domains');
             return;
         }

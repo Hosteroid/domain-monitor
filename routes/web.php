@@ -163,6 +163,7 @@ $router->get('/api/notifications/recent', [NotificationController::class, 'getRe
 $router->get('/users', [UserController::class, 'index']);
 $router->get('/users/create', [UserController::class, 'create']);
 $router->post('/users/store', [UserController::class, 'store']);
+$router->get('/users/{id}', [UserController::class, 'show']);
 $router->get('/users/{id}/edit', [UserController::class, 'edit']);
 $router->post('/users/{id}/update', [UserController::class, 'update']);
 $router->post('/users/{id}/delete', [UserController::class, 'delete']);

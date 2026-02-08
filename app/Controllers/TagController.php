@@ -250,6 +250,13 @@ class TagController extends Controller
         $userId = \Core\Auth::id();
         $settingModel = new \App\Models\Setting();
         $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+
+        // Check if user can access this tag in isolation mode
+        if ($isolationMode === 'isolated' && !$this->tagModel->canUserAccessTag($id, $userId, true)) {
+            $_SESSION['error'] = 'You do not have permission to view this tag.';
+            $this->redirect('/tags');
+            return;
+        }
         
         // Get domains for this tag with proper formatting
         $domainModel = new \App\Models\Domain();

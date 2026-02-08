@@ -50,10 +50,41 @@
 
             <!-- Right: Actions & User -->
             <div class="flex items-center space-x-1 sm:space-x-2">
-                <!-- Quick Add Domain -->
-                <a href="/domains/create" title="Add Domain" class="flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-150">
-                    <i class="fas fa-plus"></i>
-                </a>
+                <!-- Quick Actions Dropdown -->
+                <div class="relative">
+                    <button onclick="toggleQuickActions()" title="Quick Actions" class="flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-150">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <div id="quickActionsDropdown" class="dropdown-menu absolute right-0 mt-2 w-52 bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden py-1">
+                        <div class="px-3 py-2 border-b border-gray-100">
+                            <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Quick Actions</p>
+                        </div>
+                        <a href="/domains/create" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-primary transition-colors">
+                            <div class="w-7 h-7 bg-blue-50 rounded-md flex items-center justify-center mr-3">
+                                <i class="fas fa-globe text-blue-600 text-xs"></i>
+                            </div>
+                            Add Domain
+                        </a>
+                        <a href="/groups/create" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 hover:text-green-700 transition-colors">
+                            <div class="w-7 h-7 bg-green-50 rounded-md flex items-center justify-center mr-3">
+                                <i class="fas fa-bell text-green-600 text-xs"></i>
+                            </div>
+                            Create Group
+                        </a>
+                        <a href="/tags" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-700 transition-colors">
+                            <div class="w-7 h-7 bg-purple-50 rounded-md flex items-center justify-center mr-3">
+                                <i class="fas fa-tag text-purple-600 text-xs"></i>
+                            </div>
+                            Create Tag
+                        </a>
+                        <a href="/debug/whois" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors">
+                            <div class="w-7 h-7 bg-indigo-50 rounded-md flex items-center justify-center mr-3">
+                                <i class="fas fa-search text-indigo-600 text-xs"></i>
+                            </div>
+                            WHOIS Lookup
+                        </a>
+                    </div>
+                </div>
                 
                 <!-- Notifications -->
                 <div class="relative">
@@ -94,7 +125,7 @@
                                         <div class="flex items-start space-x-3">
                                             <?php $loginData = $notif['login_data'] ?? null; ?>
                                             <?php if ($loginData && $notif['type'] === 'session_failed'): ?>
-                                                <!-- Failed login notification (mirrors successful login layout) -->
+                                                <!-- Failed login notification -->
                                                 <a href="<?= $notifUrl ?>" class="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
                                                     <?php if (($loginData['country_code'] ?? 'xx') !== 'xx'): ?>
                                                         <span class="fi fi-<?= strtolower($loginData['country_code']) ?> text-base rounded-sm"></span>

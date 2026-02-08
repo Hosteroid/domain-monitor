@@ -280,6 +280,9 @@ $pagination = $pagination ?? [
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                             <div class="flex items-center justify-end space-x-2">
+                                <a href="/users/<?= $user['id'] ?>" class="text-gray-600 hover:text-primary" title="View Profile">
+                                    <i class="fas fa-eye"></i>
+                                </a>
                                 <a href="/users/<?= $user['id'] ?>/edit" class="text-blue-600 hover:text-blue-800" title="Edit">
                                     <i class="fas fa-edit"></i>
                                 </a>

@@ -196,6 +196,62 @@ class UserController extends Controller
     }
 
     /**
+     * Show user profile view (admin)
+     */
+    public function show($params = [])
+    {
+        $userId = $params['id'] ?? 0;
+        $user = $this->userModel->find($userId);
+
+        if (!$user) {
+            $_SESSION['error'] = 'User not found';
+            $this->redirect('/users');
+            return;
+        }
+
+        // Get user's domains (formatted for display)
+        $domainModel = new \App\Models\Domain();
+        $domains = $domainModel->getAllWithGroups($userId);
+        $domains = \App\Helpers\DomainHelper::formatMultiple($domains);
+        $userDomainStats = $domainModel->getStatistics($userId);
+
+        // Get user's tags with domains per tag
+        $tagModel = new \App\Models\Tag();
+        $tags = $tagModel->getAllWithUsage($userId);
+        
+        // Fetch domains for each tag (formatted for display)
+        foreach ($tags as &$tag) {
+            $tagDomains = $tagModel->getDomainsForTag($tag['id'], $userId);
+            $tag['domains'] = \App\Helpers\DomainHelper::formatMultiple($tagDomains);
+        }
+        unset($tag);
+
+        // Get user's notification groups with channels
+        $groupModel = new \App\Models\NotificationGroup();
+        $groups = $groupModel->getAllWithChannelCount($userId);
+        
+        // Fetch channels for each group
+        $channelModel = new \App\Models\NotificationChannel();
+        foreach ($groups as &$group) {
+            $group['channels'] = $channelModel->getByGroupId($group['id']);
+        }
+        unset($group);
+
+        // Get 2FA status
+        $twoFactorStatus = $this->userModel->getTwoFactorStatus($userId);
+
+        $this->view('users/show', [
+            'title' => htmlspecialchars($user['full_name']) . ' - User Profile',
+            'user' => $user,
+            'domains' => $domains,
+            'userDomainStats' => $userDomainStats,
+            'tags' => $tags,
+            'groups' => $groups,
+            'twoFactorStatus' => $twoFactorStatus,
+        ]);
+    }
+
+    /**
      * Show edit user form
      */
     public function edit($params = [])

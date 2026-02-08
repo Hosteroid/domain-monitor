@@ -240,47 +240,49 @@ if (!isset($appName)) {
             }
         });
 
+        // Close all dropdowns except the one specified
+        function closeOtherDropdowns(exceptId) {
+            ['userDropdown', 'notificationsDropdown', 'quickActionsDropdown'].forEach(id => {
+                if (id !== exceptId) {
+                    const el = document.getElementById(id);
+                    if (el) el.classList.remove('show');
+                }
+            });
+        }
+
         // Toggle user dropdown
         function toggleDropdown() {
-            const dropdown = document.getElementById('userDropdown');
-            const notifDropdown = document.getElementById('notificationsDropdown');
-            
-            // Close notifications dropdown if open
-            if (notifDropdown && notifDropdown.classList.contains('show')) {
-                notifDropdown.classList.remove('show');
-            }
-            
-            dropdown.classList.toggle('show');
+            closeOtherDropdowns('userDropdown');
+            document.getElementById('userDropdown').classList.toggle('show');
         }
 
         // Toggle notifications dropdown
         function toggleNotifications() {
-            const dropdown = document.getElementById('notificationsDropdown');
-            const userDropdown = document.getElementById('userDropdown');
-            
-            // Close user dropdown if open
-            if (userDropdown && userDropdown.classList.contains('show')) {
-                userDropdown.classList.remove('show');
-            }
-            
-            dropdown.classList.toggle('show');
+            closeOtherDropdowns('notificationsDropdown');
+            document.getElementById('notificationsDropdown').classList.toggle('show');
+        }
+
+        // Toggle quick actions dropdown
+        function toggleQuickActions() {
+            closeOtherDropdowns('quickActionsDropdown');
+            document.getElementById('quickActionsDropdown').classList.toggle('show');
         }
 
         // Close dropdowns when clicking outside
         document.addEventListener('click', function(event) {
-            const userDropdown = document.getElementById('userDropdown');
-            const notifDropdown = document.getElementById('notificationsDropdown');
+            const dropdowns = [
+                { id: 'userDropdown', trigger: '[onclick="toggleDropdown()"]' },
+                { id: 'notificationsDropdown', trigger: '[onclick="toggleNotifications()"]' },
+                { id: 'quickActionsDropdown', trigger: '[onclick="toggleQuickActions()"]' }
+            ];
             
-            const isUserDropdownClick = event.target.closest('[onclick="toggleDropdown()"]') || event.target.closest('#userDropdown');
-            const isNotifDropdownClick = event.target.closest('[onclick="toggleNotifications()"]') || event.target.closest('#notificationsDropdown');
-            
-            if (!isUserDropdownClick && userDropdown && userDropdown.classList.contains('show')) {
-                userDropdown.classList.remove('show');
-            }
-            
-            if (!isNotifDropdownClick && notifDropdown && notifDropdown.classList.contains('show')) {
-                notifDropdown.classList.remove('show');
-            }
+            dropdowns.forEach(({ id, trigger }) => {
+                const dd = document.getElementById(id);
+                if (dd && dd.classList.contains('show')) {
+                    const isInside = event.target.closest(trigger) || event.target.closest('#' + id);
+                    if (!isInside) dd.classList.remove('show');
+                }
+            });
         });
 
         // Live Search Functionality
