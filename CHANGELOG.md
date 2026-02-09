@@ -5,6 +5,58 @@ All notable changes to Domain Monitor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-02-09
+
+### Added
+- **Google Chat Webhook Support** - Selectable payload formats: Generic (n8n/Zapier/Make), Google Chat (rich card), and Simple Text
+- **Domain Status Change Notifications** - Configurable alerts for domain lifecycle events: available, registered, expired, redemption_period, pending_delete
+- **Failed Login Notifications** - In-app alerts for failed login attempts with geolocation, device info, and reason
+- **Domain Expiration Bell Notifications** - In-app notifications for expiring domains, respects user isolation mode
+- **Admin User Profile Page** (`/users/{id}`) - Detailed view with Overview, Domains, Tags, and Notification Groups tabs
+- **Dashboard Insights Widgets** - Registrar distribution, tag usage, and notification coverage for logged-in users
+- **Quick Actions Dropdown** - Top-nav `+` button with Add Domain, Create Group, Create Tag, and WHOIS Lookup
+- **WHOIS Rate Limit Handling** - Exponential backoff with retry logic, grouped by TLD to avoid repeated throttling
+- **Admin TLD Registry Editing** - Edit WHOIS and RDAP servers directly from the TLD registry UI
+- **Redemption Period & Pending Delete Detection** - New domain statuses parsed from EPP status codes (`redemptionPeriod`, `pendingDelete`)
+- **Configurable Status Triggers** - Settings UI to choose which domain status changes trigger notifications
+- **Sidebar Branding** - SVG logo with clickable "Domain Monitor" title and "Track your domains" subtitle
+- **404 Error Logging** - Router logs 404 errors with request method, IP, user-agent, and referer details
+- **Copy Error Report** - Clipboard copy with toast feedback in admin error detail view
+
+### Changed
+- **Dashboard Redesigned** - Compact admin system status bar, balanced widget grid, removed Quick Actions widget
+- **Mobile UI Overhauled** - Sidebar overlay with swipe-to-close, body scroll lock, responsive layout tweaks
+- **Error Log Deduplication Improved** - Matches on type + file + line + message; resolution operates on all matching errors
+- **Webhook Logging Enhanced** - Masked URLs, response body truncation, payload previews, structured error handling
+- **Notification Dropdown Enriched** - Country flags, device icons for login alerts, clickable domain links
+- **User Create Form Redesigned** - Centered card layout, responsive grid, password show/hide toggles, live validation
+- **WHOIS Date Parsing** - Added DD/MM/YYYY format support for European registries (.pt, .es, .fr)
+- **Domain Status ENUM Expanded** - Added `redemption_period` and `pending_delete` values
+- **Status Detection Improved** - Better handling for .nl and .eu domains missing expiration dates
+- **Login Success Messages** - Now include the user's full name
+- **Centralized Logging** - Logger service replaces all remaining `error_log()` calls
+
+### Fixed
+- **Notification Group Delete** - Changed from GET to POST with CSRF token (was vulnerable to CSRF)
+- **Bulk Domain Create** - Wrapped in try/catch to handle duplicate domain conflicts gracefully
+- **User Edit Form Action** - Fixed route mismatch (`/users/update` → `/users/{id}/update`)
+- **Tag Isolation Access** - Enforced permission checks in TagController for isolated mode
+- **RDAP Server Route** - Fixed route name mismatch between definition and controller method
+- **Top-Nav Dropdowns** - Fixed broken dropdown toggle logic after Quick Actions addition
+- **PHP 8.x Compatibility** - Fixed null parameter warnings in date functions
+- **Sidebar Quick Stats** - Fixed variable collision when viewing user profiles
+
+### Security
+- **CSRF Protection** - Added to profile delete, notification delete/clear-all, user delete, user toggle-status
+- **POST Method Enforced** - All destructive actions changed from GET to POST (profile, notifications, users, groups)
+- **Failed Login Alerts** - Target user notified with IP address and user-agent details
+- **Tag Access Control** - Isolated mode users blocked from viewing other users' tags via direct URL
+
+### Migrations
+- `024_add_status_notifications_v1.1.2.sql` - Expands domain status ENUM, adds notification status triggers setting, updates app version
+
+---
+
 ## [1.1.1] - 2025-11-18
 
 ### Added
@@ -336,9 +388,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [x] In-app user notifications (completed - v1.1.0)
 - [ ] Multi-user support with advanced permissions and roles
 - [ ] API for external integrations
-- [ ] Domain grouping/tagging
+- [x] Domain grouping/tagging (completed - v1.1.0)
 - [ ] Custom notification templates
 - [ ] SMS notifications (Twilio)
+- [x] Google Chat notifications (completed - v1.1.2)
 - [ ] WhatsApp notifications
 - [ ] Export functionality (CSV, PDF)
 - [ ] Import domains from CSV
@@ -346,7 +399,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] DNS record monitoring
 - [ ] SSL certificate monitoring
 - [ ] Downtime monitoring
-- [ ] 2FA for login
+- [x] 2FA for login (completed - v1.1.0)
 - [ ] Mobile app
 - [ ] Docker support
 - [ ] Redis caching
@@ -354,14 +407,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] Webhook support for third-party integrations
 - [ ] Dark mode UI toggle
 - [ ] Multi-language support
-- [ ] Advanced filtering and search
-- [ ] Bulk operations
+- [x] Advanced filtering and search (completed - v1.1.0)
+- [x] Bulk operations (completed - v1.1.0)
 - [ ] Scheduled reports
 - [ ] Integration with domain registrars
 
 ---
 
 ## Version History
+
+### 1.1.2 (2026-02-09)
+- **Google Chat Webhook Support** - Selectable payload formats (Generic, Google Chat, Simple Text)
+- **Domain Status Change Notifications** - Configurable alerts for available, registered, expired, redemption_period, pending_delete
+- **Failed Login Notifications** - In-app alerts with geolocation, device info, and failure reason
+- **Domain Expiration Bell Notifications** - In-app alerts respecting user isolation mode
+- **Admin User Profile Page** - `/users/{id}` with Overview, Domains, Tags, Notification Groups tabs
+- **Dashboard Insights** - Registrar distribution, tag usage, notification coverage widgets
+- **Quick Actions Dropdown** - Top-nav shortcut for Add Domain, Create Group, Create Tag, WHOIS Lookup
+- **WHOIS Rate Limit Handling** - Exponential backoff with TLD-grouped retry logic
+- **Admin TLD Registry Editing** - Edit WHOIS/RDAP servers from UI
+- **Redemption Period & Pending Delete** - New domain lifecycle statuses from EPP codes
+- **Sidebar Branding** - Logo, title, and subtitle in sidebar navigation
+- **Mobile UI Overhaul** - Sidebar overlay, swipe-to-close, responsive layout improvements
+- **CSRF Protection** - POST method enforced on all destructive actions
+- **Error Log Deduplication** - Improved matching on type + file + line + message
+- **WHOIS Date Parsing** - DD/MM/YYYY format support for European registries
+- **404 Error Logging** - Router logs with full request context
+- Migration: `024_add_status_notifications_v1.1.2.sql`
 
 ### 1.1.0 (2025-10-09)
 - **User Notifications System** - In-app notification center with 7 notification types, filtering, pagination
