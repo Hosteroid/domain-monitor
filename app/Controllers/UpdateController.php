@@ -115,9 +115,13 @@ class UpdateController extends Controller
             if (!$hasMigrations) {
                 try {
                     $notificationService = new NotificationService();
+                    // For hotfixes the "to_version" is a commit SHA (e.g. "4371f17"),
+                    // not a semver string. Pass the current app version so the
+                    // notification reads "v1.1.3 has been updated" instead of "v4371f17".
+                    $notifyToVersion = ($type === 'hotfix') ? $fromVersion : $toVersion;
                     $notificationService->notifyAdminsUpgrade(
                         $fromVersion,
-                        $toVersion,
+                        $notifyToVersion,
                         0,
                         !empty($result['composer_manual_required'])
                     );

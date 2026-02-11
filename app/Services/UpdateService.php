@@ -243,6 +243,9 @@ class UpdateService
                 ? ($this->settingModel->getValue('latest_available_version') ?: $this->settingModel->getAppVersion())
                 : ($this->settingModel->getValue('latest_remote_sha') ? substr($this->settingModel->getValue('latest_remote_sha'), 0, 7) : 'latest');
 
+            // Clear cached update state so the UI no longer shows a stale "update available" card
+            $this->clearUpdateCache();
+
             $this->logger->endOperation('Application Update', [
                 'success' => true,
                 'files_updated' => $filesUpdated,
@@ -385,6 +388,24 @@ class UpdateService
     // ========================================================================
     // Private: Cache methods
     // ========================================================================
+
+    /**
+     * Clear all cached update-check state so the UI no longer shows stale "update available" info.
+     * Called after a successful update is applied.
+     */
+    private function clearUpdateCache(): void
+    {
+        $this->settingModel->setValue('last_update_check', null);
+        $this->settingModel->setValue('commits_behind_count', '0');
+        $this->settingModel->setValue('latest_remote_sha', '');
+        $this->settingModel->setValue('latest_release_notes', '');
+        $this->settingModel->setValue('latest_release_url', '');
+        $this->settingModel->setValue('latest_release_published_at', '');
+        // Note: latest_available_version is kept — it's used by the view to compare
+        // against current_version. After migrations bump app_version, the comparison
+        // will no longer show an update. Clearing it could cause issues if migrations
+        // haven't run yet and the user reloads the page.
+    }
 
     private function isCacheValid(string $lastCheckTimestamp): bool
     {

@@ -573,7 +573,13 @@ class NotificationService
      */
     public function notifySystemUpgrade(int $userId, string $fromVersion, string $toVersion, int $migrationsCount, bool $composerManualRequired = false): void
     {
-        $message = "Domain Monitor upgraded from v{$fromVersion} to v{$toVersion} ({$migrationsCount} migration" . ($migrationsCount > 1 ? 's' : '') . " applied)";
+        $migrationLabel = $migrationsCount . ' migration' . ($migrationsCount !== 1 ? 's' : '') . ' applied';
+        if ($fromVersion === $toVersion) {
+            // Hotfix: same version, just file updates
+            $message = "Domain Monitor v{$toVersion} has been updated ({$migrationLabel})";
+        } else {
+            $message = "Domain Monitor upgraded from v{$fromVersion} to v{$toVersion} ({$migrationLabel})";
+        }
         if ($composerManualRequired) {
             $message .= ". Composer could not be run here (e.g. exec disabled). If dependencies changed, run \"composer install --no-dev\" manually via SSH or Terminal.";
         }
