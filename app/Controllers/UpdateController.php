@@ -109,20 +109,24 @@ class UpdateController extends Controller
             // Check for pending migrations after file update
             $hasMigrations = $this->updateService->hasPendingMigrations();
 
-            // Notify admins
-            try {
-                $notificationService = new NotificationService();
-                $notificationService->notifyAdminsUpgrade(
-                    $fromVersion,
-                    $toVersion,
-                    0,
-                    !empty($result['composer_manual_required'])
-                );
-            } catch (\Exception $e) {
-                // Non-critical
-                $this->logger->warning('Failed to send upgrade notification', [
-                    'error' => $e->getMessage(),
-                ]);
+            // Only notify admins if there are NO pending migrations.
+            // When migrations are pending, the user is redirected to /install/update
+            // which sends the upgrade notification after migrations complete (with the correct count).
+            if (!$hasMigrations) {
+                try {
+                    $notificationService = new NotificationService();
+                    $notificationService->notifyAdminsUpgrade(
+                        $fromVersion,
+                        $toVersion,
+                        0,
+                        !empty($result['composer_manual_required'])
+                    );
+                } catch (\Exception $e) {
+                    // Non-critical
+                    $this->logger->warning('Failed to send upgrade notification', [
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
 
             $message = "Update applied successfully! {$filesUpdated} file(s) updated.";

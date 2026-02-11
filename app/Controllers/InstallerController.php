@@ -578,6 +578,16 @@ class InstallerController extends Controller
             $migrations = $this->getPendingMigrations();
             $executed = [];
             
+            // Capture current app version BEFORE running migrations (so we know the real "from" version)
+            $fromVersion = null;
+            try {
+                $settingModel = new \App\Models\Setting();
+                $fromVersion = $settingModel->getAppVersion();
+            } catch (\Exception $e) {
+                // Settings table may not exist yet for very old installs
+                $fromVersion = '1.0.0';
+            }
+            
             // Ensure migrations table exists for tracking
             $pdo->exec("
                 CREATE TABLE IF NOT EXISTS migrations (
@@ -639,24 +649,23 @@ class InstallerController extends Controller
                 ]);
                 
                 try {
+                    // Re-read the app version AFTER migrations to get the "to" version
                     $settingModel = new \App\Models\Setting();
-                    $currentVersion = $settingModel->getAppVersion();
+                    $toVersion = $settingModel->getAppVersion();
                     
-                    // Determine from/to versions based on migrations
-                    $fromVersion = '1.0.0';
-                    $toVersion = '1.1.3';
-                    
-                    // Detect version based on which migrations were run
-                    if (in_array('025_add_update_system_v1.1.3.sql', $executed)) {
-                        $toVersion = '1.1.3';
-                    } elseif (in_array('024_add_status_notifications_v1.1.2.sql', $executed)) {
-                        $toVersion = '1.1.2';
-                    } elseif (in_array('022_add_pushover_channel_type.sql', $executed)) {
-                        $toVersion = '1.1.1';
-                    } elseif (in_array('011_create_sessions_table.sql', $executed) || 
-                        in_array('012_link_remember_tokens_to_sessions.sql', $executed) ||
-                        in_array('013_create_user_notifications_table.sql', $executed)) {
-                        $toVersion = '1.1.0';
+                    // Fallback: detect "to" version from which migrations were run
+                    if ($toVersion === $fromVersion) {
+                        if (in_array('025_add_update_system_v1.1.3.sql', $executed)) {
+                            $toVersion = '1.1.3';
+                        } elseif (in_array('024_add_status_notifications_v1.1.2.sql', $executed)) {
+                            $toVersion = '1.1.2';
+                        } elseif (in_array('022_add_pushover_channel_type.sql', $executed)) {
+                            $toVersion = '1.1.1';
+                        } elseif (in_array('011_create_sessions_table.sql', $executed) || 
+                            in_array('012_link_remember_tokens_to_sessions.sql', $executed) ||
+                            in_array('013_create_user_notifications_table.sql', $executed)) {
+                            $toVersion = '1.1.0';
+                        }
                     }
                     
                     $notificationService = new \App\Services\NotificationService();
