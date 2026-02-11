@@ -50,6 +50,14 @@
 
             <!-- Right: Actions & User -->
             <div class="flex items-center space-x-1 sm:space-x-2">
+                <!-- Update available badge (admin only, when enabled in settings) -->
+                <?php if (!empty($updateBadge['show'])): ?>
+                    <a href="/settings#updates" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition-colors text-xs font-semibold whitespace-nowrap" title="An update is available">
+                        <i class="fas fa-cloud-download-alt"></i>
+                        <span>Update<?= !empty($updateBadge['label']) ? ' ' . htmlspecialchars($updateBadge['label']) : '' ?></span>
+                    </a>
+                <?php endif; ?>
+
                 <!-- Quick Actions Dropdown -->
                 <div class="relative">
                     <button onclick="toggleQuickActions()" title="Quick Actions" class="flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors duration-150">
@@ -115,11 +123,15 @@
                             <?php if (!empty($recentNotifications)): ?>
                                 <?php foreach ($recentNotifications as $notif): ?>
                                     <?php
-                                    // Build the click URL: if domain notification, go to domain; otherwise just mark as read
+                                    // Build the click URL: update_available → settings#updates; domain → domain page; else mark as read only
                                     $hasDomain = !empty($notif['domain_id']);
-                                    $notifUrl = $hasDomain 
-                                        ? '/notifications/' . $notif['id'] . '/mark-read?redirect=domain&domain_id=' . $notif['domain_id']
-                                        : '/notifications/' . $notif['id'] . '/mark-read';
+                                    if ($notif['type'] === 'update_available') {
+                                        $notifUrl = '/notifications/' . $notif['id'] . '/mark-read?redirect=settings';
+                                    } elseif ($hasDomain) {
+                                        $notifUrl = '/notifications/' . $notif['id'] . '/mark-read?redirect=domain&domain_id=' . $notif['domain_id'];
+                                    } else {
+                                        $notifUrl = '/notifications/' . $notif['id'] . '/mark-read';
+                                    }
                                     ?>
                                     <div class="px-4 py-3 hover:bg-gray-50 border-b border-gray-100 bg-blue-50 transition-colors notification-item" data-id="<?= $notif['id'] ?>">
                                         <div class="flex items-start space-x-3">

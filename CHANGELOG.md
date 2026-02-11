@@ -5,6 +5,56 @@ All notable changes to Domain Monitor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-02-11
+
+### Added
+- **CSV/JSON Import & Export for Domains** - Export all domains with tags, groups, and notes; import from file with WHOIS auto-lookup, group matching by name, and duplicate skip
+- **CSV/JSON Import & Export for Tags** - Export/import user tags with human-readable color names and descriptions
+- **CSV/JSON Import & Export for Notification Groups** - Export groups with channels (sensitive data masked); import with auto-disable for masked credentials
+- **In-App Update System** - Check, download, and apply updates directly from Settings (GitHub Releases & hotfix tracking)
+  - Two update channels: Stable (releases only) and Latest (releases + hotfixes)
+  - Full file and database backup before every update, with one-click rollback
+  - Automatic `composer install` when dependencies change (detects cPanel/shared hosting limitations)
+  - Commit SHA integrity verification on downloaded archives
+  - Update badge in top navigation bar (admin-only, configurable)
+  - Cron-based background update checks with admin notifications
+- **Update Available Notifications** - In-app alerts for admins when a new release or hotfix is detected
+- **Tag Transfer** - Admin-only transfer of individual or bulk-selected tags to another user
+- **Domain Bulk Transfer** - Admin-only bulk transfer of selected domains to another user
+- **Drag-and-Drop File Upload** - File import zones on Domains (bulk-add), Tags, and Groups pages with format hints and size limits
+
+### Changed
+- **Bulk Action Bars Redesigned** - Consistent inline toolbar across Domains, Tags, Groups, Users, Errors, and TLD Registry
+- **Notification Click Routing** - `update_available` notifications redirect to Settings → Updates tab
+- **Domains Per-Page Preference** - Remembered via cookie (persists for 1 year)
+- **Installer Route Protection** - Requires admin auth for post-install routes; blocks re-installation
+- **Settings Page** - New Updates tab with status card, preferences, rollback, and release notes viewer (Markdown rendered via marked.js + DOMPurify)
+- **Button Color Consistency** - TLD Registry and transfer modals use `bg-primary` branding instead of mixed indigo/green
+- **ErrorHandler Hardened** - Recursion guard, `JSON_PARTIAL_OUTPUT_ON_ERROR` for stack traces, `\Throwable` catch, graceful fallback to `error_log()`
+
+### Fixed
+- **Tag Delete XSS** - Fixed escaping of tag names containing quotes in delete confirmation
+- **Bulk Actions Bar Toggle Bug** - Removed flex class toggling that caused display issues
+
+### Security
+- **Sensitive Data Masking in Exports** - API tokens show `****` + last 4 chars; webhook URLs show scheme + host only; masked channels imported as disabled
+- **Installer Access Control** - Post-install pages (update, migration runner) require admin authentication
+- **Import Validation** - File size limits (5 MB domains, 2 MB groups, 1 MB tags), extension whitelist (`.csv`, `.json`), CSRF on all import forms
+
+### Technical
+- **UpdateController** - New admin-only controller with check, apply, rollback, and preference endpoints
+- **UpdateService** - GitHub API integration with release/commit tracking, file + DB backup, staged extraction, and rollback
+- **LayoutHelper::getUpdateBadgeInfo()** - Cached badge state for top-nav without API calls on page load
+- **ViewHelper::getMaxUploadSize()** - Returns effective PHP upload limit as human-readable string
+- **NotificationGroup::findByName()** - Lookup groups by name with optional user scope
+- **Setting::getUpdateSettings()** - Returns all update-related settings in one call
+- **In-memory CSV building** - Uses `php://temp` streams to avoid output buffer conflicts
+
+### Migrations
+- `025_add_update_system_v1.1.3.sql` - Adds `update_channel` and `update_badge_enabled` settings, updates app version to 1.1.3
+
+---
+
 ## [1.1.2] - 2026-02-09
 
 ### Added
@@ -393,8 +443,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] SMS notifications (Twilio)
 - [x] Google Chat notifications (completed - v1.1.2)
 - [ ] WhatsApp notifications
-- [ ] Export functionality (CSV, PDF)
-- [ ] Import domains from CSV
+- [x] Export functionality (CSV, JSON) (completed - v1.1.3)
+- [x] Import domains from CSV/JSON (completed - v1.1.3)
 - [ ] Domain transfer tracking
 - [ ] DNS record monitoring
 - [ ] SSL certificate monitoring
@@ -415,6 +465,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## Version History
+
+### 1.1.3 (2026-02-11)
+- **CSV/JSON Import & Export** - Domains, Tags, and Notification Groups with drag-and-drop file upload
+- **Sensitive Data Masking** - API tokens and webhook URLs masked in group exports; masked channels imported as disabled
+- **In-App Update System** - Check, apply, and rollback updates from Settings (GitHub Releases + hotfix tracking)
+- **Update Channels** - Stable (releases only) or Latest (releases + hotfixes) with configurable badge
+- **File & Database Backup** - Automatic backup before every update, one-click rollback
+- **Update Notifications** - In-app alerts for admins when new releases or hotfixes are detected
+- **Tag Transfer** - Admin-only individual and bulk transfer of tags between users
+- **Domain Bulk Transfer** - Admin-only bulk transfer of domains to another user
+- **Bulk Action Bars Redesigned** - Consistent inline toolbar styling across all list pages
+- **Installer Hardened** - Admin auth required post-install; re-installation blocked
+- **ErrorHandler Improvements** - Recursion guard, graceful fallback logging, `\Throwable` catch
+- Migration: `025_add_update_system_v1.1.3.sql`
 
 ### 1.1.2 (2026-02-09)
 - **Google Chat Webhook Support** - Selectable payload formats (Generic, Google Chat, Simple Text)

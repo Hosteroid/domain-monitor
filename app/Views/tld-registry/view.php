@@ -355,7 +355,7 @@ ob_start();
             </div>
             <div class="flex gap-3">
                 <button type="submit" 
-                        class="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors text-sm">
+                        class="flex-1 inline-flex items-center justify-center px-4 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors text-sm">
                     <i class="fas fa-save mr-2"></i>
                     Save Changes
                 </button>

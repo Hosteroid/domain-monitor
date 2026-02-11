@@ -49,13 +49,243 @@ class TagController extends Controller
         
         $availableColors = $this->tagModel->getAvailableColors();
         
+        // Get users for transfer functionality (admin only)
+        $users = [];
+        if (\Core\Auth::isAdmin()) {
+            $userModel = new \App\Models\User();
+            $users = $userModel->all();
+        }
+        
         $this->view('tags/index', [
             'tags' => $result['tags'],
             'pagination' => $result['pagination'],
             'filters' => $filters,
             'availableColors' => $availableColors,
-            'isolationMode' => $isolationMode
+            'isolationMode' => $isolationMode,
+            'users' => $users
         ]);
+    }
+
+    /**
+     * Export user's private tags as CSV or JSON
+     */
+    public function export()
+    {
+        $logger = new \App\Services\Logger('export');
+
+        try {
+            $userId = \Core\Auth::id();
+            $format = $_GET['format'] ?? 'csv';
+            $logger->info("Tags export started", ['format' => $format, 'user_id' => $userId]);
+
+            if (!in_array($format, ['csv', 'json'])) {
+                $_SESSION['error'] = 'Invalid export format';
+                $this->redirect('/tags');
+                return;
+            }
+
+            // Get only the user's private tags (not global)
+            $allUserTags = $this->tagModel->where('user_id', $userId);
+            usort($allUserTags, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+
+            // Map CSS class to readable color name for export
+            $colorNames = $this->tagModel->getAvailableColors(); // cssClass => 'Name'
+            $tags = array_map(fn($t) => [
+                'name' => $t['name'],
+                'color' => $colorNames[$t['color']] ?? 'Gray',
+                'description' => $t['description'] ?? ''
+            ], $allUserTags);
+
+            $logger->info("Tags data prepared", ['count' => count($tags)]);
+
+            $date = date('Y-m-d');
+            $filename = "tags_export_{$date}";
+
+            // Clean any prior output buffers to prevent header conflicts
+            $obLevel = ob_get_level();
+            $logger->debug("Output buffer level before clean", ['ob_level' => $obLevel]);
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            $headersSent = headers_sent($sentFile, $sentLine);
+            $logger->debug("Headers status before sending", [
+                'headers_already_sent' => $headersSent,
+                'sent_file' => $sentFile ?? null,
+                'sent_line' => $sentLine ?? null
+            ]);
+
+            if ($format === 'json') {
+                header('Content-Type: application/json');
+                header("Content-Disposition: attachment; filename=\"{$filename}.json\"");
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo json_encode($tags, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            } else {
+                // Build CSV in memory to avoid fopen('php://output') issues
+                $csvContent = $this->buildCsv($tags, ['name', 'color', 'description']);
+                $logger->info("CSV content built", ['bytes' => strlen($csvContent)]);
+
+                header('Content-Type: text/csv; charset=utf-8');
+                header("Content-Disposition: attachment; filename=\"{$filename}.csv\"");
+                header('Content-Length: ' . strlen($csvContent));
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo $csvContent;
+            }
+
+            $logger->info("Tags export completed successfully");
+            exit;
+        } catch (\Throwable $e) {
+            $logger->error("Tags export failed", [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            $_SESSION['error'] = 'Export failed: ' . $e->getMessage();
+            $this->redirect('/tags');
+        }
+    }
+
+    /**
+     * Build CSV string in memory from array data
+     */
+    private function buildCsv(array $rows, array $headers): string
+    {
+        $handle = fopen('php://temp', 'r+');
+        fputcsv($handle, $headers, ',', '"', '\\');
+        foreach ($rows as $row) {
+            fputcsv($handle, array_values($row), ',', '"', '\\');
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+        return $csv;
+    }
+
+    /**
+     * Import tags from CSV or JSON file
+     */
+    public function import()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/tags');
+            return;
+        }
+
+        $this->verifyCsrf('/tags');
+
+        if (!isset($_FILES['import_file']) || $_FILES['import_file']['error'] !== UPLOAD_ERR_OK) {
+            $_SESSION['error'] = 'Please select a valid file to import';
+            $this->redirect('/tags');
+            return;
+        }
+
+        $file = $_FILES['import_file'];
+
+        // Validate file size (1MB max)
+        if ($file['size'] > 1048576) {
+            $_SESSION['error'] = 'File is too large. Maximum size is 1MB';
+            $this->redirect('/tags');
+            return;
+        }
+
+        // Detect format from extension
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['csv', 'json'])) {
+            $_SESSION['error'] = 'Invalid file type. Please upload a CSV or JSON file';
+            $this->redirect('/tags');
+            return;
+        }
+
+        $content = file_get_contents($file['tmp_name']);
+        $tagsData = [];
+
+        if ($ext === 'json') {
+            $parsed = json_decode($content, true);
+            if (!is_array($parsed)) {
+                $_SESSION['error'] = 'Invalid JSON file';
+                $this->redirect('/tags');
+                return;
+            }
+            $tagsData = $parsed;
+        } else {
+            $lines = array_filter(explode("\n", $content));
+            $header = null;
+            foreach ($lines as $line) {
+                $row = str_getcsv(trim($line), ',', '"', '\\');
+                if (!$header) {
+                    $header = array_map('strtolower', array_map('trim', $row));
+                    continue;
+                }
+                $item = [];
+                foreach ($header as $i => $col) {
+                    $item[$col] = $row[$i] ?? '';
+                }
+                $tagsData[] = $item;
+            }
+        }
+
+        if (empty($tagsData)) {
+            $_SESSION['error'] = 'No tags found in file';
+            $this->redirect('/tags');
+            return;
+        }
+
+        $userId = \Core\Auth::id();
+        $colorMap = $this->tagModel->getAvailableColors(); // cssClass => 'Name'
+        $availableColorClasses = array_keys($colorMap);
+        // Build reverse map: lowercase name => cssClass (e.g. 'blue' => 'bg-blue-100 ...')
+        $nameToClass = [];
+        foreach ($colorMap as $cssClass => $colorName) {
+            $nameToClass[strtolower($colorName)] = $cssClass;
+        }
+        $defaultColor = $availableColorClasses[0] ?? 'bg-gray-100 text-gray-700 border-gray-300';
+        $created = 0;
+        $skipped = 0;
+
+        foreach ($tagsData as $tagRow) {
+            $name = trim($tagRow['name'] ?? '');
+            if (empty($name) || !preg_match('/^[a-z0-9-]+$/', $name)) {
+                $skipped++;
+                continue;
+            }
+
+            // Check if already exists for this user
+            $existing = $this->tagModel->findByName($name, $userId);
+            if ($existing) {
+                $skipped++;
+                continue;
+            }
+
+            // Accept both color names ("Blue") and raw CSS classes
+            $colorInput = trim($tagRow['color'] ?? '');
+            if (!empty($colorInput)) {
+                if (isset($nameToClass[strtolower($colorInput)])) {
+                    // Human-readable name (e.g. "Blue")
+                    $color = $nameToClass[strtolower($colorInput)];
+                } elseif (in_array($colorInput, $availableColorClasses)) {
+                    // Raw CSS class (backward compatible)
+                    $color = $colorInput;
+                } else {
+                    $color = $defaultColor;
+                }
+            } else {
+                $color = $defaultColor;
+            }
+
+            $this->tagModel->create([
+                'name' => $name,
+                'color' => $color,
+                'description' => trim($tagRow['description'] ?? ''),
+                'user_id' => $userId
+            ]);
+            $created++;
+        }
+
+        $_SESSION['success'] = "{$created} tag(s) imported successfully" . ($skipped > 0 ? ", {$skipped} skipped (already exist or invalid)" : '');
+        $this->redirect('/tags');
     }
 
     /**
@@ -442,12 +672,7 @@ class TagController extends Controller
             return;
         }
 
-        // Verify CSRF token
-        if (!\Core\Csrf::verify($_POST['csrf_token'] ?? '')) {
-            $_SESSION['error'] = 'Invalid request';
-            $this->redirect('/tags');
-            return;
-        }
+        $this->verifyCsrf('/tags');
 
         $tagIds = $_POST['tag_ids'] ?? [];
         if (empty($tagIds)) {
@@ -494,6 +719,99 @@ class TagController extends Controller
             $_SESSION['error'] = implode(', ', $errors);
         }
 
+        $this->redirect('/tags');
+    }
+
+    /**
+     * Transfer tag to another user (Admin only)
+     */
+    public function transfer()
+    {
+        \Core\Auth::requireAdmin();
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/tags');
+            return;
+        }
+
+        $this->verifyCsrf('/tags');
+
+        $tagId = (int)($_POST['tag_id'] ?? 0);
+        $targetUserId = (int)($_POST['target_user_id'] ?? 0);
+
+        if (!$tagId || !$targetUserId) {
+            $_SESSION['error'] = 'Invalid tag or user selected';
+            $this->redirect('/tags');
+            return;
+        }
+
+        $tag = $this->tagModel->find($tagId);
+        if (!$tag) {
+            $_SESSION['error'] = 'Tag not found';
+            $this->redirect('/tags');
+            return;
+        }
+
+        $userModel = new \App\Models\User();
+        $targetUser = $userModel->find($targetUserId);
+        if (!$targetUser) {
+            $_SESSION['error'] = 'Target user not found';
+            $this->redirect('/tags');
+            return;
+        }
+
+        if ($this->tagModel->update($tagId, ['user_id' => $targetUserId])) {
+            $_SESSION['success'] = "Tag '{$tag['name']}' transferred to {$targetUser['username']}";
+        } else {
+            $_SESSION['error'] = 'Failed to transfer tag. Please try again.';
+        }
+
+        $this->redirect('/tags');
+    }
+
+    /**
+     * Bulk transfer tags to another user (Admin only)
+     */
+    public function bulkTransfer()
+    {
+        \Core\Auth::requireAdmin();
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/tags');
+            return;
+        }
+
+        $this->verifyCsrf('/tags');
+
+        $tagIds = $_POST['tag_ids'] ?? [];
+        $targetUserId = (int)($_POST['target_user_id'] ?? 0);
+
+        if (empty($tagIds) || !$targetUserId) {
+            $_SESSION['error'] = 'No tags selected or invalid user';
+            $this->redirect('/tags');
+            return;
+        }
+
+        $userModel = new \App\Models\User();
+        $targetUser = $userModel->find($targetUserId);
+        if (!$targetUser) {
+            $_SESSION['error'] = 'Target user not found';
+            $this->redirect('/tags');
+            return;
+        }
+
+        $transferred = 0;
+        foreach ($tagIds as $tagId) {
+            $tagId = (int)$tagId;
+            if ($tagId > 0) {
+                $tag = $this->tagModel->find($tagId);
+                if ($tag && $this->tagModel->update($tagId, ['user_id' => $targetUserId])) {
+                    $transferred++;
+                }
+            }
+        }
+
+        $_SESSION['success'] = $transferred . ' tag(s) transferred to ' . $targetUser['username'];
         $this->redirect('/tags');
     }
 }

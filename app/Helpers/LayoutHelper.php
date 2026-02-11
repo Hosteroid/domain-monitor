@@ -132,6 +132,7 @@ class LayoutHelper
             'whois_failed' => 'exclamation-circle',
             'system_welcome' => 'hand-sparkles',
             'system_upgrade' => 'arrow-up',
+            'update_available' => 'cloud-download-alt',
             default => 'bell'
         };
     }
@@ -154,6 +155,7 @@ class LayoutHelper
             'whois_failed' => 'gray',
             'system_welcome' => 'purple',
             'system_upgrade' => 'indigo',
+            'update_available' => 'blue',
             default => 'gray'
         };
     }
@@ -180,6 +182,48 @@ class LayoutHelper
                 'app_timezone' => 'UTC',
                 'app_version' => $settingModel->getAppVersion()
             ];
+        }
+    }
+
+    /**
+     * Get update badge info for the top menu (admin only).
+     * Uses cached update check data; no GitHub API call.
+     * Returns ['show' => bool, 'available' => bool, 'label' => string].
+     */
+    public static function getUpdateBadgeInfo(): array
+    {
+        try {
+            $settingModel = new Setting();
+            $updateSettings = $settingModel->getUpdateSettings();
+            $badgeEnabled = ($updateSettings['update_badge_enabled'] ?? '1') !== '0';
+            if (!$badgeEnabled) {
+                return ['show' => false, 'available' => false, 'label' => ''];
+            }
+
+            $current = $settingModel->getAppVersion();
+            $latestVersion = $updateSettings['latest_available_version'] ?? null;
+            $channel = $updateSettings['update_channel'] ?? 'stable';
+            $commitsBehind = (int) ($updateSettings['commits_behind_count'] ?? 0);
+
+            $available = false;
+            $label = '';
+
+            if ($latestVersion && version_compare($latestVersion, $current, '>')) {
+                $available = true;
+                $label = 'v' . $latestVersion;
+            }
+            if ($channel === 'latest' && $commitsBehind > 0 && !$available) {
+                $available = true;
+                $label = $commitsBehind . ' commit' . ($commitsBehind !== 1 ? 's' : '');
+            }
+
+            return [
+                'show' => $available,
+                'available' => $available,
+                'label' => $label,
+            ];
+        } catch (\Exception $e) {
+            return ['show' => false, 'available' => false, 'label' => ''];
         }
     }
 }

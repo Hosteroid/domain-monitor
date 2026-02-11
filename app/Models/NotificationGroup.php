@@ -98,5 +98,21 @@ class NotificationGroup extends Model
         $stmt->execute([$userId]);
         return $stmt->rowCount();
     }
+
+    /**
+     * Find a notification group by name
+     */
+    public function findByName(string $name, ?int $userId = null): ?array
+    {
+        if ($userId) {
+            $stmt = $this->db->prepare("SELECT * FROM notification_groups WHERE name = ? AND user_id = ? LIMIT 1");
+            $stmt->execute([$name, $userId]);
+        } else {
+            $stmt = $this->db->prepare("SELECT * FROM notification_groups WHERE name = ? LIMIT 1");
+            $stmt->execute([$name]);
+        }
+        $result = $stmt->fetch();
+        return $result ?: null;
+    }
 }
 

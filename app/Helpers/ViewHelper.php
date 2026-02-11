@@ -139,6 +139,37 @@ class ViewHelper
     }
 
     /**
+     * Get the PHP max upload size from ini settings.
+     * Returns the lower of upload_max_filesize and post_max_size as a human-readable string.
+     *
+     * @return string Human-readable size (e.g. "128 MB")
+     */
+    public static function getMaxUploadSize(): string
+    {
+        $phpUploadMax = self::parseIniSize(ini_get('upload_max_filesize') ?: '2M');
+        $phpPostMax = self::parseIniSize(ini_get('post_max_size') ?: '8M');
+        $phpLimit = min($phpUploadMax, $phpPostMax);
+
+        return self::formatBytes($phpLimit, 0);
+    }
+
+    /**
+     * Parse a PHP ini size value (e.g. "2M", "128K", "1G") into bytes.
+     */
+    private static function parseIniSize(string $size): int
+    {
+        $value = (int) $size;
+        $unit = strtolower(substr(trim($size), -1));
+
+        return match ($unit) {
+            'g' => $value * 1073741824,
+            'm' => $value * 1048576,
+            'k' => $value * 1024,
+            default => $value,
+        };
+    }
+
+    /**
      * Generate alert message HTML
      */
     public static function alert(string $type, string $message): string

@@ -12,9 +12,12 @@ if ($userId) {
     $notificationData = \App\Helpers\LayoutHelper::getNotifications($userId);
     $recentNotifications = $notificationData['items'];
     $unreadNotifications = $notificationData['unread_count'];
+    // Update badge in top menu (admin only, uses cached update check data)
+    $updateBadge = \Core\Auth::isAdmin() ? \App\Helpers\LayoutHelper::getUpdateBadgeInfo() : ['show' => false, 'available' => false, 'label' => ''];
 } else {
     $recentNotifications = [];
     $unreadNotifications = 0;
+    $updateBadge = ['show' => false, 'available' => false, 'label' => ''];
 }
 
 // Get domain stats for sidebar (available on all pages)

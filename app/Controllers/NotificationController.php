@@ -93,7 +93,7 @@ class NotificationController extends Controller
         
         $this->notificationModel->markAsRead($notificationId, $userId);
         
-        // If redirect=domain, go to the domain view page
+        // Optional redirect after marking read
         $redirect = $_GET['redirect'] ?? '';
         if ($redirect === 'domain') {
             $domainId = (int)($_GET['domain_id'] ?? 0);
@@ -101,6 +101,10 @@ class NotificationController extends Controller
                 $this->redirect('/domains/' . $domainId);
                 return;
             }
+        }
+        if ($redirect === 'settings') {
+            $this->redirect('/settings#updates');
+            return;
         }
         
         // AJAX request - return JSON (check multiple detection methods)
@@ -225,6 +229,7 @@ class NotificationController extends Controller
             'whois_failed' => 'exclamation-circle',
             'system_welcome' => 'hand-sparkles',
             'system_upgrade' => 'arrow-up',
+            'update_available' => 'cloud-download-alt',
             default => 'bell'
         };
     }
@@ -247,6 +252,7 @@ class NotificationController extends Controller
             'whois_failed' => 'gray',
             'system_welcome' => 'purple',
             'system_upgrade' => 'indigo',
+            'update_available' => 'blue',
             default => 'gray'
         };
     }

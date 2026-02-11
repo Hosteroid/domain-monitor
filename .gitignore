@@ -46,7 +46,7 @@ Desktop.ini
 *.pem
 *.key
 *.crt
-/database/backups/
+/backups/
 
 # Development
 /tests/coverage/

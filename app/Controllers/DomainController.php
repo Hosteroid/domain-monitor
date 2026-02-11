@@ -51,7 +51,13 @@ class DomainController extends Controller
         $sortBy = $_GET['sort'] ?? 'domain_name';
         $sortOrder = $_GET['order'] ?? 'asc';
         $page = max(1, (int)($_GET['page'] ?? 1));
-        $perPage = max(10, min(100, (int)($_GET['per_page'] ?? 25))); // Between 10 and 100
+        // Remember per_page preference via cookie
+        if (isset($_GET['per_page'])) {
+            $perPage = max(10, min(100, (int)$_GET['per_page']));
+            setcookie('domains_per_page', (string)$perPage, time() + 365 * 24 * 60 * 60, '/');
+        } else {
+            $perPage = max(10, min(100, (int)($_COOKIE['domains_per_page'] ?? 25)));
+        }
 
         // Get expiring threshold from settings
         $notificationDays = $settingModel->getNotificationDays();
@@ -112,6 +118,260 @@ class DomainController extends Controller
             'pagination' => $result['pagination'],
             'title' => 'Domains'
         ]);
+    }
+
+    /**
+     * Export domains as CSV or JSON
+     */
+    public function export()
+    {
+        $logger = new \App\Services\Logger('export');
+
+        try {
+            $userId = \Core\Auth::id();
+            $settingModel = new \App\Models\Setting();
+            $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+            $format = $_GET['format'] ?? 'csv';
+            $logger->info("Domains export started", ['format' => $format, 'user_id' => $userId]);
+
+            if (!in_array($format, ['csv', 'json'])) {
+                $_SESSION['error'] = 'Invalid export format';
+                $this->redirect('/domains');
+                return;
+            }
+
+            // Get all domains with groups and tags
+            $domains = $this->domainModel->getAllWithGroups($isolationMode === 'isolated' ? $userId : null);
+
+            $exportData = [];
+            foreach ($domains as $domain) {
+                $exportData[] = [
+                    'domain_name' => $domain['domain_name'],
+                    'status' => $domain['status'] ?? '',
+                    'registrar' => $domain['registrar'] ?? '',
+                    'expiration_date' => $domain['expiration_date'] ?? '',
+                    'tags' => $domain['tags'] ?? '',
+                    'notification_group' => $domain['group_name'] ?? '',
+                    'notes' => $domain['notes'] ?? ''
+                ];
+            }
+
+            $date = date('Y-m-d');
+            $filename = "domains_export_{$date}";
+
+            // Clean any prior output buffers to prevent header conflicts
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            if ($format === 'json') {
+                header('Content-Type: application/json');
+                header("Content-Disposition: attachment; filename=\"{$filename}.json\"");
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo json_encode($exportData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            } else {
+                // Build CSV in memory to avoid fopen('php://output') issues
+                $csvContent = $this->buildCsv($exportData, ['domain_name', 'status', 'registrar', 'expiration_date', 'tags', 'notification_group', 'notes']);
+                $logger->info("CSV content built", ['bytes' => strlen($csvContent)]);
+
+                header('Content-Type: text/csv; charset=utf-8');
+                header("Content-Disposition: attachment; filename=\"{$filename}.csv\"");
+                header('Content-Length: ' . strlen($csvContent));
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo $csvContent;
+            }
+
+            $logger->info("Domains export completed successfully");
+            exit;
+        } catch (\Throwable $e) {
+            $logger->error("Domains export failed", [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            $_SESSION['error'] = 'Export failed: ' . $e->getMessage();
+            $this->redirect('/domains');
+        }
+    }
+
+    /**
+     * Build CSV string in memory from array data
+     */
+    private function buildCsv(array $rows, array $headers): string
+    {
+        $handle = fopen('php://temp', 'r+');
+        fputcsv($handle, $headers, ',', '"', '\\');
+        foreach ($rows as $row) {
+            fputcsv($handle, array_values($row), ',', '"', '\\');
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+        return $csv;
+    }
+
+    /**
+     * Import domains from CSV or JSON file
+     */
+    public function import()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains/bulk-add');
+            return;
+        }
+
+        $this->verifyCsrf('/domains/bulk-add');
+
+        if (!isset($_FILES['import_file']) || $_FILES['import_file']['error'] !== UPLOAD_ERR_OK) {
+            $_SESSION['error'] = 'Please select a valid file to import';
+            $this->redirect('/domains/bulk-add');
+            return;
+        }
+
+        $file = $_FILES['import_file'];
+
+        // Validate file size (5MB max for domains)
+        if ($file['size'] > 5242880) {
+            $_SESSION['error'] = 'File is too large. Maximum size is 5MB';
+            $this->redirect('/domains/bulk-add');
+            return;
+        }
+
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['csv', 'json'])) {
+            $_SESSION['error'] = 'Invalid file type. Please upload a CSV or JSON file';
+            $this->redirect('/domains/bulk-add');
+            return;
+        }
+
+        $content = file_get_contents($file['tmp_name']);
+        $domainsData = [];
+
+        if ($ext === 'json') {
+            $parsed = json_decode($content, true);
+            if (!is_array($parsed)) {
+                $_SESSION['error'] = 'Invalid JSON file';
+                $this->redirect('/domains/bulk-add');
+                return;
+            }
+            $domainsData = $parsed;
+        } else {
+            $lines = array_filter(explode("\n", $content));
+            $header = null;
+            foreach ($lines as $line) {
+                $row = str_getcsv(trim($line), ',', '"', '\\');
+                if (!$header) {
+                    $header = array_map('strtolower', array_map('trim', $row));
+                    continue;
+                }
+                $item = [];
+                foreach ($header as $i => $col) {
+                    $item[$col] = $row[$i] ?? '';
+                }
+                $domainsData[] = $item;
+            }
+        }
+
+        if (empty($domainsData)) {
+            $_SESSION['error'] = 'No domains found in file';
+            $this->redirect('/domains/bulk-add');
+            return;
+        }
+
+        $userId = \Core\Auth::id();
+        $settingModel = new \App\Models\Setting();
+        $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+        $tagModel = new \App\Models\Tag();
+
+        // Form-level notification group
+        $formGroupId = (int)($_POST['notification_group_id'] ?? 0);
+
+        $added = 0;
+        $skipped = 0;
+        $errors = [];
+        $logger = new \App\Services\Logger();
+
+        foreach ($domainsData as $row) {
+            $domainName = strtolower(trim($row['domain_name'] ?? ''));
+            if (empty($domainName)) {
+                continue;
+            }
+
+            // Remove protocol/www
+            $domainName = preg_replace('#^https?://#', '', $domainName);
+            $domainName = preg_replace('#^www\.#', '', $domainName);
+            $domainName = rtrim($domainName, '/');
+
+            if ($this->domainModel->existsByDomain($domainName)) {
+                $skipped++;
+                continue;
+            }
+
+            try {
+                // Fetch WHOIS data
+                $whoisData = $this->whoisService->getDomainInfo($domainName);
+
+                if (!$whoisData) {
+                    $errors[] = $domainName;
+                    continue;
+                }
+
+                $status = $this->whoisService->getDomainStatus(
+                    $whoisData['expiration_date'] ?? null,
+                    $whoisData['status'] ?? [],
+                    $whoisData
+                );
+
+                // Determine notification group: from file column or form fallback
+                $groupId = null;
+                $groupName = trim($row['notification_group'] ?? '');
+                if (!empty($groupName)) {
+                    $groupStmt = $this->groupModel->findByName($groupName, $isolationMode === 'isolated' ? $userId : null);
+                    if ($groupStmt) {
+                        $groupId = $groupStmt['id'];
+                    }
+                }
+                if (!$groupId && $formGroupId > 0) {
+                    $groupId = $formGroupId;
+                }
+
+                $domainId = $this->domainModel->create([
+                    'domain_name' => $domainName,
+                    'registrar' => $whoisData['registrar'] ?? null,
+                    'registrar_url' => $whoisData['registrar_url'] ?? null,
+                    'expiration_date' => $whoisData['expiration_date'] ?? null,
+                    'updated_date' => $whoisData['updated_date'] ?? null,
+                    'abuse_email' => $whoisData['abuse_email'] ?? null,
+                    'status' => $status,
+                    'whois_data' => json_encode($whoisData),
+                    'notes' => trim($row['notes'] ?? ''),
+                    'last_checked' => date('Y-m-d H:i:s'),
+                    'notification_group_id' => $groupId,
+                    'user_id' => $isolationMode === 'isolated' ? $userId : null
+                ]);
+
+                // Handle tags from file
+                $fileTags = trim($row['tags'] ?? '');
+                if (!empty($fileTags) && $domainId) {
+                    $tagModel->updateDomainTags($domainId, $fileTags, $userId);
+                }
+
+                if ($domainId) {
+                    $added++;
+                }
+            } catch (\Exception $e) {
+                $errors[] = $domainName;
+                $logger->error('Domain import failed', ['domain' => $domainName, 'error' => $e->getMessage()]);
+            }
+        }
+
+        $msg = "{$added} domain(s) imported successfully";
+        if ($skipped > 0) $msg .= ", {$skipped} skipped (already exist)";
+        if (!empty($errors)) $msg .= ", " . count($errors) . " failed";
+        $_SESSION['success'] = $msg;
+        $this->redirect('/domains');
     }
 
     public function create()

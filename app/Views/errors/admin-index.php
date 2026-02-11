@@ -121,25 +121,6 @@ $currentFilters = $filters ?? ['resolved' => '', 'type' => '', 'sort' => 'last_o
     </form>
 </div>
 
-<!-- Bulk Actions Toolbar (Hidden by default, shown when errors are selected) -->
-<div id="bulk-actions" class="hidden mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-    <div class="flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <span id="selected-count" class="text-sm font-medium text-blue-900"></span>
-            
-            <button type="button" onclick="bulkDelete()" class="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
-                <i class="fas fa-trash mr-2"></i>
-                Delete Selected
-            </button>
-            
-            <button type="button" onclick="clearSelection()" class="inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition-colors font-medium">
-                <i class="fas fa-times mr-2"></i>
-                Clear Selection
-            </button>
-        </div>
-    </div>
-</div>
-
 <!-- Pagination Info -->
 <div class="mb-4 flex justify-between items-center">
     <div class="text-sm text-gray-600">
@@ -167,6 +148,22 @@ $currentFilters = $filters ?? ['resolved' => '', 'type' => '', 'sort' => 'last_o
 
 <!-- Errors List -->
 <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <!-- Bulk Actions Bar (shown when errors are selected) -->
+    <div id="bulk-actions" class="hidden px-6 py-3 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <span id="selected-count" class="text-sm font-medium text-gray-700"></span>
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="bulkDelete()" class="inline-flex items-center px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-trash mr-1"></i> Delete Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+        <button type="button" onclick="clearSelection()" class="inline-flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
+            <i class="fas fa-times mr-1.5"></i> Clear Selection
+        </button>
+    </div>
     <?php if (!empty($errors)): ?>
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200">
@@ -543,11 +540,9 @@ function updateBulkActions() {
     
     if (checkboxes.length > 0) {
         bulkActions.classList.remove('hidden');
-        bulkActions.classList.add('flex');
         selectedCount.textContent = checkboxes.length + ' error(s) selected';
     } else {
         bulkActions.classList.add('hidden');
-        bulkActions.classList.remove('flex');
     }
     
     // Update select all checkbox state

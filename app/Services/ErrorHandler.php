@@ -19,6 +19,7 @@ class ErrorHandler
     private Logger $logger;
     private ?ErrorLog $errorLogModel = null;
     private bool $isDevelopment;
+    private bool $handling = false; // Recursion guard
 
     public function __construct()
     {
@@ -29,9 +30,8 @@ class ErrorHandler
         // Initialize ErrorLog model if database is available
         try {
             $this->errorLogModel = new ErrorLog();
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             // Database not available, will only use file logging
-            // Don't use error_log as it might fail too
         }
     }
 
@@ -40,6 +40,22 @@ class ErrorHandler
      */
     public function handleException(\Throwable $exception): void
     {
+        // Prevent infinite recursion if error handling itself triggers an error
+        if ($this->handling) {
+            // Fallback: just log to file and stop
+            try {
+                $this->logger->critical('Recursive error detected', [
+                    'message' => $exception->getMessage(),
+                    'file' => $exception->getFile(),
+                    'line' => $exception->getLine()
+                ]);
+            } catch (\Throwable $e) {
+                // Last resort
+            }
+            return;
+        }
+        $this->handling = true;
+
         $errorData = $this->captureError($exception);
         
         // Log to file
@@ -62,8 +78,8 @@ class ErrorHandler
             return false;
         }
 
-        // Ignore certain non-critical errors during error handling itself
-        if (error_reporting() === 0) {
+        // Prevent recursive handling (e.g. if logToDatabase triggers a warning)
+        if ($this->handling) {
             return false;
         }
 
@@ -114,7 +130,7 @@ class ErrorHandler
             'error_message' => $exception->getMessage(),
             'error_file' => $exception->getFile(),
             'error_line' => $exception->getLine(),
-            'stack_trace' => json_encode($exception->getTrace()),
+            'stack_trace' => json_encode($exception->getTrace(), JSON_PARTIAL_OUTPUT_ON_ERROR) ?: '[]',
             'request_method' => $_SERVER['REQUEST_METHOD'] ?? 'CLI',
             'request_uri' => $_SERVER['REQUEST_URI'] ?? 'N/A',
             'request_data' => json_encode($requestData),
@@ -228,9 +244,19 @@ class ErrorHandler
         
         try {
             return $this->errorLogModel->logError($errorData);
-        } catch (\Exception $e) {
-            // Database logging failed, continue with file logging only
-            error_log("Failed to log error to database: " . $e->getMessage());
+        } catch (\Throwable $e) {
+            // Database logging failed — log to file so it's visible in the app's /logs folder
+            try {
+                $this->logger->error('Failed to log error to database', [
+                    'db_error' => $e->getMessage(),
+                    'db_error_file' => $e->getFile(),
+                    'db_error_line' => $e->getLine(),
+                    'original_error_id' => $errorData['error_id'] ?? 'unknown'
+                ]);
+            } catch (\Throwable $e2) {
+                // Last resort — use PHP's native error_log
+                error_log("ErrorHandler: DB log failed: " . $e->getMessage());
+            }
             return null;
         }
     }

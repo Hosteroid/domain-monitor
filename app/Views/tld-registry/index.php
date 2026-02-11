@@ -37,7 +37,7 @@ $currentFilters = $filters ?? ['search' => '', 'sort' => 'tld', 'order' => 'asc'
     <form method="POST" action="/tld-registry/start-progressive-import" class="inline">
         <?= csrf_field() ?>
         <input type="hidden" name="import_type" value="check_updates">
-        <button type="submit" <?= $tldStats['total'] == 0 ? 'disabled' : '' ?> class="inline-flex items-center px-4 py-2 <?= $tldStats['total'] == 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700' ?> text-white text-sm rounded-lg transition-colors font-medium" title="<?= $tldStats['total'] == 0 ? 'Import TLDs first' : 'Check for IANA updates' ?>">
+        <button type="submit" <?= $tldStats['total'] == 0 ? 'disabled' : '' ?> class="inline-flex items-center px-4 py-2 <?= $tldStats['total'] == 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark' ?> text-white text-sm rounded-lg transition-colors font-medium" title="<?= $tldStats['total'] == 0 ? 'Import TLDs first' : 'Check for IANA updates' ?>">
             <i class="fas fa-sync-alt mr-2"></i>
             Check Updates
         </button>
@@ -45,7 +45,7 @@ $currentFilters = $filters ?? ['search' => '', 'sort' => 'tld', 'order' => 'asc'
     <form method="POST" action="/tld-registry/start-progressive-import" class="inline">
         <?= csrf_field() ?>
         <input type="hidden" name="import_type" value="complete_workflow">
-        <button type="submit" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium" title="Complete TLD import workflow: TLD List → RDAP → WHOIS → Registry URLs">
+        <button type="submit" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium" title="Complete TLD import workflow: TLD List → RDAP → WHOIS → Registry URLs">
             <i class="fas fa-rocket mr-2"></i>
             Import TLDs
         </button>
@@ -194,32 +194,29 @@ $currentFilters = $filters ?? ['search' => '', 'sort' => 'tld', 'order' => 'asc'
     </form>
 </div>
 
-<!-- Bulk Actions Toolbar (Admin Only - Hidden by default, shown when TLDs are selected) -->
-<?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
-<div id="bulk-actions" class="hidden mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-    <div class="flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <span id="selected-count" class="text-sm font-medium text-blue-900"></span>
-            
-            <form method="POST" action="/tld-registry/bulk-delete" id="bulk-delete-form" class="inline">
-                <?= csrf_field() ?>
-                <button type="button" onclick="confirmBulkDelete()" class="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
-                    <i class="fas fa-trash mr-2"></i>
-                    Delete Selected
-                </button>
-            </form>
-            
-            <button type="button" onclick="clearSelection()" class="inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition-colors font-medium">
-                <i class="fas fa-times mr-2"></i>
-                Clear Selection
-            </button>
-        </div>
-    </div>
-</div>
-<?php endif; ?>
-
 <!-- TLD Registry Table -->
 <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+    <!-- Bulk Actions Bar (shown when TLDs are selected) -->
+    <div id="bulk-actions" class="hidden px-6 py-3 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <span id="selected-count" class="text-sm font-medium text-gray-700"></span>
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                    <form method="POST" action="/tld-registry/bulk-delete" id="bulk-delete-form" class="inline">
+                        <?= csrf_field() ?>
+                        <button type="button" onclick="confirmBulkDelete()" class="inline-flex items-center px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+                            <i class="fas fa-trash mr-1"></i> Delete Selected
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <button type="button" onclick="clearSelection()" class="inline-flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
+            <i class="fas fa-times mr-1.5"></i> Clear Selection
+        </button>
+    </div>
+    <?php endif; ?>
     <?php if (!empty($tlds)): ?>
         <!-- Table View (Desktop) -->
         <div class="hidden lg:block overflow-x-auto">
@@ -550,11 +547,9 @@ function updateSelectedCount() {
     
     if (count > 0) {
         bulkActions.classList.remove('hidden');
-        bulkActions.classList.add('flex');
-        selectedCount.textContent = `${count} TLD(s) selected`;
+        selectedCount.textContent = count + ' TLD(s) selected';
     } else {
         bulkActions.classList.add('hidden');
-        bulkActions.classList.remove('flex');
     }
     
     // Update select all checkbox state

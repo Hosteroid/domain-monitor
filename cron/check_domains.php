@@ -22,6 +22,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\WhoisService;
 use App\Services\NotificationService;
+use App\Services\UpdateService;
 use Core\Database;
 
 // Load environment variables
@@ -855,6 +856,42 @@ if ($stats['domains_with_notifications'] > 0) {
             logMessage("  - Expired: $expiredCount domain(s)");
         }
     }
+}
+
+// Check for application updates (respects 6-hour cache) and notify admins if new version available
+try {
+    $updateService = new UpdateService();
+    $updateResult = $updateService->checkForUpdate(false);
+    if (!empty($updateResult['error'])) {
+        logMessage("Update check skipped or failed: " . $updateResult['error']);
+    } elseif (!empty($updateResult['available'])) {
+        $currentVersion = $updateResult['current_version'];
+        $type = $updateResult['type'] ?? 'release';
+        $notifiedRelease = $settingModel->getValue('last_update_available_notified_release', '');
+        $notifiedHotfixSha = $settingModel->getValue('last_update_available_notified_hotfix_sha', '');
+        $shouldNotify = false;
+        if ($type === 'release') {
+            $latestVersion = $updateResult['latest_version'] ?? '';
+            if ($latestVersion !== '' && $latestVersion !== $notifiedRelease) {
+                $shouldNotify = true;
+                $settingModel->setValue('last_update_available_notified_release', $latestVersion);
+            }
+        } else {
+            $remoteSha = $updateResult['remote_sha'] ?? '';
+            if ($remoteSha !== '' && $remoteSha !== $notifiedHotfixSha) {
+                $shouldNotify = true;
+                $settingModel->setValue('last_update_available_notified_hotfix_sha', $remoteSha);
+            }
+        }
+        if ($shouldNotify) {
+            $label = ($type === 'release') ? ($updateResult['latest_version'] ?? 'latest') : 'hotfix';
+            $commitsBehind = $updateResult['commits_behind'] ?? null;
+            $notificationService->notifyAdminsUpdateAvailable($currentVersion, $label, $type, $commitsBehind);
+            logMessage("Update available (v{$currentVersion} → {$label}): admins notified.");
+        }
+    }
+} catch (\Throwable $e) {
+    logMessage("Update check error: " . $e->getMessage());
 }
 
 logMessage("==========================\n");

@@ -362,7 +362,7 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('app_name', 'Domain Monitor', 'string', 'Application name'),
 ('app_url', 'http://localhost:8000', 'string', 'Application URL'),
 ('app_timezone', 'UTC', 'string', 'Application timezone'),
-('app_version', '1.1.2', 'string', 'Application version number'),
+('app_version', '1.1.3', 'string', 'Application version number'),
 
 -- Email settings
 ('mail_host', 'smtp.mailtrap.io', 'string', 'SMTP server host'),
@@ -395,7 +395,11 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('two_factor_email_code_expiry_minutes', '10', 'string', 'Email code expiry time in minutes'),
 
 -- User isolation settings
-('user_isolation_mode', 'shared', 'string', 'User data visibility mode: shared (all users see all data) or isolated (users see only their own data)')
+('user_isolation_mode', 'shared', 'string', 'User data visibility mode: shared (all users see all data) or isolated (users see only their own data)'),
+
+-- Update system settings
+('update_channel', 'stable', 'string', 'Update channel: stable (releases only) or latest (releases + hotfixes)'),
+('update_badge_enabled', '1', 'string', 'Show update available badge in top menu when an update is available (1=yes, 0=no)')
 
 ON DUPLICATE KEY UPDATE setting_key=setting_key;
 

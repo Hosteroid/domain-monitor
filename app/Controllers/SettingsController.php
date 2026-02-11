@@ -28,6 +28,7 @@ class SettingsController extends Controller
         $captchaSettings = $this->settingModel->getCaptchaSettings();
         $twoFactorSettings = $this->settingModel->getTwoFactorSettings();
         $isolationSettings = $this->getIsolationSettings();
+        $updateSettings = $this->settingModel->getUpdateSettings();
         
         // Predefined notification day options
         $notificationPresets = [
@@ -76,6 +77,7 @@ class SettingsController extends Controller
             'captchaSettings' => $captchaSettings,
             'twoFactorSettings' => $twoFactorSettings,
             'isolationSettings' => $isolationSettings,
+            'updateSettings' => $updateSettings,
             'notificationPresets' => $notificationPresets,
             'checkIntervalPresets' => $checkIntervalPresets,
             'statusTriggers' => $statusTriggers,

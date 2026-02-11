@@ -17,6 +17,7 @@ use App\Controllers\NotificationController;
 use App\Controllers\ErrorLogController;
 use App\Controllers\TwoFactorController;
 use App\Controllers\TagController;
+use App\Controllers\UpdateController;
 
 $router = Application::$router;
 
@@ -62,6 +63,8 @@ $router->get('/api/search/suggest', [SearchController::class, 'suggest']);
 
 // Domains
 $router->get('/domains', [DomainController::class, 'index']);
+$router->get('/domains/export', [DomainController::class, 'export']);
+$router->post('/domains/import', [DomainController::class, 'import']);
 $router->get('/domains/create', [DomainController::class, 'create']);
 $router->get('/domains/bulk-add', [DomainController::class, 'bulkAdd']);
 $router->post('/domains/bulk-add', [DomainController::class, 'bulkAdd']);
@@ -86,6 +89,8 @@ $router->post('/domains/{id}/delete', [DomainController::class, 'delete']);
 
 // Notification Groups
 $router->get('/groups', [NotificationGroupController::class, 'index']);
+$router->get('/groups/export', [NotificationGroupController::class, 'export']);
+$router->post('/groups/import', [NotificationGroupController::class, 'import']);
 $router->get('/groups/create', [NotificationGroupController::class, 'create']);
 $router->post('/groups/store', [NotificationGroupController::class, 'store']);
 $router->get('/groups/{id}/edit', [NotificationGroupController::class, 'edit']);
@@ -130,6 +135,14 @@ $router->post('/settings/test-email', [SettingsController::class, 'testEmail']);
 $router->post('/settings/test-cron', [SettingsController::class, 'testCron']);
 $router->post('/settings/clear-logs', [SettingsController::class, 'clearLogs']);
 $router->post('/settings/toggle-isolation', [SettingsController::class, 'toggleIsolationMode']);
+
+// Updates (Admin Only)
+$router->post('/api/updates/check', [UpdateController::class, 'check']);
+$router->post('/settings/updates/apply', [UpdateController::class, 'apply']);
+$router->post('/settings/updates/rollback', [UpdateController::class, 'rollback']);
+$router->post('/settings/updates/preferences', [UpdateController::class, 'savePreferences']);
+$router->post('/settings/updates/channel', [UpdateController::class, 'updateChannel']);
+$router->post('/settings/updates/badge', [UpdateController::class, 'updateBadgePreference']);
 
 // Profile
 $router->get('/profile', [ProfileController::class, 'index']);
@@ -182,10 +195,14 @@ $router->post('/errors/clear-resolved', [ErrorLogController::class, 'clearResolv
 
 // Tag Management
 $router->get('/tags', [TagController::class, 'index']);
+$router->get('/tags/export', [TagController::class, 'export']);
+$router->post('/tags/import', [TagController::class, 'import']);
 $router->post('/tags/create', [TagController::class, 'create']);
 $router->post('/tags/update', [TagController::class, 'update']);
 $router->post('/tags/delete', [TagController::class, 'delete']);
-$router->post('/tags/bulk-delete', [TagController::class, 'bulkDelete']);
+        $router->post('/tags/transfer', [TagController::class, 'transfer']);
+        $router->post('/tags/bulk-delete', [TagController::class, 'bulkDelete']);
+$router->post('/tags/bulk-transfer', [TagController::class, 'bulkTransfer']);
 $router->get('/tags/{id}', [TagController::class, 'show']);
 $router->post('/tags/bulk-add-to-domains', [TagController::class, 'bulkAddToDomains']);
 $router->post('/tags/bulk-remove-from-domains', [TagController::class, 'bulkRemoveFromDomains']);

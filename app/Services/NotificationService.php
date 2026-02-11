@@ -569,34 +569,84 @@ class NotificationService
 
     /**
      * Create system upgrade notification for admins (in-app)
+     * @param bool $composerManualRequired If true, appends a note to run composer install manually (e.g. when exec is disabled on cPanel)
      */
-    public function notifySystemUpgrade(int $userId, string $fromVersion, string $toVersion, int $migrationsCount): void
+    public function notifySystemUpgrade(int $userId, string $fromVersion, string $toVersion, int $migrationsCount, bool $composerManualRequired = false): void
     {
+        $message = "Domain Monitor upgraded from v{$fromVersion} to v{$toVersion} ({$migrationsCount} migration" . ($migrationsCount > 1 ? 's' : '') . " applied)";
+        if ($composerManualRequired) {
+            $message .= ". Composer could not be run here (e.g. exec disabled). If dependencies changed, run \"composer install --no-dev\" manually via SSH or Terminal.";
+        }
         $notificationModel = new \App\Models\Notification();
         $notificationModel->createNotification(
             $userId,
             'system_upgrade',
             'System Upgraded Successfully',
-            "Domain Monitor upgraded from v{$fromVersion} to v{$toVersion} ({$migrationsCount} migration" . ($migrationsCount > 1 ? 's' : '') . " applied)",
+            $message,
             null
         );
     }
 
     /**
      * Notify all admins about system upgrade (in-app)
+     * @param bool $composerManualRequired If true, in-app message will include a note to run composer install manually
      */
-    public function notifyAdminsUpgrade(string $fromVersion, string $toVersion, int $migrationsCount): void
+    public function notifyAdminsUpgrade(string $fromVersion, string $toVersion, int $migrationsCount, bool $composerManualRequired = false): void
     {
         try {
             $userModel = new \App\Models\User();
             $admins = $userModel->getAllAdmins();
             
             foreach ($admins as $admin) {
-                $this->notifySystemUpgrade($admin['id'], $fromVersion, $toVersion, $migrationsCount);
+                $this->notifySystemUpgrade($admin['id'], $fromVersion, $toVersion, $migrationsCount, $composerManualRequired);
             }
         } catch (\Exception $e) {
             $logger = new \App\Services\Logger();
             $logger->error("Failed to notify admins about upgrade", [
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Create "update available" in-app notification for one user
+     */
+    public function notifyUpdateAvailable(int $userId, string $currentVersion, string $latestVersion, string $type = 'release', ?int $commitsBehind = null): void
+    {
+        $notificationModel = new \App\Models\Notification();
+        $title = 'Update Available';
+        if ($type === 'release') {
+            $message = "A new version of Domain Monitor is available: v{$latestVersion} (you have v{$currentVersion}). Go to Settings → Updates to apply.";
+        } else {
+            $msg = $commitsBehind
+                ? "{$commitsBehind} new commit(s) are available on the main branch. Go to Settings → Updates to apply the hotfix."
+                : "New commits are available. Go to Settings → Updates to apply the hotfix.";
+            $message = $msg;
+        }
+        $notificationModel->createNotification(
+            $userId,
+            'update_available',
+            $title,
+            $message,
+            null
+        );
+    }
+
+    /**
+     * Notify all admins that an update is available (in-app)
+     * Used by cron when it detects a new version or hotfix.
+     */
+    public function notifyAdminsUpdateAvailable(string $currentVersion, string $latestVersionOrLabel, string $type = 'release', ?int $commitsBehind = null): void
+    {
+        try {
+            $userModel = new \App\Models\User();
+            $admins = $userModel->getAllAdmins();
+            foreach ($admins as $admin) {
+                $this->notifyUpdateAvailable($admin['id'], $currentVersion, $latestVersionOrLabel, $type, $commitsBehind);
+            }
+        } catch (\Exception $e) {
+            $logger = new \App\Services\Logger();
+            $logger->error("Failed to notify admins about available update", [
                 'error' => $e->getMessage()
             ]);
         }

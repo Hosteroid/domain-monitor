@@ -122,7 +122,7 @@ class Setting extends Model
      */
     public function getAppVersion(): string
     {
-        return $this->getValue('app_version', '1.1.2');
+        return $this->getValue('app_version', '1.1.3');
     }
 
     /**
@@ -320,6 +320,27 @@ class Setting extends Model
         $triggers = array_intersect($triggers, $validTriggers);
         $value = implode(',', $triggers);
         return $this->setValue('notification_status_triggers', $value);
+    }
+
+    /**
+     * Get update settings
+     */
+    public function getUpdateSettings(): array
+    {
+        return [
+            'update_channel' => $this->getValue('update_channel', 'stable'),
+            'last_update_check' => $this->getValue('last_update_check', null),
+            'latest_available_version' => $this->getValue('latest_available_version', null),
+            'latest_release_notes' => $this->getValue('latest_release_notes', ''),
+            'latest_release_url' => $this->getValue('latest_release_url', ''),
+            'latest_release_published_at' => $this->getValue('latest_release_published_at', ''),
+            'installed_commit_sha' => $this->getValue('installed_commit_sha', null),
+            'update_backup_path' => $this->getValue('update_backup_path', null),
+            'update_db_backup_path' => $this->getValue('update_db_backup_path', null),
+            'commits_behind_count' => (int) $this->getValue('commits_behind_count', 0),
+            'latest_remote_sha' => $this->getValue('latest_remote_sha', ''),
+            'update_badge_enabled' => $this->getValue('update_badge_enabled', '1'),
+        ];
     }
 
     /**

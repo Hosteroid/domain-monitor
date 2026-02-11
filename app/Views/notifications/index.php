@@ -68,6 +68,7 @@ $offset = $pagination['showing_from'] - 1;
                         <option value="session_failed" <?= $filterType === 'session_failed' ? 'selected' : '' ?>>Failed Login</option>
                         <option value="system_welcome" <?= $filterType === 'system_welcome' ? 'selected' : '' ?>>Welcome</option>
                         <option value="system_upgrade" <?= $filterType === 'system_upgrade' ? 'selected' : '' ?>>System Upgrade</option>
+                        <option value="update_available" <?= $filterType === 'update_available' ? 'selected' : '' ?>>Update Available</option>
                     </optgroup>
                 </select>
             </div>
@@ -137,7 +138,9 @@ $offset = $pagination['showing_from'] - 1;
                 $hasDomain = !empty($notification['domain_id']);
                 $domainUrl = $hasDomain ? '/domains/' . $notification['domain_id'] : null;
                 $clickUrl = null;
-                if ($hasDomain && !$notification['is_read']) {
+                if ($notification['type'] === 'update_available') {
+                    $clickUrl = '/notifications/' . $notification['id'] . '/mark-read?redirect=settings';
+                } elseif ($hasDomain && !$notification['is_read']) {
                     $clickUrl = '/notifications/' . $notification['id'] . '/mark-read?redirect=domain&domain_id=' . $notification['domain_id'];
                 } elseif ($hasDomain) {
                     $clickUrl = $domainUrl;

@@ -30,6 +30,37 @@ foreach ($notificationPresets as $key => $preset) {
         break;
     }
 }
+
+// Cached update state for Updates tab (tab badge + modal on load)
+$cachedUpdateAvailable = false;
+$cachedUpdateData = null;
+$currentVer = $appSettings['app_version'] ?? '0';
+$latestVer = $updateSettings['latest_available_version'] ?? null;
+$updateChannel = $updateSettings['update_channel'] ?? 'stable';
+$commitsBehind = (int)($updateSettings['commits_behind_count'] ?? 0);
+if ($latestVer && version_compare($latestVer, $currentVer, '>')) {
+    $cachedUpdateAvailable = true;
+    $cachedUpdateData = [
+        'available' => true,
+        'type' => 'release',
+        'current_version' => $currentVer,
+        'latest_version' => $latestVer,
+        'release_notes' => $updateSettings['latest_release_notes'] ?? '',
+        'release_url' => $updateSettings['latest_release_url'] ?? '',
+        'published_at' => $updateSettings['latest_release_published_at'] ?? null,
+        'channel' => $updateChannel,
+    ];
+} elseif ($updateChannel === 'latest' && $commitsBehind > 0) {
+    $cachedUpdateAvailable = true;
+    $cachedUpdateData = [
+        'available' => true,
+        'type' => 'hotfix',
+        'current_version' => $currentVer,
+        'commits_behind' => $commitsBehind,
+        'commit_messages' => [],
+        'channel' => $updateChannel,
+    ];
+}
 ?>
 
 <!-- Tabs Navigation -->
@@ -63,6 +94,15 @@ foreach ($notificationPresets as $key => $preset) {
             <button onclick="switchTab('maintenance')" id="tab-maintenance" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap">
                 <i class="fas fa-tools mr-2"></i>
                 Maintenance
+            </button>
+            <button onclick="switchTab('updates')" id="tab-updates" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap relative">
+                <i class="fas fa-cloud-download-alt mr-2"></i>
+                Updates
+                <?php if (!empty($cachedUpdateAvailable)): ?>
+                <span id="update-badge" class="ml-1.5 inline-flex items-center justify-center w-2 h-2 bg-amber-500 rounded-full" title="Update available"></span>
+                <?php else: ?>
+                <span id="update-badge" class="hidden ml-1.5 inline-flex items-center justify-center w-2 h-2 bg-amber-500 rounded-full"></span>
+                <?php endif; ?>
             </button>
         </nav>
     </div>
@@ -892,6 +932,243 @@ foreach ($notificationPresets as $key => $preset) {
     </div>
 </div>
 
+<!-- Tab Content: Updates -->
+<div id="content-updates" class="tab-content hidden">
+    <!-- Update Status card: current version + Check button; show "Update available" card when cached -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+        <div class="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <i class="fas fa-sync-alt text-primary text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-semibold text-gray-900">Update Status</h3>
+                        <p class="text-sm text-gray-500 mt-0.5">Current version <code class="text-primary font-medium">v<?= htmlspecialchars($appSettings['app_version']) ?></code></p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <?php if ($updateSettings['last_update_check']): ?>
+                        <span class="text-xs text-gray-400 hidden sm:inline">Last checked: <?= date('M d, H:i', strtotime($updateSettings['last_update_check'])) ?></span>
+                    <?php endif; ?>
+                    <button type="button" id="checkUpdatesBtn" onclick="checkForUpdates()"
+                            class="inline-flex items-center px-4 py-2.5 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary-dark transition-colors shadow-sm">
+                        <i class="fas fa-sync-alt mr-2" id="checkUpdatesIcon"></i>
+                        Check for Updates
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="p-6">
+            <!-- Cached update available: show card that opens modal (so landing from top bar shows update without clicking Check) -->
+            <?php if ($cachedUpdateAvailable && $cachedUpdateData): ?>
+            <div id="cachedUpdateCard" class="mb-6 p-4 rounded-xl border-2 border-amber-200 bg-amber-50/80 hover:bg-amber-50 transition-colors cursor-pointer" onclick="openUpdateModal(window.__cachedUpdateData)">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                            <i class="fas fa-cloud-download-alt text-amber-600"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-semibold text-amber-900">Update available</p>
+                            <p class="text-xs text-amber-700">
+                                <?php if (($cachedUpdateData['type'] ?? '') === 'release'): ?>
+                                    New release: v<?= htmlspecialchars($cachedUpdateData['latest_version'] ?? '') ?> — click to view details and apply
+                                <?php else: ?>
+                                    <?= (int)($cachedUpdateData['commits_behind'] ?? 0) ?> new commit(s) — click to apply hotfix
+                                <?php endif; ?>
+                            </p>
+                        </div>
+                    </div>
+                    <i class="fas fa-chevron-right text-amber-600 text-sm"></i>
+                </div>
+            </div>
+            <?php elseif (!empty($updateSettings['last_update_check'])): ?>
+            <!-- Last check found no update: show "up to date" from cache -->
+            <div id="cachedUpToDate">
+                <div class="flex items-center p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <i class="fas fa-check-circle text-green-500 text-lg mr-3"></i>
+                    <div>
+                        <p class="text-sm font-semibold text-green-800">You're up to date!</p>
+                        <p class="text-xs text-green-600 mt-0.5">Version v<?= htmlspecialchars($appSettings['app_version']) ?> is the latest<?= ($updateSettings['update_channel'] ?? 'stable') === 'stable' ? ' stable release' : ' version' ?>.</p>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+            <!-- Inline result: loading / up-to-date / error (update-available goes in modal) -->
+            <div id="updateResultContainer" class="hidden"></div>
+        </div>
+    </div>
+
+    <!-- Update preferences (channel + badge) -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h3 class="text-lg font-semibold text-gray-900">Update Preferences</h3>
+            <p class="text-sm text-gray-600 mt-1">Choose update channel and display options</p>
+        </div>
+
+        <form method="POST" action="/settings/updates/preferences" class="p-6">
+            <?= csrf_field() ?>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Update Channel</label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Stable Channel -->
+                        <label class="relative flex items-start p-4 border-2 rounded-lg cursor-pointer transition-colors
+                            <?= ($updateSettings['update_channel'] ?? 'stable') === 'stable' ? 'border-primary bg-blue-50' : 'border-gray-200 hover:border-gray-300' ?>">
+                            <input type="radio" name="update_channel" value="stable"
+                                   <?= ($updateSettings['update_channel'] ?? 'stable') === 'stable' ? 'checked' : '' ?>
+                                   class="w-4 h-4 text-primary border-gray-300 focus:ring-primary mt-0.5">
+                            <div class="ml-3">
+                                <span class="text-sm font-semibold text-gray-900 flex items-center">
+                                    <i class="fas fa-shield-alt text-green-600 mr-2"></i>
+                                    Stable
+                                </span>
+                                <p class="text-xs text-gray-600 mt-1">Only receive tagged release updates (e.g., v1.2.0). Recommended for production environments.</p>
+                            </div>
+                        </label>
+
+                        <!-- Latest Channel -->
+                        <label class="relative flex items-start p-4 border-2 rounded-lg cursor-pointer transition-colors
+                            <?= ($updateSettings['update_channel'] ?? 'stable') === 'latest' ? 'border-primary bg-blue-50' : 'border-gray-200 hover:border-gray-300' ?>">
+                            <input type="radio" name="update_channel" value="latest"
+                                   <?= ($updateSettings['update_channel'] ?? 'stable') === 'latest' ? 'checked' : '' ?>
+                                   class="w-4 h-4 text-primary border-gray-300 focus:ring-primary mt-0.5">
+                            <div class="ml-3">
+                                <span class="text-sm font-semibold text-gray-900 flex items-center">
+                                    <i class="fas fa-bolt text-amber-500 mr-2"></i>
+                                    Latest
+                                </span>
+                                <p class="text-xs text-gray-600 mt-1">Receive both releases and hotfix commits pushed to the main branch. Get fixes faster.</p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <?php if (($updateSettings['update_channel'] ?? 'stable') === 'latest' && empty($updateSettings['installed_commit_sha'])): ?>
+                    <div class="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                        <p class="text-sm text-amber-800">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Commit tracking is not yet active. It will begin after the first update is applied through this system. Until then, only release updates will be detected.
+                        </p>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Show update badge in top menu -->
+                <div class="border-t border-gray-200 pt-4 mt-4">
+                    <label class="flex items-start cursor-pointer">
+                        <input type="checkbox" name="update_badge_enabled" value="1"
+                               <?= ($updateSettings['update_badge_enabled'] ?? '1') !== '0' ? 'checked' : '' ?>
+                               class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mt-0.5">
+                        <span class="ml-3 text-sm text-gray-700">
+                            Show <strong>Update available</strong> badge in the top menu when an update is available (recommended so admins see it without opening the notification panel).
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-6 mt-6 border-t border-gray-200">
+                <button type="submit" class="inline-flex items-center px-4 py-2.5 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+                    <i class="fas fa-save mr-2"></i>
+                    Save update preferences
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Rollback Section -->
+    <?php if (!empty($updateSettings['update_backup_path']) && file_exists($updateSettings['update_backup_path'])): ?>
+    <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h3 class="text-lg font-semibold text-gray-900">Rollback</h3>
+            <p class="text-sm text-gray-600 mt-1">Revert to the previous version if something went wrong</p>
+        </div>
+
+        <div class="p-6">
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <div class="flex">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 mt-0.5 mr-3"></i>
+                    <div>
+                        <p class="text-sm font-medium text-gray-900">Warning</p>
+                        <p class="text-sm text-gray-700 mt-1">
+                            Rolling back will restore application files and database to the state before the last update. 
+                            If the database restore fails automatically, you can import the SQL backup manually from the <code class="text-xs bg-gray-100 px-1 rounded">backups/</code> directory.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <p class="text-sm text-gray-600">
+                    Backup available: <code class="text-xs bg-gray-100 px-1.5 py-0.5 rounded"><?= htmlspecialchars(basename($updateSettings['update_backup_path'])) ?></code>
+                </p>
+            </div>
+
+            <form method="POST" action="/settings/updates/rollback" class="mt-4"
+                  onsubmit="return confirm('Are you sure you want to rollback? This will restore files to the previous version.')">
+                <?= csrf_field() ?>
+                <button type="submit" class="inline-flex items-center px-4 py-2.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
+                    <i class="fas fa-undo mr-2"></i>
+                    Rollback to Previous Version
+                </button>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Update Available Modal: same content as before (blue/amber card inside), just in a popup -->
+    <div id="updateAvailableModal" class="fixed inset-0 z-50 hidden" aria-modal="true">
+        <div class="fixed inset-0 bg-black/50 transition-opacity" onclick="closeUpdateModal()"></div>
+        <div class="fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
+            <div id="updateAvailableModalContent" class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col pointer-events-auto overflow-hidden">
+                <div class="flex items-start justify-between px-4 py-3 flex-shrink-0 gap-3 bg-blue-50 border border-blue-200 rounded-t-xl">
+                    <div class="flex items-start min-w-0">
+                        <i id="updateModalIcon" class="fas fa-arrow-circle-up text-blue-500 text-lg mt-0.5 mr-3"></i>
+                        <div>
+                            <p id="updateModalTitle" class="text-sm font-semibold text-blue-800">New Release Available</p>
+                            <p id="updateModalSubline" class="text-xs text-blue-600 mt-0.5"></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <a id="updateModalReleaseLink" href="#" target="_blank" rel="noopener" class="text-xs text-blue-600 hover:underline whitespace-nowrap"><i class="fab fa-github mr-1"></i>Release notes</a>
+                        <button type="button" onclick="closeUpdateModal()" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors" aria-label="Close">
+                            <i class="fas fa-times text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="updateModalBody" class="update-modal-body p-6 overflow-y-auto flex-1 text-sm min-h-0">
+                    <!-- Filled by JS: changelog or commit list only -->
+                </div>
+                <div id="updateModalFooter" class="px-4 py-3 flex-shrink-0 border-t rounded-b-xl">
+                    <!-- Filled by JS: Apply form (blue for release, amber for hotfix) -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.__cachedUpdateData = <?= $cachedUpdateData ? json_encode($cachedUpdateData) : 'null' ?>;
+</script>
+<script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.9/dist/purify.min.js"></script>
+<style>
+.changelog-markdown { line-height: 1.5; }
+.changelog-markdown h1, .changelog-markdown h2, .changelog-markdown h3 { font-weight: 600; margin-top: 0.5em; margin-bottom: 0.25em; }
+.changelog-markdown h1 { font-size: 1em; }
+.changelog-markdown h2 { font-size: 0.95em; }
+.changelog-markdown h3 { font-size: 0.9em; }
+.changelog-markdown p { margin-bottom: 0.5em; }
+.changelog-markdown ul, .changelog-markdown ol { margin: 0.25em 0 0.5em 1em; padding-left: 1em; }
+.changelog-markdown li { margin-bottom: 0.15em; }
+.changelog-markdown code { background: rgba(0,0,0,0.06); padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.95em; }
+.changelog-markdown pre { background: rgba(0,0,0,0.06); padding: 0.5em; border-radius: 4px; overflow-x: auto; margin: 0.5em 0; font-size: 0.9em; }
+.changelog-markdown pre code { background: none; padding: 0; }
+.changelog-markdown a { color: #2563eb; text-decoration: underline; }
+.changelog-markdown a:hover { color: #1d4ed8; }
+.changelog-markdown hr { border: none; border-top: 1px solid rgba(0,0,0,0.1); margin: 0.5em 0; }
+.changelog-markdown blockquote { border-left: 3px solid rgba(0,0,0,0.15); margin: 0.5em 0; padding-left: 0.75em; color: inherit; opacity: 0.95; }
+.update-modal-body .changelog-markdown { max-height: 20rem; }
+</style>
 <script>
 // Auto-update encryption based on port
 function updateEncryptionByPort() {
@@ -957,7 +1234,7 @@ function switchTab(tabName) {
 // Load tab from URL hash on page load
 window.addEventListener('DOMContentLoaded', function() {
     const hash = window.location.hash.substring(1); // Remove the #
-    const validTabs = ['app', 'email', 'monitoring', 'isolation', 'security', 'system', 'maintenance'];
+    const validTabs = ['app', 'email', 'monitoring', 'isolation', 'security', 'system', 'maintenance', 'updates'];
     
     if (hash && validTabs.includes(hash)) {
         switchTab(hash);
@@ -1020,6 +1297,208 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     });
+
+    // Update check AJAX functionality
+    function checkForUpdates() {
+        const btn = document.getElementById('checkUpdatesBtn');
+        const icon = document.getElementById('checkUpdatesIcon');
+        const container = document.getElementById('updateResultContainer');
+        const badge = document.getElementById('update-badge');
+        
+        // Hide any cached status cards
+        var cachedCard = document.getElementById('cachedUpdateCard');
+        var cachedUpToDate = document.getElementById('cachedUpToDate');
+        if (cachedCard) cachedCard.classList.add('hidden');
+        if (cachedUpToDate) cachedUpToDate.classList.add('hidden');
+        
+        // Show loading state
+        btn.disabled = true;
+        btn.classList.add('opacity-75');
+        icon.classList.add('fa-spin');
+        container.classList.remove('hidden');
+        container.innerHTML = '<div class="flex items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><i class="fas fa-spinner fa-spin text-primary mr-3"></i><span class="text-sm text-gray-600">Checking for updates...</span></div>';
+        
+        // Get CSRF token
+        const csrfInput = document.querySelector('input[name="csrf_token"]');
+        const csrfToken = csrfInput ? csrfInput.value : '';
+        
+        fetch('/api/updates/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'force=1&csrf_token=' + encodeURIComponent(csrfToken)
+        })
+        .then(response => response.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.classList.remove('opacity-75');
+            icon.classList.remove('fa-spin');
+            
+            if (data.error) {
+                container.innerHTML = renderUpdateError(data.error);
+                return;
+            }
+            
+            if (data.available) {
+                badge.classList.remove('hidden');
+                container.classList.add('hidden');
+                container.innerHTML = '';
+                openUpdateModal(data);
+            } else {
+                badge.classList.add('hidden');
+                container.innerHTML = renderUpToDate(data);
+            }
+        })
+        .catch(error => {
+            btn.disabled = false;
+            btn.classList.remove('opacity-75');
+            icon.classList.remove('fa-spin');
+            container.innerHTML = renderUpdateError('Network error: ' + error.message);
+        });
+    }
+    window.checkForUpdates = checkForUpdates;
+    
+    function openUpdateModal(data) {
+        const modal = document.getElementById('updateAvailableModal');
+        const bodyEl = document.getElementById('updateModalBody');
+        const footerEl = document.getElementById('updateModalFooter');
+        const titleEl = document.getElementById('updateModalTitle');
+        const sublineEl = document.getElementById('updateModalSubline');
+        const releaseLinkEl = document.getElementById('updateModalReleaseLink');
+        const iconEl = document.getElementById('updateModalIcon');
+        if (!modal || !bodyEl) return;
+        var isRelease = (data.type || 'release') === 'release';
+        if (titleEl) titleEl.textContent = isRelease ? 'New Release Available: v' + (data.latest_version || '') : 'Hotfix Available: ' + (data.commits_behind || 0) + ' commit(s) behind';
+        if (sublineEl) {
+            if (isRelease) {
+                var sub = 'Installed: v' + (data.current_version || '');
+                if (data.published_at) { var d = new Date(data.published_at); sub += ' · Released: ' + String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear(); }
+                sublineEl.textContent = sub;
+                sublineEl.classList.remove('hidden');
+            } else {
+                sublineEl.textContent = 'New commits have been pushed to the main branch.';
+                sublineEl.classList.remove('hidden');
+            }
+        }
+        if (releaseLinkEl) {
+            if (isRelease && data.release_url) {
+                releaseLinkEl.href = data.release_url;
+                releaseLinkEl.classList.remove('hidden');
+            } else {
+                releaseLinkEl.href = '#';
+                releaseLinkEl.classList.add('hidden');
+            }
+        }
+        if (iconEl) iconEl.className = isRelease ? 'fas fa-arrow-circle-up text-blue-500 text-lg mt-0.5 mr-3' : 'fas fa-wrench text-amber-500 text-lg mt-0.5 mr-3';
+        bodyEl.className = 'update-modal-body p-6 overflow-y-auto flex-1 text-sm min-h-0 ' + (isRelease ? 'bg-blue-50 border-x border-b border-blue-200' : 'bg-amber-50 border-x border-b border-amber-200');
+        bodyEl.innerHTML = renderUpdateAvailable(data);
+        var csrf = document.querySelector('input[name=csrf_token]') ? document.querySelector('input[name=csrf_token]').value : '';
+        if (footerEl) {
+            footerEl.className = 'px-4 py-3 flex-shrink-0 border-t rounded-b-xl ' + (isRelease ? 'bg-blue-100 border-blue-200' : 'bg-amber-100 border-amber-200');
+            if (isRelease) {
+                footerEl.innerHTML = '<form method="POST" action="/settings/updates/apply" onsubmit="return confirm(\'Apply update to v' + escapeHtml(data.latest_version || '') + '? A backup will be created before updating.\')">' +
+                    (csrf ? '<input type="hidden" name="csrf_token" value="' + escapeHtml(csrf) + '">' : '') +
+                    '<input type="hidden" name="update_type" value="release">' +
+                    '<button type="submit" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium"><i class="fas fa-download mr-2"></i> Update to v' + escapeHtml(data.latest_version || '') + '</button>' +
+                    '</form>';
+            } else {
+                footerEl.innerHTML = '<form method="POST" action="/settings/updates/apply" onsubmit="return confirm(\'Apply hotfix? This will update your files to the latest main branch. A backup will be created first.\')">' +
+                    (csrf ? '<input type="hidden" name="csrf_token" value="' + escapeHtml(csrf) + '">' : '') +
+                    '<input type="hidden" name="update_type" value="hotfix">' +
+                    '<button type="submit" class="inline-flex items-center px-4 py-2 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition-colors font-medium"><i class="fas fa-download mr-2"></i> Apply Hotfix</button>' +
+                    '</form>';
+            }
+        }
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeUpdateModal() {
+        const modal = document.getElementById('updateAvailableModal');
+        if (modal) {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    }
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('updateAvailableModal');
+            if (modal && !modal.classList.contains('hidden')) closeUpdateModal();
+        }
+    });
+    window.openUpdateModal = openUpdateModal;
+    window.closeUpdateModal = closeUpdateModal;
+    
+    // When landing on Settings#updates from an external link (e.g. top bar badge or notification),
+    // auto-open the modal. Skip if the user just submitted a form on this page (referrer is self).
+    if (window.location.hash === '#updates' && window.__cachedUpdateData) {
+        var ref = document.referrer || '';
+        var onSettingsPage = ref.indexOf('/settings') !== -1;
+        if (!onSettingsPage) {
+            setTimeout(function() { openUpdateModal(window.__cachedUpdateData); }, 200);
+        }
+    }
+    
+    function renderReleaseNotesMarkdown(md) {
+        if (!md) return '';
+        if (typeof marked === 'undefined' || typeof DOMPurify === 'undefined') return escapeHtml(md);
+        const raw = marked.parse(md, { gfm: true, breaks: true });
+        const allowedTags = ['p', 'br', 'strong', 'em', 'b', 'i', 'ul', 'ol', 'li', 'a', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'hr'];
+        let out = DOMPurify.sanitize(raw, { ALLOWED_TAGS: allowedTags, ALLOWED_ATTR: ['href', 'target', 'rel'] });
+        out = out.replace(/<a href=/gi, '<a target="_blank" rel="noopener noreferrer" href=');
+        return out;
+    }
+    
+    function renderUpToDate(data) {
+        return `
+            <div class="flex items-center p-4 bg-green-50 border border-green-200 rounded-lg">
+                <i class="fas fa-check-circle text-green-500 text-lg mr-3"></i>
+                <div>
+                    <p class="text-sm font-semibold text-green-800">You're up to date!</p>
+                    <p class="text-xs text-green-600 mt-0.5">Version ${escapeHtml(data.current_version)} is the latest${data.channel === 'stable' ? ' stable release' : ' version'}.</p>
+                </div>
+            </div>`;
+    }
+    
+    function renderUpdateAvailable(data) {
+        var html = '';
+        if (data.type === 'release') {
+            html = data.release_notes
+                ? '<p class="text-sm font-semibold text-blue-800 mb-2 -mt-1">Changelog:</p><hr class="border-blue-200 mb-3"><div class="changelog-markdown text-xs text-blue-700 max-h-40 overflow-y-auto">' + renderReleaseNotesMarkdown(data.release_notes) + '</div>'
+                : '<p class="text-gray-500 text-sm">No changelog available.</p>';
+        } else if (data.type === 'hotfix') {
+            if (data.commit_messages && data.commit_messages.length > 0) {
+                html = '<p class="text-xs font-semibold text-amber-800 mb-2">Recent commits:</p><div class="space-y-1 max-h-40 overflow-y-auto">';
+                data.commit_messages.forEach(function(c) {
+                    var firstLine = (c.message || '').split('\n')[0];
+                    html += '<div class="text-xs text-amber-700 flex items-start"><code class="text-amber-600 bg-amber-100 px-1 rounded mr-2 flex-shrink-0">' + escapeHtml((c.sha || '').substring(0, 7)) + '</code><span class="truncate">' + escapeHtml(firstLine) + '</span></div>';
+                });
+                html += '</div>';
+            } else {
+                html = '';
+            }
+        }
+        return html;
+    }
+    
+    function renderUpdateError(message) {
+        return `
+            <div class="flex items-center p-4 bg-red-50 border border-red-200 rounded-lg">
+                <i class="fas fa-exclamation-circle text-red-500 text-lg mr-3"></i>
+                <div>
+                    <p class="text-sm font-semibold text-red-800">Update check failed</p>
+                    <p class="text-xs text-red-600 mt-0.5">${escapeHtml(message)}</p>
+                </div>
+            </div>`;
+    }
+    
+    // Ensure escapeHtml is available (may also be defined in base layout)
+    if (typeof window.escapeHtml === 'undefined') {
+        window.escapeHtml = function(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        };
+    }
 
     // CAPTCHA provider selection logic
     const captchaProvider = document.getElementById('captcha_provider');

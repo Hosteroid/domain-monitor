@@ -61,6 +61,332 @@ class NotificationGroupController extends Controller
         ]);
     }
 
+    /**
+     * Export notification groups with channels as CSV or JSON (secrets masked)
+     */
+    public function export()
+    {
+        $logger = new \App\Services\Logger('export');
+
+        try {
+            $userId = \Core\Auth::id();
+            $settingModel = new \App\Models\Setting();
+            $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+            $format = $_GET['format'] ?? 'csv';
+            $logger->info("Groups export started", ['format' => $format, 'user_id' => $userId]);
+
+            if (!in_array($format, ['csv', 'json'])) {
+                $_SESSION['error'] = 'Invalid export format';
+                $this->redirect('/groups');
+                return;
+            }
+
+            // Get groups
+            if ($isolationMode === 'isolated') {
+                $groups = $this->groupModel->getAllWithChannelCount($userId);
+            } else {
+                $groups = $this->groupModel->getAllWithChannelCount();
+            }
+
+            $exportData = [];
+            foreach ($groups as $group) {
+                $channels = $this->channelModel->getByGroupId($group['id']);
+                $maskedChannels = [];
+                foreach ($channels as $ch) {
+                    $config = json_decode($ch['channel_config'], true) ?? [];
+                    $maskedConfig = $this->maskChannelConfig($ch['channel_type'], $config);
+                    $maskedChannels[] = [
+                        'channel_type' => $ch['channel_type'],
+                        'channel_config' => $maskedConfig,
+                        'is_active' => (bool)$ch['is_active']
+                    ];
+                }
+
+                $exportData[] = [
+                    'group_name' => $group['name'],
+                    'group_description' => $group['description'] ?? '',
+                    'channels' => $maskedChannels
+                ];
+            }
+
+            $date = date('Y-m-d');
+            $filename = "notification_groups_export_{$date}";
+
+            // Clean any prior output buffers to prevent header conflicts
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            if ($format === 'json') {
+                header('Content-Type: application/json');
+                header("Content-Disposition: attachment; filename=\"{$filename}.json\"");
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo json_encode($exportData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            } else {
+                // Build CSV in memory — flatten groups with channels into rows
+                $csvRows = [];
+                foreach ($exportData as $group) {
+                    if (empty($group['channels'])) {
+                        $csvRows[] = ['group_name' => $group['group_name'], 'group_description' => $group['group_description'], 'channel_type' => '', 'channel_config' => '', 'is_active' => ''];
+                    } else {
+                        foreach ($group['channels'] as $ch) {
+                            $csvRows[] = [
+                                'group_name' => $group['group_name'],
+                                'group_description' => $group['group_description'],
+                                'channel_type' => $ch['channel_type'],
+                                'channel_config' => json_encode($ch['channel_config']),
+                                'is_active' => $ch['is_active'] ? '1' : '0'
+                            ];
+                        }
+                    }
+                }
+
+                $csvContent = $this->buildCsv($csvRows, ['group_name', 'group_description', 'channel_type', 'channel_config', 'is_active']);
+                $logger->info("CSV content built", ['bytes' => strlen($csvContent)]);
+
+                header('Content-Type: text/csv; charset=utf-8');
+                header("Content-Disposition: attachment; filename=\"{$filename}.csv\"");
+                header('Content-Length: ' . strlen($csvContent));
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo $csvContent;
+            }
+
+            $logger->info("Groups export completed successfully");
+            exit;
+        } catch (\Throwable $e) {
+            $logger->error("Groups export failed", [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            $_SESSION['error'] = 'Export failed: ' . $e->getMessage();
+            $this->redirect('/groups');
+        }
+    }
+
+    /**
+     * Build CSV string in memory from array data
+     */
+    private function buildCsv(array $rows, array $headers): string
+    {
+        $handle = fopen('php://temp', 'r+');
+        fputcsv($handle, $headers, ',', '"', '\\');
+        foreach ($rows as $row) {
+            fputcsv($handle, array_values($row), ',', '"', '\\');
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+        return $csv;
+    }
+
+    /**
+     * Import notification groups from CSV or JSON file
+     */
+    public function import()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/groups');
+            return;
+        }
+
+        $this->verifyCsrf('/groups');
+
+        $validChannelTypes = ['email', 'telegram', 'discord', 'slack', 'mattermost', 'webhook', 'pushover'];
+
+        if (!isset($_FILES['import_file']) || $_FILES['import_file']['error'] !== UPLOAD_ERR_OK) {
+            $_SESSION['error'] = 'Please select a valid file to import';
+            $this->redirect('/groups');
+            return;
+        }
+
+        $file = $_FILES['import_file'];
+
+        if ($file['size'] > 2097152) {
+            $_SESSION['error'] = 'File is too large. Maximum size is 2MB';
+            $this->redirect('/groups');
+            return;
+        }
+
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['csv', 'json'])) {
+            $_SESSION['error'] = 'Invalid file type. Please upload a CSV or JSON file';
+            $this->redirect('/groups');
+            return;
+        }
+
+        $content = file_get_contents($file['tmp_name']);
+        $userId = \Core\Auth::id();
+        $settingModel = new \App\Models\Setting();
+        $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+
+        $groupsCreated = 0;
+        $channelsCreated = 0;
+        $groupsSkipped = 0;
+
+        if ($ext === 'json') {
+            $parsed = json_decode($content, true);
+            if (!is_array($parsed)) {
+                $_SESSION['error'] = 'Invalid JSON file';
+                $this->redirect('/groups');
+                return;
+            }
+
+            foreach ($parsed as $groupData) {
+                $groupName = trim($groupData['group_name'] ?? '');
+                if (empty($groupName)) continue;
+
+                // Check if group already exists
+                $existing = $this->groupModel->findByName($groupName, $isolationMode === 'isolated' ? $userId : null);
+                if ($existing) {
+                    $groupsSkipped++;
+                    continue;
+                }
+
+                $groupId = $this->groupModel->create([
+                    'name' => $groupName,
+                    'description' => trim($groupData['group_description'] ?? ''),
+                    'user_id' => $isolationMode === 'isolated' ? $userId : null
+                ]);
+
+                if ($groupId && !empty($groupData['channels'])) {
+                    foreach ($groupData['channels'] as $ch) {
+                        $channelType = $ch['channel_type'] ?? '';
+                        $config = $ch['channel_config'] ?? [];
+                        if (empty($channelType) || !in_array($channelType, $validChannelTypes)) continue;
+
+                        // Channels with masked secrets are created as inactive
+                        $hasMasked = $this->configHasMaskedValues($config);
+
+                        $this->channelModel->create([
+                            'notification_group_id' => $groupId,
+                            'channel_type' => $channelType,
+                            'channel_config' => json_encode($config),
+                            'is_active' => $hasMasked ? 0 : ((int)($ch['is_active'] ?? 1))
+                        ]);
+                        $channelsCreated++;
+                    }
+                }
+                $groupsCreated++;
+            }
+        } else {
+            // CSV: group rows by group_name
+            $lines = array_filter(explode("\n", $content));
+            $header = null;
+            $csvGroups = [];
+
+            foreach ($lines as $line) {
+                $row = str_getcsv(trim($line), ',', '"', '\\');
+                if (!$header) {
+                    $header = array_map('strtolower', array_map('trim', $row));
+                    continue;
+                }
+                $item = [];
+                foreach ($header as $i => $col) {
+                    $item[$col] = $row[$i] ?? '';
+                }
+                $gName = trim($item['group_name'] ?? '');
+                if (empty($gName)) continue;
+
+                if (!isset($csvGroups[$gName])) {
+                    $csvGroups[$gName] = [
+                        'description' => trim($item['group_description'] ?? ''),
+                        'channels' => []
+                    ];
+                }
+                $chType = trim($item['channel_type'] ?? '');
+                if (!empty($chType) && in_array($chType, $validChannelTypes)) {
+                    $config = json_decode($item['channel_config'] ?? '{}', true) ?: [];
+                    $csvGroups[$gName]['channels'][] = [
+                        'channel_type' => $chType,
+                        'channel_config' => $config,
+                        'is_active' => $item['is_active'] ?? '1'
+                    ];
+                }
+            }
+
+            foreach ($csvGroups as $gName => $gData) {
+                $existing = $this->groupModel->findByName($gName, $isolationMode === 'isolated' ? $userId : null);
+                if ($existing) {
+                    $groupsSkipped++;
+                    continue;
+                }
+
+                $groupId = $this->groupModel->create([
+                    'name' => $gName,
+                    'description' => $gData['description'],
+                    'user_id' => $isolationMode === 'isolated' ? $userId : null
+                ]);
+
+                if ($groupId) {
+                    foreach ($gData['channels'] as $ch) {
+                        $config = $ch['channel_config'] ?? [];
+                        $hasMasked = $this->configHasMaskedValues($config);
+
+                        $this->channelModel->create([
+                            'notification_group_id' => $groupId,
+                            'channel_type' => $ch['channel_type'],
+                            'channel_config' => json_encode($config),
+                            'is_active' => $hasMasked ? 0 : ((int)($ch['is_active'] ?? 1))
+                        ]);
+                        $channelsCreated++;
+                    }
+                    $groupsCreated++;
+                }
+            }
+        }
+
+        $msg = "{$groupsCreated} group(s) imported ({$channelsCreated} channels)";
+        if ($groupsSkipped > 0) $msg .= ", {$groupsSkipped} skipped (already exist)";
+        $_SESSION['success'] = $msg;
+        $this->redirect('/groups');
+    }
+
+    /**
+     * Mask sensitive values in channel config for export
+     */
+    private function maskChannelConfig(string $type, array $config): array
+    {
+        $masked = $config;
+        $sensitiveKeys = ['bot_token', 'api_token', 'user_key', 'pushover_api_token', 'pushover_user_key'];
+        $urlKeys = ['webhook_url', 'discord_webhook_url', 'slack_webhook_url', 'mattermost_webhook_url'];
+
+        foreach ($sensitiveKeys as $key) {
+            if (!empty($masked[$key])) {
+                $val = $masked[$key];
+                $masked[$key] = '****' . substr($val, -4);
+            }
+        }
+
+        foreach ($urlKeys as $key) {
+            if (!empty($masked[$key])) {
+                $parsed = parse_url($masked[$key]);
+                if ($parsed && isset($parsed['host'])) {
+                    $scheme = $parsed['scheme'] ?? 'https';
+                    $masked[$key] = "{$scheme}://{$parsed['host']}/****";
+                }
+            }
+        }
+
+        // Email is not masked
+        return $masked;
+    }
+
+    /**
+     * Check if config contains masked placeholder values
+     */
+    private function configHasMaskedValues(array $config): bool
+    {
+        foreach ($config as $value) {
+            if (is_string($value) && (str_contains($value, '****'))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function create()
     {
         $this->view('groups/create', [

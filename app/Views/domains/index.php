@@ -29,19 +29,25 @@ $currentFilters = $filters ?? ['search' => '', 'status' => '', 'group' => '', 's
 
 <!-- Action Buttons -->
 <div class="mb-4 flex gap-2 justify-end">
-    <?php if (!empty($domains)): ?>
-    <form method="POST" action="/domains/bulk-refresh" id="refresh-all-form">
-        <?= csrf_field() ?>
-        <?php foreach ($domains as $domain): ?>
-            <input type="hidden" name="domain_ids[]" value="<?= $domain['id'] ?>">
-        <?php endforeach; ?>
-        <button type="submit" class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium" title="Refresh all domains on this page">
-            <i class="fas fa-sync-alt mr-2"></i>
-            Refresh Page (<?= count($domains) ?>)
+    <!-- Export Dropdown -->
+    <div class="relative" id="domainExportDropdownWrapper">
+        <button onclick="document.getElementById('domainExportMenu').classList.toggle('hidden')" class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors font-medium">
+            <i class="fas fa-download mr-2"></i>
+            Export
+            <i class="fas fa-chevron-down ml-2 text-xs"></i>
         </button>
-    </form>
-    <?php endif; ?>
-    <a href="/domains/bulk-add" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+        <div id="domainExportMenu" class="hidden absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-30 overflow-hidden">
+            <a href="/domains/export?format=csv" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <i class="fas fa-file-csv text-green-600 mr-2.5"></i>
+                Export as CSV
+            </a>
+            <a href="/domains/export?format=json" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100">
+                <i class="fas fa-file-code text-blue-600 mr-2.5"></i>
+                Export as JSON
+            </a>
+        </div>
+    </div>
+    <a href="/domains/bulk-add" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
         <i class="fas fa-layer-group mr-2"></i>
         Bulk Add
     </a>
@@ -124,126 +130,7 @@ $currentFilters = $filters ?? ['search' => '', 'status' => '', 'group' => '', 's
     </form>
 </div>
 
-<!-- Bulk Actions Toolbar (Hidden by default, shown when domains are selected) -->
-<div id="bulk-actions" class="hidden mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-    <div class="flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <span id="selected-count" class="text-sm font-medium text-blue-900"></span>
-            
-            <button type="button" onclick="bulkRefresh()" class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium">
-                <i class="fas fa-sync-alt mr-2"></i>
-                Refresh Selected
-            </button>
-            
-            <?php if (\Core\Auth::isAdmin()): ?>
-                <button type="button" onclick="bulkTransfer()" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors font-medium">
-                    <i class="fas fa-exchange-alt mr-2"></i>
-                    Transfer Selected
-                </button>
-            <?php endif; ?>
-            
-            <div class="relative inline-block">
-                <button type="button" onclick="toggleAssignTagsDropdown()" class="inline-flex items-center px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors font-medium">
-                    <i class="fas fa-tags mr-2"></i>
-                    Manage Tags
-                    <i class="fas fa-chevron-down ml-2 text-xs"></i>
-                </button>
-                <div id="assign-tags-dropdown" class="hidden absolute left-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
-                    <div class="p-3">
-                        <div class="flex items-center justify-between mb-3">
-                            <label class="block text-xs font-medium text-gray-700">Tag Management</label>
-                            <a href="/tags" class="text-xs text-blue-600 hover:text-blue-800">
-                                <i class="fas fa-cog mr-1"></i>
-                                Manage Tags
-                            </a>
-                        </div>
-                        
-                        <!-- Add Tags Section -->
-                        <div class="mb-4">
-                            <label class="block text-xs font-medium text-gray-700 mb-2">Add Tags to Selected Domains</label>
-                            <div class="flex flex-wrap gap-1.5 mb-3">
-                                <?php foreach ($availableTags as $tag): ?>
-                                    <button type="button" onclick="bulkAssignExistingTag(<?= $tag['id'] ?>, '<?= htmlspecialchars($tag['name']) ?>')" 
-                                            class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border <?= htmlspecialchars($tag['color']) ?> hover:opacity-80">
-                                        <i class="fas fa-plus mr-1" style="font-size: 8px;"></i>
-                                        <?= htmlspecialchars($tag['name']) ?>
-                                    </button>
-                                <?php endforeach; ?>
-                            </div>
-                            <div class="border-t border-gray-200 pt-2">
-                                <button type="button" onclick="openTagSelector()" class="w-full px-3 py-1.5 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200 font-medium">
-                                    <i class="fas fa-plus mr-1"></i>
-                                    Add Custom Tag
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <!-- Remove Tags Section -->
-                        <div class="border-t border-gray-200 pt-3">
-                            <label class="block text-xs font-medium text-gray-700 mb-2">Remove Tags from Selected Domains</label>
-                            <div class="space-y-2">
-                                <button type="button" onclick="bulkRemoveAllTags()" class="w-full px-3 py-1.5 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200 font-medium">
-                                    <i class="fas fa-times mr-1"></i>
-                                    Remove All Tags
-                                </button>
-                                <button type="button" onclick="openTagRemovalSelector()" class="w-full px-3 py-1.5 bg-red-100 text-red-700 text-xs rounded hover:bg-red-200 font-medium">
-                                    <i class="fas fa-minus mr-1"></i>
-                                    Remove Specific Tag
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="border-t border-gray-200 p-2">
-                        <button type="button" onclick="toggleAssignTagsDropdown()" class="w-full px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300">
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="relative inline-block">
-                <button type="button" onclick="toggleAssignGroupDropdown()" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                    <i class="fas fa-bell mr-2"></i>
-                    Assign Group
-                    <i class="fas fa-chevron-down ml-2 text-xs"></i>
-                </button>
-                <div id="assign-group-dropdown" class="hidden absolute left-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
-                    <form method="POST" action="/domains/bulk-assign-group" id="bulk-assign-form">
-                        <?= csrf_field() ?>
-                        <div class="p-3">
-                            <select name="group_id" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
-                                <option value="">-- No Group --</option>
-                                <?php foreach ($groups as $group): ?>
-                                    <option value="<?= $group['id'] ?>"><?= htmlspecialchars($group['name']) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="border-t border-gray-200 p-2 flex gap-2">
-                            <button type="submit" class="flex-1 px-3 py-1.5 bg-primary text-white text-xs rounded hover:bg-primary-dark">
-                                Assign
-                            </button>
-                            <button type="button" onclick="toggleAssignGroupDropdown()" class="flex-1 px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300">
-                                Cancel
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-            
-            <button type="button" onclick="bulkDelete()" class="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
-                <i class="fas fa-trash mr-2"></i>
-                Delete Selected
-            </button>
-            
-            <button type="button" onclick="clearSelection()" class="inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition-colors font-medium">
-                <i class="fas fa-times mr-2"></i>
-                Clear Selection
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Pagination Info & Per Page Selector -->
+                <!-- Pagination Info & Per Page Selector -->
 <div class="mb-4 flex justify-between items-center">
     <div class="text-sm text-gray-600">
         Showing <span class="font-semibold text-gray-900"><?= $pagination['showing_from'] ?></span> to 
@@ -271,6 +158,110 @@ $currentFilters = $filters ?? ['search' => '', 'status' => '', 'group' => '', 's
 
 <!-- Domains List -->
 <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <!-- Bulk Actions Bar (shown when domains are selected) -->
+    <div id="bulk-actions" class="hidden px-6 py-3 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <span id="selected-count" class="text-sm font-medium text-gray-700"></span>
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="bulkRefresh()" class="inline-flex items-center px-4 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-sync-alt mr-1"></i> Refresh Selected
+                    </button>
+                    <?php if (\Core\Auth::isAdmin()): ?>
+                    <button type="button" onclick="bulkTransfer()" class="inline-flex items-center px-4 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+                        <i class="fas fa-exchange-alt mr-1"></i> Transfer Selected
+                    </button>
+                    <?php endif; ?>
+                    <div class="relative inline-block">
+                        <button type="button" onclick="toggleAssignTagsDropdown()" class="inline-flex items-center px-4 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium">
+                            <i class="fas fa-tags mr-1"></i> Manage Tags
+                            <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                        </button>
+                        <div id="assign-tags-dropdown" class="hidden absolute left-0 mt-2 w-72 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                            <div class="p-3">
+                                <div class="flex items-center justify-between mb-3">
+                                    <label class="block text-xs font-medium text-gray-700">Tag Management</label>
+                                    <a href="/tags" class="text-xs text-blue-600 hover:text-blue-800">
+                                        <i class="fas fa-cog mr-1"></i>
+                                        Manage Tags
+                                    </a>
+                                </div>
+                                <div class="mb-4">
+                                    <label class="block text-xs font-medium text-gray-700 mb-2">Add Tags to Selected Domains</label>
+                                    <div class="flex flex-wrap gap-1.5 mb-3">
+                                        <?php foreach ($availableTags as $tag): ?>
+                                            <button type="button" onclick="bulkAssignExistingTag(<?= $tag['id'] ?>, '<?= htmlspecialchars($tag['name']) ?>')" 
+                                                    class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border <?= htmlspecialchars($tag['color']) ?> hover:opacity-80">
+                                                <i class="fas fa-plus mr-1" style="font-size: 8px;"></i>
+                                                <?= htmlspecialchars($tag['name']) ?>
+                                            </button>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <div class="border-t border-gray-200 pt-2">
+                                        <button type="button" onclick="openTagSelector()" class="w-full px-3 py-1.5 bg-blue-100 text-blue-700 text-xs rounded hover:bg-blue-200 font-medium">
+                                            <i class="fas fa-plus mr-1"></i>
+                                            Add Custom Tag
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="border-t border-gray-200 pt-3">
+                                    <label class="block text-xs font-medium text-gray-700 mb-2">Remove Tags from Selected Domains</label>
+                                    <div class="space-y-2">
+                                        <button type="button" onclick="bulkRemoveAllTags()" class="w-full px-3 py-1.5 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200 font-medium">
+                                            <i class="fas fa-times mr-1"></i>
+                                            Remove All Tags
+                                        </button>
+                                        <button type="button" onclick="openTagRemovalSelector()" class="w-full px-3 py-1.5 bg-red-100 text-red-700 text-xs rounded hover:bg-red-200 font-medium">
+                                            <i class="fas fa-minus mr-1"></i>
+                                            Remove Specific Tag
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="border-t border-gray-200 p-2">
+                                <button type="button" onclick="toggleAssignTagsDropdown()" class="w-full px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300">
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="relative inline-block">
+                        <button type="button" onclick="toggleAssignGroupDropdown()" class="inline-flex items-center px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
+                            <i class="fas fa-bell mr-1"></i> Assign Group
+                            <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                        </button>
+                        <div id="assign-group-dropdown" class="hidden absolute left-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                            <form method="POST" action="/domains/bulk-assign-group" id="bulk-assign-form">
+                                <?= csrf_field() ?>
+                                <div class="p-3">
+                                    <select name="group_id" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="">-- No Group --</option>
+                                        <?php foreach ($groups as $group): ?>
+                                            <option value="<?= $group['id'] ?>"><?= htmlspecialchars($group['name']) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="border-t border-gray-200 p-2 flex gap-2">
+                                    <button type="submit" class="flex-1 px-3 py-1.5 bg-primary text-white text-xs rounded hover:bg-primary-dark">
+                                        Assign
+                                    </button>
+                                    <button type="button" onclick="toggleAssignGroupDropdown()" class="flex-1 px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded hover:bg-gray-300">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    <button type="button" onclick="bulkDelete()" class="inline-flex items-center px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-trash mr-1"></i> Delete Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+        <button type="button" onclick="clearSelection()" class="inline-flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
+            <i class="fas fa-times mr-1.5"></i> Clear Selection
+        </button>
+    </div>
     <?php if (!empty($domains)): ?>
         <!-- Table View (Desktop) -->
         <div class="hidden lg:block overflow-x-auto">
@@ -575,11 +566,9 @@ function updateBulkActions() {
     
     if (count > 0) {
         bulkActions.classList.remove('hidden');
-        bulkActions.classList.add('flex');
-        selectedCount.textContent = `${count} domain(s) selected`;
+        selectedCount.textContent = count + ' domain(s) selected';
     } else {
         bulkActions.classList.add('hidden');
-        bulkActions.classList.remove('flex');
     }
     
     // Update select all checkbox state
@@ -793,7 +782,7 @@ function bulkTransfer() {
                         <button type="button" onclick="this.closest('.fixed').remove()" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400">
                             Cancel
                         </button>
-                        <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+                        <button type="submit" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark">
                             Transfer Domains
                         </button>
                     </div>
@@ -1070,6 +1059,14 @@ function submitTagRemoval() {
 }
 
 // Tags are loaded server-side, no need for DOMContentLoaded
+
+// Close export dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const wrapper = document.getElementById('domainExportDropdownWrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById('domainExportMenu').classList.add('hidden');
+    }
+});
 
 </script>
 

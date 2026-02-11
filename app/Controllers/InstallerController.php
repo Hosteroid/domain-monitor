@@ -55,6 +55,7 @@ class InstallerController extends Controller
             '022_add_pushover_channel_type.sql',
             '023_update_app_version_to_1.1.1.sql',
             '024_add_status_notifications_v1.1.2.sql',
+            '025_add_update_system_v1.1.3.sql',
         ];
         
         try {
@@ -196,6 +197,7 @@ class InstallerController extends Controller
                     '022_add_pushover_channel_type.sql',
                     '023_update_app_version_to_1.1.1.sql',
                     '024_add_status_notifications_v1.1.2.sql',
+                    '025_add_update_system_v1.1.3.sql',
                 ];
             }
             
@@ -223,11 +225,32 @@ class InstallerController extends Controller
     }
     
     /**
+     * Require admin authentication (for post-install routes)
+     * Redirects to login if not authenticated, or home if not admin.
+     */
+    private function requireAdmin(): void
+    {
+        if (!\Core\Auth::check()) {
+            $_SESSION['error'] = 'Please log in as an administrator to access this page.';
+            header('Location: /login');
+            exit;
+        }
+        if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+            $_SESSION['error'] = 'Access denied. Admin privileges required.';
+            header('Location: /');
+            exit;
+        }
+    }
+
+    /**
      * Show installer welcome page
      */
     public function index()
     {
         if ($this->isInstalled()) {
+            // System is installed — require admin for any further access
+            $this->requireAdmin();
+
             // Check for pending migrations without executing them
             $pending = $this->getPendingMigrations(false);
             if (empty($pending)) {
@@ -250,6 +273,13 @@ class InstallerController extends Controller
      */
     public function checkDatabase()
     {
+        // Block access if already installed
+        if ($this->isInstalled()) {
+            $_SESSION['info'] = 'System is already installed.';
+            $this->redirect('/');
+            return;
+        }
+
         try {
             $pdo = \Core\Database::getConnection();
             $pdo->query("SELECT 1");
@@ -274,6 +304,13 @@ class InstallerController extends Controller
     {
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $this->redirect('/install');
+            return;
+        }
+
+        // Block re-installation if already installed
+        if ($this->isInstalled()) {
+            $_SESSION['error'] = 'System is already installed. Use the update function instead.';
+            $this->redirect('/');
             return;
         }
         
@@ -382,6 +419,7 @@ class InstallerController extends Controller
                     '022_add_pushover_channel_type.sql',
                     '023_update_app_version_to_1.1.1.sql',
                     '024_add_status_notifications_v1.1.2.sql',
+                    '025_add_update_system_v1.1.3.sql',
                 ];
                 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");
@@ -505,6 +543,9 @@ class InstallerController extends Controller
      */
     public function showUpdate()
     {
+        // Require admin authentication — updates are only for installed systems
+        $this->requireAdmin();
+
         $pending = $this->getPendingMigrations();
         
         if (empty($pending)) {
@@ -524,6 +565,9 @@ class InstallerController extends Controller
      */
     public function runUpdate()
     {
+        // Require admin authentication
+        $this->requireAdmin();
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $this->redirect('/install/update');
             return;
@@ -600,10 +644,12 @@ class InstallerController extends Controller
                     
                     // Determine from/to versions based on migrations
                     $fromVersion = '1.0.0';
-                    $toVersion = '1.1.2';
+                    $toVersion = '1.1.3';
                     
                     // Detect version based on which migrations were run
-                    if (in_array('024_add_status_notifications_v1.1.2.sql', $executed)) {
+                    if (in_array('025_add_update_system_v1.1.3.sql', $executed)) {
+                        $toVersion = '1.1.3';
+                    } elseif (in_array('024_add_status_notifications_v1.1.2.sql', $executed)) {
                         $toVersion = '1.1.2';
                     } elseif (in_array('022_add_pushover_channel_type.sql', $executed)) {
                         $toVersion = '1.1.1';

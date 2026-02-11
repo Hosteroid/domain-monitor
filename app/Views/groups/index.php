@@ -7,8 +7,31 @@ ob_start();
 ?>
 
 <!-- Quick Actions -->
-<div class="mb-4 flex justify-end">
-    <a href="/groups/create" class="inline-flex items-center px-4 py-2.5 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+<div class="mb-4 flex gap-2 justify-end">
+    <!-- Export Dropdown -->
+    <div class="relative" id="groupExportDropdownWrapper">
+        <button onclick="document.getElementById('groupExportMenu').classList.toggle('hidden')" class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors font-medium">
+            <i class="fas fa-download mr-2"></i>
+            Export
+            <i class="fas fa-chevron-down ml-2 text-xs"></i>
+        </button>
+        <div id="groupExportMenu" class="hidden absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-30 overflow-hidden">
+            <a href="/groups/export?format=csv" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <i class="fas fa-file-csv text-green-600 mr-2.5"></i>
+                Export as CSV
+            </a>
+            <a href="/groups/export?format=json" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100">
+                <i class="fas fa-file-code text-blue-600 mr-2.5"></i>
+                Export as JSON
+            </a>
+        </div>
+    </div>
+    <!-- Import Button -->
+    <button onclick="document.getElementById('groupImportModal').classList.remove('hidden')" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+        <i class="fas fa-upload mr-2"></i>
+        Import
+    </button>
+    <a href="/groups/create" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
         <i class="fas fa-plus mr-2"></i>
         Create New Group
     </a>
@@ -31,34 +54,29 @@ ob_start();
     </div>
 </div>
 
-<!-- Bulk Actions Toolbar (Hidden by default, shown when groups are selected) -->
-<div id="bulk-actions" class="hidden mb-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-    <div class="flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <span id="selected-count" class="text-sm font-medium text-blue-900"></span>
-            
-            <?php if (\Core\Auth::isAdmin()): ?>
-                <button type="button" onclick="bulkTransfer()" class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium">
-                    <i class="fas fa-exchange-alt mr-2"></i>
-                    Transfer Selected
-                </button>
-            <?php endif; ?>
-            
-            <button type="button" onclick="bulkDelete()" class="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
-                <i class="fas fa-trash mr-2"></i>
-                Delete Selected
-            </button>
-            
-            <button type="button" onclick="clearSelection()" class="inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition-colors font-medium">
-                <i class="fas fa-times mr-2"></i>
-                Clear Selection
-            </button>
-        </div>
-    </div>
-</div>
-
 <!-- Groups List -->
 <div class="bg-white rounded-lg border border-gray-200 overflow-hidden">
+    <!-- Bulk Actions Bar (shown when groups are selected) -->
+    <div id="bulk-actions" class="hidden px-6 py-3 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <span id="selected-count" class="text-sm font-medium text-gray-700"></span>
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                    <?php if (\Core\Auth::isAdmin()): ?>
+                    <button type="button" onclick="bulkTransfer()" class="inline-flex items-center px-4 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+                        <i class="fas fa-exchange-alt mr-1"></i> Transfer Selected
+                    </button>
+                    <?php endif; ?>
+                    <button type="button" onclick="bulkDelete()" class="inline-flex items-center px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-trash mr-1"></i> Delete Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+        <button type="button" onclick="clearSelection()" class="inline-flex items-center text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
+            <i class="fas fa-times mr-1.5"></i> Clear Selection
+        </button>
+    </div>
     <?php if (!empty($groups)): ?>
         <!-- Table View (Desktop) -->
         <div class="hidden md:block overflow-x-auto">
@@ -208,11 +226,9 @@ function updateBulkActions() {
     
     if (checkboxes.length > 0) {
         bulkActions.classList.remove('hidden');
-        bulkActions.classList.add('flex');
         selectedCount.textContent = checkboxes.length + ' group(s) selected';
     } else {
         bulkActions.classList.add('hidden');
-        bulkActions.classList.remove('flex');
     }
     
     // Update select all checkbox state
@@ -283,30 +299,29 @@ function transferGroup(groupId, groupName) {
     ).join('');
             
             const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
             modal.innerHTML = `
-                <div class="bg-white rounded-lg p-6 w-96">
-                    <h3 class="text-lg font-semibold mb-4">Transfer Group</h3>
-                    <p class="text-sm text-gray-600 mb-4">Transfer group "${groupName}" to another user:</p>
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-1">Transfer Group</h3>
+                    <p class="text-sm text-gray-600 mb-4">Transfer group "${groupName}" to another user.</p>
                     
                     <form method="POST" action="/groups/transfer">
                         <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
                         <input type="hidden" name="group_id" value="${groupId}">
                         
                         <div class="mb-4">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Transfer to User:</label>
-                            <select name="target_user_id" required class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Transfer to User</label>
+                            <select name="target_user_id" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm">
                                 <option value="">Select User</option>
                                 ${userOptions}
                             </select>
                         </div>
                         
-                        <div class="flex justify-end space-x-3">
-                            <button type="button" onclick="this.closest('.fixed').remove()" 
-                                    class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        <div class="flex justify-end gap-3">
+                            <button type="button" onclick="this.closest('.fixed').remove()" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium">
                                 Cancel
                             </button>
-                            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                            <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark text-sm font-medium">
                                 Transfer
                             </button>
                         </div>
@@ -319,8 +334,8 @@ function transferGroup(groupId, groupName) {
 
 // Bulk transfer groups
 function bulkTransfer() {
-    const selectedCheckboxes = document.querySelectorAll('input[name="group_ids[]"]:checked');
-    if (selectedCheckboxes.length === 0) {
+    const groupIds = getSelectedGroupIds();
+    if (groupIds.length === 0) {
         alert('Please select groups to transfer');
         return;
     }
@@ -337,32 +352,31 @@ function bulkTransfer() {
     ).join('');
             
             const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
             modal.innerHTML = `
-                <div class="bg-white rounded-lg p-6 w-96">
-                    <h3 class="text-lg font-semibold mb-4">Transfer Groups</h3>
-                    <p class="text-sm text-gray-600 mb-4">Transfer ${selectedCheckboxes.length} selected group(s) to another user:</p>
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-1">Transfer Groups</h3>
+                    <p class="text-sm text-gray-600 mb-4">Transfer ${groupIds.length} selected group(s) to another user.</p>
                     
                     <form method="POST" action="/groups/bulk-transfer">
                         <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
-                        ${Array.from(selectedCheckboxes).map(cb => 
-                            `<input type="hidden" name="group_ids[]" value="${cb.value}">`
+                        ${groupIds.map(id => 
+                            `<input type="hidden" name="group_ids[]" value="${id}">`
                         ).join('')}
                         
                         <div class="mb-4">
-                            <label class="block text-sm font-medium text-gray-700 mb-2">Transfer to User:</label>
-                            <select name="target_user_id" required class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Transfer to User</label>
+                            <select name="target_user_id" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm">
                                 <option value="">Select User</option>
                                 ${userOptions}
                             </select>
                         </div>
                         
-                        <div class="flex justify-end space-x-3">
-                            <button type="button" onclick="this.closest('.fixed').remove()" 
-                                    class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        <div class="flex justify-end gap-3">
+                            <button type="button" onclick="this.closest('.fixed').remove()" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium">
                                 Cancel
                             </button>
-                            <button type="submit" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                            <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark text-sm font-medium">
                                 Transfer All
                             </button>
                         </div>
@@ -372,6 +386,159 @@ function bulkTransfer() {
             
     document.body.appendChild(modal);
 }
+
+// Close export dropdown when clicking outside
+document.addEventListener('click', function(e) {
+    const wrapper = document.getElementById('groupExportDropdownWrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        document.getElementById('groupExportMenu').classList.add('hidden');
+    }
+});
+
+// Close import modal on backdrop click
+document.getElementById('groupImportModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        this.classList.add('hidden');
+    }
+});
+</script>
+
+<!-- Import Modal -->
+<div id="groupImportModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900">
+                <i class="fas fa-upload text-primary mr-2"></i>Import Notification Groups
+            </h3>
+            <button onclick="document.getElementById('groupImportModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="/groups/import" enctype="multipart/form-data" id="groupImportForm">
+            <?= csrf_field() ?>
+            <div class="p-6 space-y-4">
+                <!-- Drag & Drop Zone -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">Select File</label>
+                    <div id="groupDropzone" class="relative border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer transition-all hover:border-primary hover:bg-gray-50">
+                        <input type="file" name="import_file" accept=".csv,.json" required id="groupFileInput"
+                               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="groupDropzoneContent">
+                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                            <p class="text-sm text-gray-600 font-medium">Drag & drop your file here</p>
+                            <p class="text-xs text-gray-400 my-1">or</p>
+                            <span class="inline-flex items-center px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-medium">
+                                <i class="fas fa-folder-open mr-1.5"></i>Browse Files
+                            </span>
+                            <p class="mt-2.5 text-xs text-gray-400">CSV, JSON &middot; Max <?= \App\Helpers\ViewHelper::getMaxUploadSize() ?></p>
+                        </div>
+                        <div id="groupDropzoneFile" class="hidden">
+                            <i class="fas fa-file-alt text-2xl text-primary mb-1.5"></i>
+                            <p class="text-sm font-medium text-gray-700" id="groupFileName"></p>
+                            <p class="text-xs text-gray-400" id="groupFileSize"></p>
+                            <button type="button" id="groupFileRemove" class="mt-1.5 text-xs text-red-500 hover:text-red-700 font-medium">
+                                <i class="fas fa-trash-alt mr-1"></i>Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p class="text-xs text-gray-700 font-medium mb-1"><i class="fas fa-info-circle text-blue-500 mr-1"></i> Expected Format</p>
+                    <p class="text-xs text-gray-600">CSV: <code class="bg-white px-1 rounded">group_name, group_description, channel_type, channel_config, is_active</code></p>
+                    <p class="text-xs text-gray-600 mt-0.5">JSON: array of group objects with nested channels array</p>
+                    <p class="text-xs text-gray-500 mt-1.5"><i class="fas fa-exclamation-triangle text-amber-500 mr-1"></i>Channels with masked secrets will be imported as <strong>disabled</strong>. Update the credentials and enable them manually.</p>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="document.getElementById('groupImportModal').classList.add('hidden')" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" id="groupImportBtn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                    <i class="fas fa-upload mr-1.5"></i>Import Groups
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// --- Group Import drag-and-drop & loading ---
+(function() {
+    const dropzone = document.getElementById('groupDropzone');
+    const fileInput = document.getElementById('groupFileInput');
+    const content = document.getElementById('groupDropzoneContent');
+    const fileInfo = document.getElementById('groupDropzoneFile');
+    const fileName = document.getElementById('groupFileName');
+    const fileSize = document.getElementById('groupFileSize');
+    const removeBtn = document.getElementById('groupFileRemove');
+    const form = document.getElementById('groupImportForm');
+    const submitBtn = document.getElementById('groupImportBtn');
+
+    function formatSize(bytes) {
+        if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+        if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return bytes + ' B';
+    }
+
+    function showFile(file) {
+        fileName.textContent = file.name;
+        fileSize.textContent = formatSize(file.size);
+        content.classList.add('hidden');
+        fileInfo.classList.remove('hidden');
+        dropzone.classList.remove('border-gray-300');
+        dropzone.classList.add('border-primary', 'bg-primary/5');
+    }
+
+    function resetDropzone() {
+        fileInput.value = '';
+        content.classList.remove('hidden');
+        fileInfo.classList.add('hidden');
+        dropzone.classList.add('border-gray-300');
+        dropzone.classList.remove('border-primary', 'bg-primary/5');
+    }
+
+    fileInput.addEventListener('change', function() {
+        if (this.files.length) showFile(this.files[0]);
+    });
+
+    removeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        resetDropzone();
+    });
+
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            dropzone.classList.add('border-primary', 'bg-primary/5');
+            dropzone.classList.remove('border-gray-300');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            if (!fileInput.files.length) {
+                dropzone.classList.remove('border-primary', 'bg-primary/5');
+                dropzone.classList.add('border-gray-300');
+            }
+        });
+    });
+
+    dropzone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            fileInput.files = files;
+            showFile(files[0]);
+        }
+    });
+
+    form.addEventListener('submit', function() {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Importing...';
+    });
+})();
 </script>
 
 <?php
