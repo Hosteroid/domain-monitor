@@ -38,6 +38,12 @@ $currentVer = $appSettings['app_version'] ?? '0';
 $latestVer = $updateSettings['latest_available_version'] ?? null;
 $updateChannel = $updateSettings['update_channel'] ?? 'stable';
 $commitsBehind = (int)($updateSettings['commits_behind_count'] ?? 0);
+$installedSha = $updateSettings['installed_commit_sha'] ?? '';
+$remoteSha = $updateSettings['latest_remote_sha'] ?? '';
+// If installed SHA matches remote SHA, there's no real hotfix — stale cache
+if ($installedSha !== '' && $remoteSha !== '' && str_starts_with($installedSha, $remoteSha)) {
+    $commitsBehind = 0;
+}
 if ($latestVer && version_compare($latestVer, $currentVer, '>')) {
     $cachedUpdateAvailable = true;
     $cachedUpdateData = [

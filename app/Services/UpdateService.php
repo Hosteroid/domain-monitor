@@ -125,6 +125,11 @@ class UpdateService
                     // Cache commit info
                     $this->settingModel->setValue('latest_remote_sha', $result['remote_sha'] ?? '');
                     $this->settingModel->setValue('commits_behind_count', count($commits));
+                } else {
+                    // No new commits — explicitly clear stale cache so the UI
+                    // doesn't keep showing "update available" after a hotfix was applied.
+                    $this->settingModel->setValue('commits_behind_count', '0');
+                    $this->settingModel->setValue('latest_remote_sha', '');
                 }
             } elseif ($channel === 'latest' && !$localSha) {
                 $result['commit_tracking_unavailable'] = true;

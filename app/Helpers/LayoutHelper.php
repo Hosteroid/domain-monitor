@@ -204,6 +204,13 @@ class LayoutHelper
             $latestVersion = $updateSettings['latest_available_version'] ?? null;
             $channel = $updateSettings['update_channel'] ?? 'stable';
             $commitsBehind = (int) ($updateSettings['commits_behind_count'] ?? 0);
+            $installedSha = $updateSettings['installed_commit_sha'] ?? '';
+            $remoteSha = $updateSettings['latest_remote_sha'] ?? '';
+
+            // If installed SHA matches remote SHA, the cached commits_behind is stale
+            if ($installedSha !== '' && $remoteSha !== '' && str_starts_with($installedSha, $remoteSha)) {
+                $commitsBehind = 0;
+            }
 
             $available = false;
             $label = '';

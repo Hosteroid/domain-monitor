@@ -574,7 +574,14 @@ class NotificationService
     public function notifySystemUpgrade(int $userId, string $fromVersion, string $toVersion, int $migrationsCount, bool $composerManualRequired = false): void
     {
         $migrationLabel = $migrationsCount . ' migration' . ($migrationsCount !== 1 ? 's' : '') . ' applied';
-        if ($fromVersion === $toVersion) {
+
+        // Detect if $toVersion is a commit SHA (7-40 hex chars) rather than a semver string
+        $isCommitSha = (bool) preg_match('/^[a-f0-9]{7,40}$/i', $toVersion);
+
+        if ($isCommitSha) {
+            // Hotfix: file-only update identified by commit SHA
+            $message = "Domain Monitor v{$fromVersion} has been updated (hotfix {$toVersion}, {$migrationLabel})";
+        } elseif ($fromVersion === $toVersion) {
             // Hotfix: same version, just file updates
             $message = "Domain Monitor v{$toVersion} has been updated ({$migrationLabel})";
         } else {
