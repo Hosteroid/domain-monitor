@@ -1389,6 +1389,12 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         if (iconEl) iconEl.className = isRelease ? 'fas fa-arrow-circle-up text-blue-500 text-lg mt-0.5 mr-3' : 'fas fa-wrench text-amber-500 text-lg mt-0.5 mr-3';
+        // Update header colors (blue for release, amber for hotfix)
+        var headerEl = bodyEl.parentElement.querySelector('.rounded-t-xl');
+        if (headerEl) headerEl.className = 'flex items-start justify-between px-4 py-3 flex-shrink-0 gap-3 rounded-t-xl ' + (isRelease ? 'bg-blue-50 border border-blue-200' : 'bg-amber-50 border border-amber-200');
+        if (titleEl) titleEl.className = 'text-sm font-semibold ' + (isRelease ? 'text-blue-800' : 'text-amber-800');
+        if (sublineEl) sublineEl.className = 'text-xs mt-0.5 ' + (isRelease ? 'text-blue-600' : 'text-amber-600');
+        if (releaseLinkEl) releaseLinkEl.className = releaseLinkEl.className.replace(/text-(blue|amber)-600/g, isRelease ? 'text-blue-600' : 'text-amber-600');
         bodyEl.className = 'update-modal-body p-6 overflow-y-auto flex-1 text-sm min-h-0 ' + (isRelease ? 'bg-blue-50 border-x border-b border-blue-200' : 'bg-amber-50 border-x border-b border-amber-200');
         bodyEl.innerHTML = renderUpdateAvailable(data);
         var csrf = document.querySelector('input[name=csrf_token]') ? document.querySelector('input[name=csrf_token]').value : '';
