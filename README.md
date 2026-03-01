@@ -173,9 +173,8 @@ php -S localhost:8000 -t public
 
 Then visit: `http://localhost:8000`
 
-## 🔧 Configuration
 
-### 🔄 Updating the App
+## 🔄 Updating the App (from 1.1.x to 1.1.3), After that update from Web UI
 
 For existing installations at `/opt/domain-monitor`, use the following steps to upgrade to the latest version:
 
@@ -208,6 +207,8 @@ systemctl start apache2
 ```
 
 🌐 **Final step:** Open your Domain Monitor URL in a browser to process any database migrations and complete the upgrade from the web UI.
+
+## 🔧 Configuration
 
 ### Application & Email Settings
 
