@@ -175,6 +175,40 @@ Then visit: `http://localhost:8000`
 
 ## 🔧 Configuration
 
+### 🔄 Updating the App
+
+For existing installations at `/opt/domain-monitor`, use the following steps to upgrade to the latest version:
+
+```bash
+# 1. Stop the web server
+systemctl stop apache2
+
+# 2. Preserve your .env and backup the installation
+mv /opt/domain-monitor/.env /opt
+cd /opt
+mv domain-monitor/ domain-monitor.bak
+
+# 3. Clone fresh copy and restore config
+git clone https://github.com/Hosteroid/domain-monitor.git
+mv .env domain-monitor/
+cd domain-monitor
+
+# 4. Install dependencies and import TLD registry
+composer install
+php cron/import_tld_registry.php
+
+# 5. Fix permissions for web server
+sudo chown -R www-data:www-data /opt/domain-monitor
+sudo chgrp -R www-data /opt/domain-monitor/cache /opt/domain-monitor/logs
+sudo find /opt/domain-monitor -type f -exec chmod 664 {} \;
+sudo find /opt/domain-monitor -type d -exec chmod 775 {} \;
+
+# 6. Restart the web server
+systemctl start apache2
+```
+
+🌐 **Final step:** Open your Domain Monitor URL in a browser to process any database migrations and complete the upgrade from the web UI.
+
 ### Application & Email Settings
 
 All application and email settings are now managed through the **Settings** page in the web interface:
