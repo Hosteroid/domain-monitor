@@ -29,27 +29,65 @@ $currentFilters = $filters ?? ['search' => '', 'sort' => 'tld', 'order' => 'asc'
 
 <!-- Action Buttons -->
 <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
-<div class="mb-4 flex justify-end gap-2">
-    <a href="/tld-registry/import-logs" class="inline-flex items-center px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition-colors font-medium">
-        <i class="fas fa-history mr-2"></i>
-        Import Logs
-    </a>
-    <form method="POST" action="/tld-registry/start-progressive-import" class="inline">
-        <?= csrf_field() ?>
-        <input type="hidden" name="import_type" value="check_updates">
-        <button type="submit" <?= $tldStats['total'] == 0 ? 'disabled' : '' ?> class="inline-flex items-center px-4 py-2 <?= $tldStats['total'] == 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark' ?> text-white text-sm rounded-lg transition-colors font-medium" title="<?= $tldStats['total'] == 0 ? 'Import TLDs first' : 'Check for IANA updates' ?>">
-            <i class="fas fa-sync-alt mr-2"></i>
-            Check Updates
+<div class="mb-4 flex flex-wrap gap-2 justify-end">
+    <!-- IANA Dropdown -->
+    <div class="relative" id="ianaDropdownWrapper">
+        <button onclick="document.getElementById('ianaDropdownMenu').classList.toggle('hidden')" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+            <i class="fas fa-globe mr-2"></i>
+            IANA
+            <i class="fas fa-chevron-down ml-2 text-xs"></i>
         </button>
-    </form>
-    <form method="POST" action="/tld-registry/start-progressive-import" class="inline">
-        <?= csrf_field() ?>
-        <input type="hidden" name="import_type" value="complete_workflow">
-        <button type="submit" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium" title="Complete TLD import workflow: TLD List → RDAP → WHOIS → Registry URLs">
-            <i class="fas fa-rocket mr-2"></i>
-            Import TLDs
+        <div id="ianaDropdownMenu" class="hidden absolute right-0 mt-1 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-30 overflow-hidden">
+            <form method="POST" action="/tld-registry/start-progressive-import">
+                <?= csrf_field() ?>
+                <input type="hidden" name="import_type" value="complete_workflow">
+                <button type="submit" class="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors" title="Complete TLD import workflow: TLD List → RDAP → WHOIS → Registry URLs">
+                    <i class="fas fa-rocket text-indigo-600 mr-2.5"></i>
+                    Import TLDs from IANA
+                </button>
+            </form>
+            <form method="POST" action="/tld-registry/start-progressive-import">
+                <?= csrf_field() ?>
+                <input type="hidden" name="import_type" value="check_updates">
+                <button type="submit" <?= $tldStats['total'] == 0 ? 'disabled' : '' ?> class="w-full flex items-center px-4 py-2.5 text-sm <?= $tldStats['total'] == 0 ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-50' ?> transition-colors border-t border-gray-100" title="<?= $tldStats['total'] == 0 ? 'Import TLDs first' : 'Check for IANA updates' ?>">
+                    <i class="fas fa-sync-alt text-blue-600 mr-2.5"></i>
+                    Check for Updates
+                </button>
+            </form>
+            <a href="/tld-registry/import-logs" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100">
+                <i class="fas fa-history text-gray-500 mr-2.5"></i>
+                IANA Import Logs
+            </a>
+        </div>
+    </div>
+    <!-- Export Dropdown -->
+    <div class="relative" id="tldExportDropdownWrapper">
+        <button onclick="document.getElementById('tldExportDropdownMenu').classList.toggle('hidden')" class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors font-medium">
+            <i class="fas fa-download mr-2"></i>
+            Export
+            <i class="fas fa-chevron-down ml-2 text-xs"></i>
         </button>
-    </form>
+        <div id="tldExportDropdownMenu" class="hidden absolute right-0 mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 z-30 overflow-hidden">
+            <a href="/tld-registry/export?format=csv" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+                <i class="fas fa-file-csv text-green-600 mr-2.5"></i>
+                Export as CSV
+            </a>
+            <a href="/tld-registry/export?format=json" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100">
+                <i class="fas fa-file-code text-blue-600 mr-2.5"></i>
+                Export as JSON
+            </a>
+        </div>
+    </div>
+    <!-- Import Button -->
+    <button onclick="document.getElementById('tldImportModal').classList.remove('hidden')" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+        <i class="fas fa-upload mr-2"></i>
+        Import
+    </button>
+    <!-- Create Button -->
+    <button onclick="openCreateTldModal()" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+        <i class="fas fa-plus mr-2"></i>
+        Create TLD
+    </button>
 </div>
 <?php else: ?>
 <div class="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -529,6 +567,122 @@ $currentFilters = $filters ?? ['search' => '', 'sort' => 'tld', 'order' => 'asc'
 </div>
 <?php endif; ?>
 
+<!-- Create TLD Modal -->
+<div id="createTldModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <form method="POST" action="/tld-registry/create">
+                <div class="px-6 py-4 border-b border-gray-200">
+                    <h3 class="text-lg font-medium text-gray-900">Create New TLD</h3>
+                </div>
+                
+                <div class="px-6 py-4 space-y-4">
+                    <div>
+                        <label for="create_tld" class="block text-sm font-medium text-gray-700 mb-1">TLD Name</label>
+                        <input type="text" id="create_tld" name="tld" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="e.g., .com, .xyz, .co.uk">
+                        <p class="text-xs text-gray-500 mt-1">The dot prefix will be added automatically. Multi-level TLDs supported (e.g., co.uk, com.au)</p>
+                    </div>
+                    
+                    <div>
+                        <label for="create_whois_server" class="block text-sm font-medium text-gray-700 mb-1">WHOIS Server (Optional)</label>
+                        <input type="text" id="create_whois_server" name="whois_server"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="e.g., whois.verisign-grs.com">
+                    </div>
+                    
+                    <div>
+                        <label for="create_rdap_servers" class="block text-sm font-medium text-gray-700 mb-1">RDAP Servers (Optional)</label>
+                        <textarea id="create_rdap_servers" name="rdap_servers" rows="2"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                  placeholder="e.g., https://rdap.verisign.com/com/v1/"></textarea>
+                        <p class="text-xs text-gray-500 mt-1">One URL per line or comma-separated</p>
+                    </div>
+                    
+                    <div>
+                        <label for="create_registry_url" class="block text-sm font-medium text-gray-700 mb-1">Registry URL (Optional)</label>
+                        <input type="url" id="create_registry_url" name="registry_url"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                               placeholder="e.g., https://www.verisign.com">
+                    </div>
+                </div>
+                
+                <div class="px-6 py-4 bg-gray-50 flex justify-end space-x-3">
+                    <button type="button" onclick="closeCreateTldModal()" 
+                            class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50">
+                        Cancel
+                    </button>
+                    <button type="submit" 
+                            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700">
+                        Create TLD
+                    </button>
+                </div>
+                
+                <input type="hidden" name="csrf_token" value="<?= csrf_token() ?>">
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Import TLD Modal -->
+<div id="tldImportModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900">
+                <i class="fas fa-upload text-primary mr-2"></i>Import TLDs
+            </h3>
+            <button onclick="document.getElementById('tldImportModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="/tld-registry/import" enctype="multipart/form-data" id="tldImportForm">
+            <?= csrf_field() ?>
+            <div class="p-6 space-y-4">
+                <!-- Drag & Drop Zone -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">Select File</label>
+                    <div id="tldDropzone" class="relative border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer transition-all hover:border-primary hover:bg-gray-50">
+                        <input type="file" name="import_file" accept=".csv,.json" required id="tldFileInput"
+                               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="tldDropzoneContent">
+                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                            <p class="text-sm text-gray-600 font-medium">Drag & drop your file here</p>
+                            <p class="text-xs text-gray-400 my-1">or</p>
+                            <span class="inline-flex items-center px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-medium">
+                                <i class="fas fa-folder-open mr-1.5"></i>Browse Files
+                            </span>
+                            <p class="mt-2.5 text-xs text-gray-400">CSV, JSON &middot; Max <?= \App\Helpers\ViewHelper::getMaxUploadSize() ?></p>
+                        </div>
+                        <div id="tldDropzoneFile" class="hidden">
+                            <i class="fas fa-file-alt text-2xl text-primary mb-1.5"></i>
+                            <p class="text-sm font-medium text-gray-700" id="tldFileName"></p>
+                            <p class="text-xs text-gray-400" id="tldFileSize"></p>
+                            <button type="button" id="tldFileRemove" class="mt-1.5 text-xs text-red-500 hover:text-red-700 font-medium">
+                                <i class="fas fa-trash-alt mr-1"></i>Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p class="text-xs text-gray-700 font-medium mb-1"><i class="fas fa-info-circle text-blue-500 mr-1"></i> Expected Format</p>
+                    <p class="text-xs text-gray-600">CSV columns: <code class="bg-white px-1 rounded">tld, whois_server, rdap_servers, registry_url, is_active</code></p>
+                    <p class="text-xs text-gray-600 mt-0.5">JSON: array of objects with same fields</p>
+                    <p class="text-xs text-gray-500 mt-1">Existing TLDs will be updated. New TLDs will be created as active.</p>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="document.getElementById('tldImportModal').classList.add('hidden')" class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" id="tldImportBtn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                    <i class="fas fa-upload mr-1.5"></i>Import TLDs
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 function toggleAllCheckboxes(selectAllCheckbox) {
     const checkboxes = document.querySelectorAll('.tld-checkbox');
@@ -608,6 +762,130 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     updateSelectedCount();
 });
+
+// Create TLD Modal
+function openCreateTldModal() {
+    document.getElementById('createTldModal').classList.remove('hidden');
+    document.getElementById('create_tld').focus();
+}
+
+function closeCreateTldModal() {
+    document.getElementById('createTldModal').classList.add('hidden');
+    document.querySelector('#createTldModal form').reset();
+}
+
+document.getElementById('createTldModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeCreateTldModal();
+    }
+});
+
+// Import Modal
+document.getElementById('tldImportModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        document.getElementById('tldImportModal').classList.add('hidden');
+    }
+});
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(e) {
+    const exportWrapper = document.getElementById('tldExportDropdownWrapper');
+    if (exportWrapper && !exportWrapper.contains(e.target)) {
+        document.getElementById('tldExportDropdownMenu').classList.add('hidden');
+    }
+    const ianaWrapper = document.getElementById('ianaDropdownWrapper');
+    if (ianaWrapper && !ianaWrapper.contains(e.target)) {
+        document.getElementById('ianaDropdownMenu').classList.add('hidden');
+    }
+});
+
+// Close modals on escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeCreateTldModal();
+        document.getElementById('tldImportModal').classList.add('hidden');
+    }
+});
+
+// Import drag-and-drop & loading
+(function() {
+    const dropzone = document.getElementById('tldDropzone');
+    const fileInput = document.getElementById('tldFileInput');
+    const content = document.getElementById('tldDropzoneContent');
+    const fileInfo = document.getElementById('tldDropzoneFile');
+    const fileName = document.getElementById('tldFileName');
+    const fileSize = document.getElementById('tldFileSize');
+    const removeBtn = document.getElementById('tldFileRemove');
+    const form = document.getElementById('tldImportForm');
+    const submitBtn = document.getElementById('tldImportBtn');
+
+    if (!dropzone) return;
+
+    function formatSize(bytes) {
+        if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+        if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return bytes + ' B';
+    }
+
+    function showFile(file) {
+        fileName.textContent = file.name;
+        fileSize.textContent = formatSize(file.size);
+        content.classList.add('hidden');
+        fileInfo.classList.remove('hidden');
+        dropzone.classList.remove('border-gray-300');
+        dropzone.classList.add('border-primary', 'bg-primary/5');
+    }
+
+    function resetDropzone() {
+        fileInput.value = '';
+        content.classList.remove('hidden');
+        fileInfo.classList.add('hidden');
+        dropzone.classList.add('border-gray-300');
+        dropzone.classList.remove('border-primary', 'bg-primary/5');
+    }
+
+    fileInput.addEventListener('change', function() {
+        if (this.files.length) showFile(this.files[0]);
+    });
+
+    removeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        resetDropzone();
+    });
+
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            dropzone.classList.add('border-primary', 'bg-primary/5');
+            dropzone.classList.remove('border-gray-300');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            if (!fileInput.files.length) {
+                dropzone.classList.remove('border-primary', 'bg-primary/5');
+                dropzone.classList.add('border-gray-300');
+            }
+        });
+    });
+
+    dropzone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            fileInput.files = files;
+            showFile(files[0]);
+        }
+    });
+
+    form.addEventListener('submit', function() {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Importing...';
+    });
+})();
 </script>
 
 <?php

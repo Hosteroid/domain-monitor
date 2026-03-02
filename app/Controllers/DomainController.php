@@ -224,16 +224,26 @@ class DomainController extends Controller
 
         $this->verifyCsrf('/domains/bulk-add');
 
+        $logger = new \App\Services\Logger('import');
+        $userId = \Core\Auth::id();
+        $logger->info('Domains import started', ['user_id' => $userId]);
+
         if (!isset($_FILES['import_file']) || $_FILES['import_file']['error'] !== UPLOAD_ERR_OK) {
+            $logger->warning('No valid file uploaded for domains import');
             $_SESSION['error'] = 'Please select a valid file to import';
             $this->redirect('/domains/bulk-add');
             return;
         }
 
         $file = $_FILES['import_file'];
+        $logger->info('Import file received', [
+            'filename' => $file['name'],
+            'size' => $file['size']
+        ]);
 
         // Validate file size (5MB max for domains)
         if ($file['size'] > 5242880) {
+            $logger->warning('Import file too large', ['size' => $file['size']]);
             $_SESSION['error'] = 'File is too large. Maximum size is 5MB';
             $this->redirect('/domains/bulk-add');
             return;
@@ -241,6 +251,7 @@ class DomainController extends Controller
 
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         if (!in_array($ext, ['csv', 'json'])) {
+            $logger->warning('Invalid file type for domains import', ['extension' => $ext]);
             $_SESSION['error'] = 'Invalid file type. Please upload a CSV or JSON file';
             $this->redirect('/domains/bulk-add');
             return;
@@ -252,6 +263,7 @@ class DomainController extends Controller
         if ($ext === 'json') {
             $parsed = json_decode($content, true);
             if (!is_array($parsed)) {
+                $logger->error('Invalid JSON file for domains import');
                 $_SESSION['error'] = 'Invalid JSON file';
                 $this->redirect('/domains/bulk-add');
                 return;
@@ -275,12 +287,14 @@ class DomainController extends Controller
         }
 
         if (empty($domainsData)) {
+            $logger->warning('No domains found in import file');
             $_SESSION['error'] = 'No domains found in file';
             $this->redirect('/domains/bulk-add');
             return;
         }
 
-        $userId = \Core\Auth::id();
+        $logger->info('Domains data parsed from file', ['entries' => count($domainsData)]);
+
         $settingModel = new \App\Models\Setting();
         $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
         $tagModel = new \App\Models\Tag();
@@ -291,7 +305,6 @@ class DomainController extends Controller
         $added = 0;
         $skipped = 0;
         $errors = [];
-        $logger = new \App\Services\Logger();
 
         foreach ($domainsData as $row) {
             $domainName = strtolower(trim($row['domain_name'] ?? ''));
@@ -366,6 +379,12 @@ class DomainController extends Controller
                 $logger->error('Domain import failed', ['domain' => $domainName, 'error' => $e->getMessage()]);
             }
         }
+
+        $logger->info('Domains import completed', [
+            'added' => $added,
+            'skipped' => $skipped,
+            'failed' => count($errors)
+        ]);
 
         $msg = "{$added} domain(s) imported successfully";
         if ($skipped > 0) $msg .= ", {$skipped} skipped (already exist)";

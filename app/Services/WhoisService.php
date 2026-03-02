@@ -938,7 +938,7 @@ class WhoisService
                 }
 
                 // Registrar (only take the first valid one found) - for standard format
-                if (!$registrarFound && preg_match('/^registrar(?!.*url|.*whois|.*iana|.*phone|.*email|.*fax|.*abuse|.*id|.*contact)/i', $key) && !empty($value)) {
+                if (!$registrarFound && preg_match('/^registrar(?!.*url|.*whois|.*iana|.*phone|.*email|.*fax|.*abuse|.*id|.*contact|.*date|.*expir)/i', $key) && !empty($value)) {
                     // Skip if it looks like a phone number, email, or ID
                     if (!preg_match('/^[\+\d\.\s\(\)-]+$/', $value) && 
                         !preg_match('/@/', $value) && 
@@ -1040,6 +1040,11 @@ class WhoisService
         // Remove common prefixes/suffixes
         $dateString = preg_replace('/^(before|after):/i', '', $dateString);
         $dateString = trim($dateString);
+
+        // ISO-8601 format (e.g. ZARC: 2026-10-15T12:00:00Z or 2026-10-15T12:00:00+00:00)
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/i', $dateString, $m)) {
+            return $m[1];
+        }
 
         // Handle DD/MM/YYYY format (European format used by many WHOIS servers like .pt, .es, .fr, etc.)
         // Pattern: DD/MM/YYYY or DD/MM/YYYY HH:MM:SS

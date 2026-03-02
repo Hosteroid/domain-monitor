@@ -5,6 +5,31 @@ All notable changes to Domain Monitor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-03-02
+
+### Added
+- **CSV/JSON Import & Export for TLD Registry** - Export all TLDs with WHOIS servers, RDAP servers, registry URLs, and active status; import from CSV/JSON with create-or-update logic and duplicate detection
+- **Manual TLD Creation** - Create button with popup modal to add custom TLD entries (supports multi-level TLDs like .co.uk, .co.za, .com.au)
+- **IANA Dropdown Menu** - Consolidated "Import TLDs from IANA", "Check for Updates", and "IANA Import Logs" into a single indigo dropdown, reducing button clutter and separating IANA sync from file import/export
+- **TldRegistry::findByTld()** - Lookup TLDs regardless of active status (used by import deduplication and create duplicate check)
+- **TldRegistry::getAll()** - Retrieve all TLDs ordered by name for export
+
+### Changed
+- **Standardized Import Logging** - Added consistent `Logger('import')` calls across all four import functions (Tags, Domains, Notification Groups, TLD Registry) with start, file info, parse count, validation warnings, and completion stats
+- **Standardized Export Logging** - TLD Registry export now uses local `Logger('export')` instances matching Tags, Domains, and Notification Groups pattern
+- **TLD Registry Action Bar Redesigned** - Six separate buttons consolidated into four: IANA dropdown (indigo), Export dropdown (emerald), Import button, Create TLD button
+
+### Technical
+- **Drag-and-Drop File Upload for TLD Import** - Same dropzone pattern as Tags and Groups with file preview, remove, and submit spinner
+- **TLD Validation** - Regex supports multi-level TLDs (`^\.[a-z0-9\-]+(\.[a-z0-9\-]+)*$`), auto-lowercasing, dot-prefix normalization
+- **Import Create-or-Update** - File import creates new TLDs or updates existing ones; RDAP servers parsed from JSON arrays or comma/semicolon-separated strings
+- **Routes** - Added `GET /tld-registry/export`, `POST /tld-registry/import`, `POST /tld-registry/create` before `{id}` catch-all
+
+### Migrations
+- `026_update_app_version_v1.1.4.sql` - Updates app version to 1.1.4
+
+---
+
 ## [1.1.3] - 2026-02-11
 
 ### Added
@@ -443,8 +468,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [ ] SMS notifications (Twilio)
 - [x] Google Chat notifications (completed - v1.1.2)
 - [ ] WhatsApp notifications
-- [x] Export functionality (CSV, JSON) (completed - v1.1.3)
-- [x] Import domains from CSV/JSON (completed - v1.1.3)
+- [x] Export functionality (CSV, JSON) (completed - v1.1.3, TLD Registry - v1.1.4)
+- [x] Import domains from CSV/JSON (completed - v1.1.3, TLD Registry - v1.1.4)
 - [ ] Domain transfer tracking
 - [ ] DNS record monitoring
 - [ ] SSL certificate monitoring
@@ -465,6 +490,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## Version History
+
+### 1.1.4 (2026-03-02)
+- **TLD Registry Import & Export** - CSV/JSON export/import for TLD entries with WHOIS, RDAP, registry URL data
+- **Manual TLD Creation** - Modal form to add custom TLDs with multi-level support (.co.uk, .co.za, .com.au)
+- **IANA Dropdown** - Consolidated IANA operations (Import TLDs, Check Updates, Import Logs) into a single dropdown
+- **Standardized Import/Export Logging** - Consistent `Logger` usage across Tags, Domains, Notification Groups, and TLD Registry
+- **TLD Registry Action Bar Redesigned** - Cleaner layout: IANA (indigo), Export (emerald), Import, Create TLD
+- Migration: `026_update_app_version_v1.1.4.sql`
 
 ### 1.1.3 (2026-02-11)
 - **CSV/JSON Import & Export** - Domains, Tags, and Notification Groups with drag-and-drop file upload

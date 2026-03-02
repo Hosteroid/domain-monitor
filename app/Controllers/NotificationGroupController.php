@@ -194,17 +194,27 @@ class NotificationGroupController extends Controller
 
         $this->verifyCsrf('/groups');
 
+        $logger = new \App\Services\Logger('import');
+        $userId = \Core\Auth::id();
+        $logger->info('Notification groups import started', ['user_id' => $userId]);
+
         $validChannelTypes = ['email', 'telegram', 'discord', 'slack', 'mattermost', 'webhook', 'pushover'];
 
         if (!isset($_FILES['import_file']) || $_FILES['import_file']['error'] !== UPLOAD_ERR_OK) {
+            $logger->warning('No valid file uploaded for groups import');
             $_SESSION['error'] = 'Please select a valid file to import';
             $this->redirect('/groups');
             return;
         }
 
         $file = $_FILES['import_file'];
+        $logger->info('Import file received', [
+            'filename' => $file['name'],
+            'size' => $file['size']
+        ]);
 
         if ($file['size'] > 2097152) {
+            $logger->warning('Import file too large', ['size' => $file['size']]);
             $_SESSION['error'] = 'File is too large. Maximum size is 2MB';
             $this->redirect('/groups');
             return;
@@ -212,13 +222,13 @@ class NotificationGroupController extends Controller
 
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         if (!in_array($ext, ['csv', 'json'])) {
+            $logger->warning('Invalid file type for groups import', ['extension' => $ext]);
             $_SESSION['error'] = 'Invalid file type. Please upload a CSV or JSON file';
             $this->redirect('/groups');
             return;
         }
 
         $content = file_get_contents($file['tmp_name']);
-        $userId = \Core\Auth::id();
         $settingModel = new \App\Models\Setting();
         $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
 
@@ -229,10 +239,13 @@ class NotificationGroupController extends Controller
         if ($ext === 'json') {
             $parsed = json_decode($content, true);
             if (!is_array($parsed)) {
+                $logger->error('Invalid JSON file for groups import');
                 $_SESSION['error'] = 'Invalid JSON file';
                 $this->redirect('/groups');
                 return;
             }
+
+            $logger->info('Groups data parsed from file', ['entries' => count($parsed)]);
 
             foreach ($parsed as $groupData) {
                 $groupName = trim($groupData['group_name'] ?? '');
@@ -337,6 +350,12 @@ class NotificationGroupController extends Controller
                 }
             }
         }
+
+        $logger->info('Notification groups import completed', [
+            'groups_created' => $groupsCreated,
+            'channels_created' => $channelsCreated,
+            'groups_skipped' => $groupsSkipped
+        ]);
 
         $msg = "{$groupsCreated} group(s) imported ({$channelsCreated} channels)";
         if ($groupsSkipped > 0) $msg .= ", {$groupsSkipped} skipped (already exist)";

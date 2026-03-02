@@ -243,6 +243,29 @@ class TldRegistry extends Model
     }
 
     /**
+     * Find TLD by extension (regardless of active status)
+     */
+    public function findByTld(string $tld): ?array
+    {
+        if (!str_starts_with($tld, '.')) {
+            $tld = '.' . $tld;
+        }
+
+        $stmt = $this->db->prepare("SELECT * FROM tld_registry WHERE tld = ?");
+        $stmt->execute([$tld]);
+        return $stmt->fetch() ?: null;
+    }
+
+    /**
+     * Get all TLDs (regardless of active status) for export
+     */
+    public function getAll(): array
+    {
+        $stmt = $this->db->query("SELECT * FROM tld_registry ORDER BY tld ASC");
+        return $stmt->fetchAll();
+    }
+
+    /**
      * Execute a custom SQL query
      */
     public function query(string $sql): array

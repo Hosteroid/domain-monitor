@@ -108,6 +108,9 @@ $router->post('/channels/test', [NotificationGroupController::class, 'testChanne
 
 // TLD Registry
 $router->get('/tld-registry', [TldRegistryController::class, 'index']);
+$router->get('/tld-registry/export', [TldRegistryController::class, 'export']);
+$router->post('/tld-registry/import', [TldRegistryController::class, 'import']);
+$router->post('/tld-registry/create', [TldRegistryController::class, 'createTld']);
 $router->get('/tld-registry/{id}', [TldRegistryController::class, 'show']);
 $router->post('/tld-registry/import-tld-list', [TldRegistryController::class, 'importTldList']);
 $router->post('/tld-registry/import-rdap', [TldRegistryController::class, 'importRdap']);

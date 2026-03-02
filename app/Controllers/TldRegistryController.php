@@ -641,6 +641,359 @@ class TldRegistryController extends Controller
     }
 
     /**
+     * Export TLD registry as CSV or JSON
+     */
+    public function export()
+    {
+        Auth::requireAdmin();
+
+        $logger = new \App\Services\Logger('export');
+
+        try {
+            $format = $_GET['format'] ?? 'csv';
+            $logger->info('TLD registry export started', [
+                'format' => $format,
+                'user_id' => $_SESSION['user_id'] ?? 'unknown'
+            ]);
+
+            if (!in_array($format, ['csv', 'json'])) {
+                $_SESSION['error'] = 'Invalid export format';
+                $this->redirect('/tld-registry');
+                return;
+            }
+
+            $allTlds = $this->tldModel->getAll();
+
+            $tlds = array_map(fn($t) => [
+                'tld' => $t['tld'],
+                'whois_server' => $t['whois_server'] ?? '',
+                'rdap_servers' => $t['rdap_servers'] ?? '',
+                'registry_url' => $t['registry_url'] ?? '',
+                'is_active' => $t['is_active'] ? 'yes' : 'no',
+            ], $allTlds);
+
+            $logger->info('TLD registry export data prepared', ['count' => count($tlds)]);
+
+            $date = date('Y-m-d');
+            $filename = "tld_registry_export_{$date}";
+
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            if ($format === 'json') {
+                header('Content-Type: application/json');
+                header("Content-Disposition: attachment; filename=\"{$filename}.json\"");
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo json_encode($tlds, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+            } else {
+                $csvContent = $this->buildCsv($tlds, ['tld', 'whois_server', 'rdap_servers', 'registry_url', 'is_active']);
+                $logger->info('CSV content built', ['bytes' => strlen($csvContent)]);
+
+                header('Content-Type: text/csv; charset=utf-8');
+                header("Content-Disposition: attachment; filename=\"{$filename}.csv\"");
+                header('Content-Length: ' . strlen($csvContent));
+                header('Cache-Control: no-cache, must-revalidate');
+                header('Pragma: no-cache');
+                echo $csvContent;
+            }
+
+            $logger->info('TLD registry export completed successfully');
+            exit;
+
+        } catch (\Throwable $e) {
+            $logger->error('TLD registry export failed', [
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+            $_SESSION['error'] = 'Export failed: ' . $e->getMessage();
+            $this->redirect('/tld-registry');
+        }
+    }
+
+    private function buildCsv(array $rows, array $headers): string
+    {
+        $handle = fopen('php://temp', 'r+');
+        fputcsv($handle, $headers, ',', '"', '\\');
+        foreach ($rows as $row) {
+            fputcsv($handle, array_values($row), ',', '"', '\\');
+        }
+        rewind($handle);
+        $csv = stream_get_contents($handle);
+        fclose($handle);
+        return $csv;
+    }
+
+    /**
+     * Import TLDs from CSV or JSON file
+     */
+    public function import()
+    {
+        Auth::requireAdmin();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $this->verifyCsrf('/tld-registry');
+
+        $logger = new \App\Services\Logger('import');
+        $logger->info('TLD registry import started', [
+            'user_id' => $_SESSION['user_id'] ?? 'unknown',
+            'username' => $_SESSION['username'] ?? 'unknown'
+        ]);
+
+        if (!isset($_FILES['import_file']) || $_FILES['import_file']['error'] !== UPLOAD_ERR_OK) {
+            $logger->warning('No valid file uploaded for TLD import');
+            $_SESSION['error'] = 'Please select a valid file to import';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $file = $_FILES['import_file'];
+        $logger->info('Import file received', [
+            'filename' => $file['name'],
+            'size' => $file['size']
+        ]);
+
+        if ($file['size'] > 5242880) {
+            $logger->warning('Import file too large', ['size' => $file['size']]);
+            $_SESSION['error'] = 'File is too large. Maximum size is 5MB';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['csv', 'json'])) {
+            $logger->warning('Invalid file type for TLD import', ['extension' => $ext]);
+            $_SESSION['error'] = 'Invalid file type. Please upload a CSV or JSON file';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $content = file_get_contents($file['tmp_name']);
+        $tldsData = [];
+
+        if ($ext === 'json') {
+            $parsed = json_decode($content, true);
+            if (!is_array($parsed)) {
+                $logger->error('Invalid JSON file for TLD import');
+                $_SESSION['error'] = 'Invalid JSON file';
+                $this->redirect('/tld-registry');
+                return;
+            }
+            $tldsData = $parsed;
+        } else {
+            $lines = array_filter(explode("\n", $content));
+            $header = null;
+            foreach ($lines as $line) {
+                $row = str_getcsv(trim($line), ',', '"', '\\');
+                if (!$header) {
+                    $header = array_map('strtolower', array_map('trim', $row));
+                    continue;
+                }
+                $item = [];
+                foreach ($header as $i => $col) {
+                    $item[$col] = $row[$i] ?? '';
+                }
+                $tldsData[] = $item;
+            }
+        }
+
+        if (empty($tldsData)) {
+            $logger->warning('No TLD data found in import file');
+            $_SESSION['error'] = 'No TLD data found in the file';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $logger->info('TLD data parsed from file', ['entries' => count($tldsData)]);
+
+        $imported = 0;
+        $updated = 0;
+        $skipped = 0;
+
+        foreach ($tldsData as $tldRow) {
+            $tldName = trim($tldRow['tld'] ?? '');
+            if (empty($tldName)) {
+                $skipped++;
+                continue;
+            }
+
+            if (!str_starts_with($tldName, '.')) {
+                $tldName = '.' . $tldName;
+            }
+
+            $existing = $this->tldModel->findByTld($tldName);
+
+            $data = [
+                'tld' => $tldName,
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+
+            if (!empty($tldRow['whois_server'])) {
+                $data['whois_server'] = trim($tldRow['whois_server']);
+            }
+            if (!empty($tldRow['rdap_servers'])) {
+                $rdap = trim($tldRow['rdap_servers']);
+                if (str_starts_with($rdap, '[')) {
+                    $data['rdap_servers'] = $rdap;
+                } else {
+                    $servers = array_filter(array_map('trim', preg_split('/[,;]+/', $rdap)));
+                    $data['rdap_servers'] = json_encode(array_values($servers));
+                }
+            }
+            if (!empty($tldRow['registry_url'])) {
+                $data['registry_url'] = trim($tldRow['registry_url']);
+            }
+            if (isset($tldRow['is_active'])) {
+                $val = strtolower(trim($tldRow['is_active']));
+                $data['is_active'] = in_array($val, ['yes', '1', 'true', 'active']) ? 1 : 0;
+            }
+
+            if ($existing) {
+                unset($data['tld']);
+                $this->tldModel->update($existing['id'], $data);
+                $updated++;
+            } else {
+                if (!isset($data['is_active'])) {
+                    $data['is_active'] = 1;
+                }
+                $data['created_at'] = date('Y-m-d H:i:s');
+                $this->tldModel->create($data);
+                $imported++;
+            }
+        }
+
+        $logger->info('TLD registry import completed', [
+            'imported' => $imported,
+            'updated' => $updated,
+            'skipped' => $skipped
+        ]);
+
+        $message = "Import completed: {$imported} new, {$updated} updated";
+        if ($skipped > 0) {
+            $message .= ", {$skipped} skipped";
+        }
+        $_SESSION['success'] = $message;
+        $this->redirect('/tld-registry');
+    }
+
+    /**
+     * Create a new TLD registry entry manually
+     */
+    public function createTld()
+    {
+        Auth::requireAdmin();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $this->verifyCsrf('/tld-registry');
+
+        $tldName = trim($_POST['tld'] ?? '');
+        $whoisServer = trim($_POST['whois_server'] ?? '');
+        $rdapServersInput = trim($_POST['rdap_servers'] ?? '');
+        $registryUrl = trim($_POST['registry_url'] ?? '');
+
+        $this->logger->info('Manual TLD creation requested', [
+            'tld' => $tldName,
+            'user_id' => $_SESSION['user_id'] ?? 'unknown',
+            'username' => $_SESSION['username'] ?? 'unknown'
+        ]);
+
+        if (empty($tldName)) {
+            $_SESSION['error'] = 'TLD name is required';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        if (!str_starts_with($tldName, '.')) {
+            $tldName = '.' . $tldName;
+        }
+
+        $tldName = strtolower($tldName);
+
+        if (!preg_match('/^\.[a-z0-9\-]+(\.[a-z0-9\-]+)*$/', $tldName)) {
+            $this->logger->warning('Invalid TLD format provided', ['tld' => $tldName]);
+            $_SESSION['error'] = 'Invalid TLD format. Use only letters, numbers, hyphens, and dots for multi-level TLDs (e.g., .co.uk).';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $existing = $this->tldModel->findByTld($tldName);
+        if ($existing) {
+            $this->logger->warning('Attempted to create duplicate TLD', ['tld' => $tldName]);
+            $_SESSION['error'] = "TLD {$tldName} already exists in the registry";
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        if (!empty($whoisServer) && !preg_match('/^[a-z0-9.-]+\.[a-z]{2,}$/i', $whoisServer)) {
+            $_SESSION['error'] = 'Invalid WHOIS server format';
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $rdapServers = [];
+        if (!empty($rdapServersInput)) {
+            $servers = preg_split('/[,\n\r]+/', $rdapServersInput);
+            foreach ($servers as $server) {
+                $server = trim($server);
+                if (!empty($server)) {
+                    $server = rtrim($server, '/') . '/';
+                    $rdapServers[] = $server;
+                }
+            }
+        }
+
+        try {
+            $data = [
+                'tld' => $tldName,
+                'is_active' => 1,
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ];
+
+            if (!empty($whoisServer)) {
+                $data['whois_server'] = $whoisServer;
+            }
+            if (!empty($rdapServers)) {
+                $data['rdap_servers'] = json_encode($rdapServers);
+            }
+            if (!empty($registryUrl)) {
+                $data['registry_url'] = $registryUrl;
+            }
+
+            $this->tldModel->create($data);
+
+            $this->logger->info('TLD created successfully', [
+                'tld' => $tldName,
+                'whois_server' => $whoisServer ?: null,
+                'rdap_servers_count' => count($rdapServers),
+                'registry_url' => $registryUrl ?: null
+            ]);
+
+            $_SESSION['success'] = "TLD {$tldName} created successfully";
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to create TLD: ' . $e->getMessage();
+            $this->logger->error('Failed to create TLD', [
+                'tld' => $tldName,
+                'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+        }
+
+        $this->redirect('/tld-registry');
+    }
+
+    /**
      * Extract WHOIS server from HTML
      */
     private function extractWhoisServer(string $html): ?string
