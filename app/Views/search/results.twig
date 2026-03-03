@@ -1,0 +1,279 @@
+{% extends "layout/base.twig" %}
+
+{% set title = 'Search Results' %}
+{% set pageTitle = 'Search Results' %}
+{% set pageDescription = 'Results for "' ~ query ~ '"' %}
+{% set pageIcon = 'fas fa-search' %}
+
+{% block content %}
+<!-- Search Query Display -->
+<div class="mb-4 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4">
+    <div class="flex items-center justify-between">
+        <div>
+            <p class="text-sm text-gray-600 dark:text-slate-400">Searching for:</p>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ query }}</h3>
+        </div>
+        <form action="/search" method="GET" class="flex gap-2">
+            <input type="text" 
+                   name="q" 
+                   value="{{ query }}"
+                   placeholder="Search again..." 
+                   class="px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white"
+                   autofocus>
+            <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark text-sm font-medium">
+                <i class="fas fa-search mr-2"></i>
+                Search
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Pagination Info & Per Page Selector -->
+{% if existingDomains is not empty and pagination.total > 0 %}
+<div class="mb-4 flex justify-between items-center">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Showing <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_from }}</span> to 
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_to }}</span> of 
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.total }}</span> result(s)
+    </div>
+    
+    <form method="GET" action="/search" class="flex items-center gap-2">
+        <input type="hidden" name="q" value="{{ query }}">
+        
+        <label for="per_page" class="text-sm text-gray-600 dark:text-slate-400">Show:</label>
+        <select name="per_page" id="per_page" onchange="this.form.submit()" class="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+            <option value="10" {{ pagination.per_page == 10 ? 'selected' : '' }}>10</option>
+            <option value="25" {{ pagination.per_page == 25 ? 'selected' : '' }}>25</option>
+            <option value="50" {{ pagination.per_page == 50 ? 'selected' : '' }}>50</option>
+            <option value="100" {{ pagination.per_page == 100 ? 'selected' : '' }}>100</option>
+        </select>
+    </form>
+</div>
+{% endif %}
+
+{% if existingDomains is not empty %}
+    <!-- Existing Domains Found -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mb-4">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-green-50 dark:bg-green-500/10">
+            <h2 class="text-lg font-semibold text-green-900 dark:text-green-400 flex items-center">
+                <i class="fas fa-check-circle text-green-600 dark:text-green-500 mr-2"></i>
+                Found {{ pagination.total }} Matching Domain(s) in Your Portfolio
+            </h2>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Domain</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Registrar</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Expiration</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Status</th>
+                        <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for domain in existingDomains %}
+                        {% set daysLeft = domain.daysLeft %}
+                        {% set expiryClass = domain.expiryClass %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                            <td class="px-6 py-4">
+                                <a href="/domains/{{ domain.id }}" class="text-sm font-semibold text-primary hover:text-primary-dark">
+                                    {{ domain.domain_name }}
+                                </a>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-900 dark:text-white">
+                                {{ domain.registrar ?? 'Unknown' }}
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if domain.expiration_date is not empty %}
+                                    <div class="text-sm">
+                                        <div class="font-medium text-gray-900 dark:text-white">{{ domain.expiration_date ? domain.expiration_date|date('M d, Y') : 'Unknown' }}</div>
+                                        <div class="text-xs {{ expiryClass }}">
+                                            {{ daysLeft }} days
+                                        </div>
+                                    </div>
+                                {% else %}
+                                    <span class="text-sm text-gray-400 dark:text-slate-500">Not set</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if domain.status == 'active' %}
+                                    {% set statusClass = 'bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400' %}
+                                {% else %}
+                                    {% set statusClass = 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-300' %}
+                                {% endif %}
+                                <span class="px-3 py-1 rounded-full text-xs font-semibold {{ statusClass }}">
+                                    {{ domain.status|capitalize }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <a href="/domains/{{ domain.id }}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 text-sm font-medium">
+                                    View Details →
+                                </a>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Pagination Controls -->
+    {% if pagination.total_pages > 1 %}
+    {% set currentPage = pagination.current_page %}
+    {% set totalPages = pagination.total_pages %}
+    <div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <!-- Page Info -->
+        <div class="text-sm text-gray-600 dark:text-slate-400">
+            Page <span class="font-semibold text-gray-900 dark:text-white">{{ currentPage }}</span> of 
+            <span class="font-semibold text-gray-900 dark:text-white">{{ totalPages }}</span>
+        </div>
+        
+        <!-- Pagination Buttons -->
+        <div class="flex items-center gap-1">
+            <!-- First Page -->
+            {% if currentPage > 1 %}
+                <a href="{{ pagination_url(1, {q: query}, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                    <i class="fas fa-angle-double-left"></i>
+                </a>
+            {% endif %}
+            
+            <!-- Previous Page -->
+            {% if currentPage > 1 %}
+                <a href="{{ pagination_url(currentPage - 1, {q: query}, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                    <i class="fas fa-angle-left"></i> Previous
+                </a>
+            {% endif %}
+            
+            <!-- Page Numbers -->
+            {% set range = 2 %}
+            {% set startPage = max(1, currentPage - range) %}
+            {% set endPage = min(totalPages, currentPage + range) %}
+            
+            {% if startPage > 1 %}
+                <a href="{{ pagination_url(1, {q: query}, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">1</a>
+                {% if startPage > 2 %}
+                    <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+                {% endif %}
+            {% endif %}
+            
+            {% for i in startPage..endPage %}
+                {% if i == currentPage %}
+                    <span class="px-3 py-2 text-sm bg-primary text-white rounded-lg font-semibold">{{ i }}</span>
+                {% else %}
+                    <a href="{{ pagination_url(i, {q: query}, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ i }}</a>
+                {% endif %}
+            {% endfor %}
+            
+            {% if endPage < totalPages %}
+                {% if endPage < totalPages - 1 %}
+                    <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+                {% endif %}
+                <a href="{{ pagination_url(totalPages, {q: query}, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ totalPages }}</a>
+            {% endif %}
+            
+            <!-- Next Page -->
+            {% if currentPage < totalPages %}
+                <a href="{{ pagination_url(currentPage + 1, {q: query}, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                    Next <i class="fas fa-angle-right"></i>
+                </a>
+            {% endif %}
+            
+            <!-- Last Page -->
+            {% if currentPage < totalPages %}
+                <a href="{{ pagination_url(totalPages, {q: query}, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                    <i class="fas fa-angle-double-right"></i>
+                </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+{% endif %}
+
+{% if isDomainLike and pagination.total == 0 %}
+    <!-- WHOIS Lookup Results -->
+    {% if whoisData %}
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mb-4">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-blue-50 dark:bg-blue-500/10">
+                <h2 class="text-lg font-semibold text-blue-900 dark:text-blue-400 flex items-center">
+                    <i class="fas fa-search text-blue-600 dark:text-blue-500 mr-2"></i>
+                    WHOIS Lookup Results
+                </h2>
+                <p class="text-sm text-blue-700 dark:text-blue-300 mt-1">Domain not found in your portfolio - showing WHOIS information</p>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-600 dark:text-slate-400 mb-1">Domain</label>
+                        <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ whoisData.domain }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-600 dark:text-slate-400 mb-1">Registrar</label>
+                        <p class="text-lg text-gray-900 dark:text-white">{{ whoisData.registrar }}</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-600 dark:text-slate-400 mb-1">Expiration Date</label>
+                        <p class="text-lg text-gray-900 dark:text-white">
+                            {{ whoisData.expiration_date ? whoisData.expiration_date|date('M d, Y') : 'N/A' }}
+                        </p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-600 dark:text-slate-400 mb-1">Creation Date</label>
+                        <p class="text-lg text-gray-900 dark:text-white">
+                            {{ whoisData.creation_date ? whoisData.creation_date|date('M d, Y') : 'N/A' }}
+                        </p>
+                    </div>
+                    {% if whoisData.nameservers is not empty %}
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-semibold text-gray-600 dark:text-slate-400 mb-2">Nameservers</label>
+                        <div class="flex flex-wrap gap-2">
+                            {% for ns in whoisData.nameservers %}
+                                <span class="px-3 py-1 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 rounded text-sm font-mono">{{ ns }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <!-- Add Domain Button -->
+                <div class="mt-6 pt-6 border-t border-gray-200 dark:border-slate-700">
+                    <form method="POST" action="/domains/store" class="flex items-center justify-between">
+                        <input type="hidden" name="domain_name" value="{{ whoisData.domain }}">
+                        <p class="text-sm text-gray-600 dark:text-slate-400">Want to monitor this domain?</p>
+                        <button type="submit" class="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+                            <i class="fas fa-plus mr-2"></i>
+                            Add to Portfolio
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    {% elseif whoisError %}
+        <!-- WHOIS Error -->
+        <div class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg p-6">
+            <div class="flex items-start">
+                <i class="fas fa-exclamation-circle text-red-500 text-xl mr-3 mt-0.5"></i>
+                <div>
+                    <h3 class="text-sm font-semibold text-red-900 dark:text-red-400">WHOIS Lookup Failed</h3>
+                    <p class="text-sm text-red-700 dark:text-red-300 mt-1">{{ whoisError }}</p>
+                </div>
+            </div>
+        </div>
+    {% endif %}
+{% endif %}
+
+{% if pagination.total == 0 and not isDomainLike %}
+    <!-- No Results -->
+    <div class="bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/20 rounded-lg p-6">
+        <div class="flex items-start">
+            <i class="fas fa-info-circle text-yellow-500 text-xl mr-3 mt-0.5"></i>
+            <div>
+                <h3 class="text-sm font-semibold text-yellow-900 dark:text-yellow-400">No Results Found</h3>
+                <p class="text-sm text-yellow-700 dark:text-yellow-300 mt-1">
+                    No domains match your search. Try a different search term or enter a domain name to perform a WHOIS lookup.
+                </p>
+            </div>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

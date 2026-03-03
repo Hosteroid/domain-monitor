@@ -38,14 +38,20 @@ class TwoFactorService
      */
     public function generateQrCodeDataUri(string $email, string $secret, string $appName = 'Domain Monitor'): string
     {
-        $qrCode = new QrCode($this->google2fa->getQRCodeUrl($appName, $email, $secret));
-        $qrCode->setSize(200);
-        $qrCode->setMargin(10);
-        
-        $writer = new PngWriter();
-        $result = $writer->write($qrCode);
-        
-        return 'data:image/png;base64,' . base64_encode($result->getString());
+        $previousLevel = error_reporting(error_reporting() & ~E_DEPRECATED);
+
+        try {
+            $qrCode = new QrCode($this->google2fa->getQRCodeUrl($appName, $email, $secret));
+            $qrCode->setSize(200);
+            $qrCode->setMargin(10);
+
+            $writer = new PngWriter();
+            $result = $writer->write($qrCode);
+
+            return 'data:image/png;base64,' . base64_encode($result->getString());
+        } finally {
+            error_reporting($previousLevel);
+        }
     }
 
     /**

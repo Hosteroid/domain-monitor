@@ -1,0 +1,124 @@
+{% extends 'auth/base-auth.twig' %}
+
+{% set title = '2FA Verification' %}
+
+{% block content %}
+<div class="text-center mb-6">
+    <div class="mx-auto h-12 w-12 flex items-center justify-center rounded-full bg-primary bg-opacity-10 dark:bg-primary/20 mb-4">
+        <i class="fas fa-shield-alt text-primary text-xl"></i>
+    </div>
+    <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">2FA Verification</h2>
+    <p class="text-sm text-gray-600 dark:text-slate-400">
+        Hello, <strong class="text-gray-900 dark:text-white">{{ user.full_name|default(user.username) }}</strong>!<br>
+        Please enter your 2FA code to complete login.
+    </p>
+</div>
+
+{% if flash.success is defined %}
+    <div class="mb-4 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 p-3 rounded-lg">
+        <div class="flex items-center">
+            <i class="fas fa-check-circle text-green-500 dark:text-green-400 mr-2"></i>
+            <span class="text-sm text-green-700 dark:text-green-300">{{ flash.success }}</span>
+        </div>
+    </div>
+{% endif %}
+
+{% if flash.error is defined %}
+    <div class="mb-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 p-3 rounded-lg">
+        <div class="flex items-center">
+            <i class="fas fa-exclamation-circle text-red-500 dark:text-red-400 mr-2"></i>
+            <span class="text-sm text-red-700 dark:text-red-300">{{ flash.error }}</span>
+        </div>
+    </div>
+{% endif %}
+
+<form class="space-y-4" method="POST" action="/2fa/verify" id="verifyForm">
+    {{ csrf_field() }}
+    
+    <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 mb-4">
+        <div class="flex items-center">
+            <i class="fas fa-check-circle text-green-500 dark:text-green-400 mr-2"></i>
+            <span class="text-sm text-green-700 dark:text-green-300">Security verification completed during login</span>
+        </div>
+    </div>
+    
+    <div>
+        <label for="code" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">2FA Code</label>
+        <input id="code" name="verification_code" type="text" required 
+               class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-center text-lg font-mono tracking-widest bg-white dark:bg-slate-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-primary focus:border-primary" 
+               placeholder="000000" maxlength="8" autocomplete="one-time-code" autofocus>
+        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1 text-center">Enter 6-digit code from your authenticator app, email code, or 8-character backup code</p>
+    </div>
+
+    <button type="submit" class="w-full bg-primary text-white py-2 px-4 rounded-lg hover:bg-primary-dark transition-colors">
+        <i class="fas fa-check mr-2"></i>Verify Code
+    </button>
+
+    <div class="flex items-center justify-between text-sm">
+        {% if canSendEmailCode %}
+        <button type="button" onclick="sendEmailCode()" class="text-primary hover:text-primary-dark dark:text-blue-400 dark:hover:text-blue-300">
+            <i class="fas fa-envelope mr-1"></i>Send Email Code
+        </button>
+        {% else %}
+        <span class="text-gray-400 dark:text-slate-500"><i class="fas fa-envelope mr-1"></i>Email code unavailable</span>
+        {% endif %}
+        <a href="/logout" class="text-gray-600 dark:text-slate-400 hover:text-gray-500 dark:hover:text-slate-300">
+            <i class="fas fa-sign-out-alt mr-1"></i>Sign out instead
+        </a>
+    </div>
+
+    <div class="mt-6 pt-4 border-t border-gray-200 dark:border-slate-700 text-center">
+        <p class="text-sm text-gray-600 dark:text-slate-400">Having trouble? You can also use a backup code or contact your administrator.</p>
+    </div>
+</form>
+
+<script>
+function sendEmailCode() {
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Sending...';
+    
+    fetch('/2fa/send-email-code', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRF-Token': document.querySelector('input[name="csrf_token"]').value
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            btn.innerHTML = '<i class="fas fa-check mr-1"></i>Code Sent';
+            btn.classList.add('text-green-600');
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+                btn.classList.remove('text-green-600');
+            }, 30000);
+        } else {
+            alert('Failed to send email code: ' + (data.error || 'Unknown error'));
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    })
+    .catch(error => {
+        alert('Failed to send email code');
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const codeInput = document.getElementById('code');
+    codeInput.focus();
+    codeInput.addEventListener('input', function() {
+        this.value = this.value.replace(/[^A-Za-z0-9]/g, '');
+        if ((this.value.length === 6 && /^\d{6}$/.test(this.value)) ||
+            (this.value.length === 8 && /^[A-Z0-9]{8}$/i.test(this.value))) {
+            setTimeout(() => document.getElementById('verifyForm').submit(), 500);
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -49,6 +49,11 @@ class UserController extends Controller
         
         // Get filtered users
         $users = $this->userModel->getFiltered($filters, $sort, strtoupper($order), $perPage, $offset);
+
+        foreach ($users as &$u) {
+            $u['avatar'] = \App\Helpers\AvatarHelper::getAvatar($u, 40);
+        }
+        unset($u);
         
         $this->view('users/index', [
             'users' => $users,
@@ -240,6 +245,17 @@ class UserController extends Controller
         // Get 2FA status
         $twoFactorStatus = $this->userModel->getTwoFactorStatus($userId);
 
+        // Avatar for profile header
+        $userAvatar = \App\Helpers\AvatarHelper::getAvatar($user, 64);
+
+        // Registrar distribution
+        $registrarCounts = [];
+        foreach ($domains as $d) {
+            $reg = !empty($d['registrar']) ? $d['registrar'] : 'Unknown';
+            $registrarCounts[$reg] = ($registrarCounts[$reg] ?? 0) + 1;
+        }
+        arsort($registrarCounts);
+
         $this->view('users/show', [
             'title' => htmlspecialchars($user['full_name']) . ' - User Profile',
             'user' => $user,
@@ -248,6 +264,8 @@ class UserController extends Controller
             'tags' => $tags,
             'groups' => $groups,
             'twoFactorStatus' => $twoFactorStatus,
+            'userAvatar' => $userAvatar,
+            'registrarCounts' => $registrarCounts,
         ]);
     }
 

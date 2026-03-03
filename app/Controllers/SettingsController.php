@@ -70,6 +70,72 @@ class SettingsController extends Controller
         // Status notification triggers
         $statusTriggers = $this->settingModel->getNotificationStatusTriggers();
 
+        // Timezone lists for the Application tab
+        $popularTimezones = [
+            'UTC' => 'UTC',
+            'America/New_York' => 'Eastern Time (US)',
+            'America/Chicago' => 'Central Time (US)',
+            'America/Denver' => 'Mountain Time (US)',
+            'America/Los_Angeles' => 'Pacific Time (US)',
+            'Europe/London' => 'London',
+            'Europe/Paris' => 'Paris',
+            'Asia/Tokyo' => 'Tokyo',
+            'Australia/Sydney' => 'Sydney'
+        ];
+        $allTimezones = timezone_identifiers_list();
+
+        // Determine which notification preset is selected
+        $currentNotificationDays = $settings['notification_days_before'] ?? '30,15,7,3,1';
+        $selectedPreset = 'custom';
+        foreach ($notificationPresets as $key => $preset) {
+            if ($preset['value'] === $currentNotificationDays) {
+                $selectedPreset = $key;
+                break;
+            }
+        }
+
+        // Cron path for System tab
+        $cronPath = realpath(defined('PATH_ROOT') ? PATH_ROOT . 'cron/check_domains.php' : __DIR__ . '/../../cron/check_domains.php') ?: 'cron/check_domains.php';
+
+        // Cached update state for Updates tab
+        $cachedUpdateAvailable = false;
+        $cachedUpdateData = null;
+        $currentVer = $appSettings['app_version'] ?? '0';
+        $latestVer = $updateSettings['latest_available_version'] ?? null;
+        $updateChannel = $updateSettings['update_channel'] ?? 'stable';
+        $commitsBehind = (int)($updateSettings['commits_behind_count'] ?? 0);
+        $installedSha = $updateSettings['installed_commit_sha'] ?? '';
+        $remoteSha = $updateSettings['latest_remote_sha'] ?? '';
+        if ($installedSha !== '' && $remoteSha !== '' && str_starts_with($installedSha, $remoteSha)) {
+            $commitsBehind = 0;
+        }
+        if ($latestVer && version_compare($latestVer, $currentVer, '>')) {
+            $cachedUpdateAvailable = true;
+            $cachedUpdateData = [
+                'available' => true,
+                'type' => 'release',
+                'current_version' => $currentVer,
+                'latest_version' => $latestVer,
+                'release_notes' => $updateSettings['latest_release_notes'] ?? '',
+                'release_url' => $updateSettings['latest_release_url'] ?? '',
+                'published_at' => $updateSettings['latest_release_published_at'] ?? null,
+                'channel' => $updateChannel,
+            ];
+        } elseif ($updateChannel === 'latest' && $commitsBehind > 0) {
+            $cachedUpdateAvailable = true;
+            $cachedUpdateData = [
+                'available' => true,
+                'type' => 'hotfix',
+                'current_version' => $currentVer,
+                'commits_behind' => $commitsBehind,
+                'commit_messages' => [],
+                'channel' => $updateChannel,
+            ];
+        }
+
+        // Rollback availability
+        $rollbackAvailable = !empty($updateSettings['update_backup_path']) && file_exists($updateSettings['update_backup_path']);
+
         $this->view('settings/index', [
             'settings' => $settings,
             'appSettings' => $appSettings,
@@ -81,6 +147,13 @@ class SettingsController extends Controller
             'notificationPresets' => $notificationPresets,
             'checkIntervalPresets' => $checkIntervalPresets,
             'statusTriggers' => $statusTriggers,
+            'popularTimezones' => $popularTimezones,
+            'allTimezones' => $allTimezones,
+            'selectedPreset' => $selectedPreset,
+            'cronPath' => $cronPath,
+            'cachedUpdateAvailable' => $cachedUpdateAvailable,
+            'cachedUpdateData' => $cachedUpdateData,
+            'rollbackAvailable' => $rollbackAvailable,
             'title' => 'Settings'
         ]);
     }

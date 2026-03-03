@@ -1,0 +1,1028 @@
+{% extends 'layout/base.twig' %}
+
+{% set title = (user.full_name) ~ ' - User Profile' %}
+{% set pageTitle = 'User Profile' %}
+{% set pageDescription = 'View user information and resources' %}
+{% set pageIcon = 'fas fa-user' %}
+
+{% set isActive = user.is_active ? true : false %}
+{% set isVerified = user.email_verified ? true : false %}
+{% set has2FA = twoFactorStatus.enabled|default(false) %}
+
+{% set totalDomains = domains|length %}
+{% set totalTags = tags|length %}
+{% set totalGroups = groups|length %}
+
+{# Overview tab computed data #}
+{% set attentionDomains = domains|filter(d => d.daysLeft is not null and d.daysLeft <= 30)|sort((a, b) => a.daysLeft|default(999) - b.daysLeft|default(999)) %}
+{% set attentionCount = attentionDomains|length %}
+{% set attentionPreview = attentionDomains|slice(0, 5) %}
+
+{% set topRegistrars = registrarCounts|default({})|slice(0, 8) %}
+{% set registrarTotal = registrarCounts|default({})|length %}
+
+{% set domainsWithGroup = domains|filter(d => d.group_name is defined and d.group_name)|length %}
+{% set domainsWithoutGroup = totalDomains - domainsWithGroup %}
+
+{% set totalChannels = 0 %}
+{% for g in groups %}
+    {% set totalChannels = totalChannels + (g.channel_count|default(0)) %}
+{% endfor %}
+
+{% set topTags = tags|filter(t => (t.usage_count|default(0)) > 0)|slice(0, 8) %}
+
+{% block content %}
+<!-- Back Navigation & Actions -->
+<div class="mb-4 flex items-center justify-between">
+    <a href="/users" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+        <i class="fas fa-arrow-left mr-2"></i>
+        Back to Users
+    </a>
+
+    <div class="flex items-center space-x-2">
+        <a href="/users/{{ user.id }}/edit" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+            <i class="fas fa-edit mr-2"></i>
+            Edit User
+        </a>
+        {% if user.id != auth.id %}
+            <form method="POST" action="/users/{{ user.id }}/toggle-status" class="inline">
+                {{ csrf_field() }}
+                {% if isActive %}
+                    <button type="submit" onclick="return confirm('Deactivate this user?')" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-user-slash mr-2"></i>
+                        Deactivate
+                    </button>
+                {% else %}
+                    <button type="submit" onclick="return confirm('Activate this user?')" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-user-check mr-2"></i>
+                        Activate
+                    </button>
+                {% endif %}
+            </form>
+            <form method="POST" action="/users/{{ user.id }}/delete" class="inline">
+                {{ csrf_field() }}
+                <button type="submit" onclick="return confirm('Are you sure you want to delete this user? This action cannot be undone.')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+                    <i class="fas fa-trash mr-2"></i>
+                    Delete
+                </button>
+            </form>
+        {% endif %}
+    </div>
+</div>
+
+<!-- User Header Card -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6 mb-6">
+    <div class="flex items-start">
+        <!-- Avatar -->
+        <div class="flex-shrink-0 h-16 w-16 rounded-lg overflow-hidden bg-primary bg-opacity-10 flex items-center justify-center mr-5">
+            {% if userAvatar.type == 'uploaded' or userAvatar.type == 'gravatar' %}
+                <img src="{{ userAvatar.url }}"
+                     alt="{{ userAvatar.alt }}"
+                     class="w-full h-full object-cover"
+                     loading="lazy">
+            {% else %}
+                <span class="text-primary font-semibold text-xl">
+                    {{ userAvatar.initials }}
+                </span>
+            {% endif %}
+        </div>
+
+        <!-- User Info -->
+        <div class="flex-1">
+            <div class="flex items-center gap-3 mb-2">
+                <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ user.full_name }}</h2>
+                <!-- Role Badge -->
+                {{ role_badge(user.role, 'xs') }}
+                <!-- Status Badge -->
+                {% if isActive %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 border border-green-200 dark:border-green-500/20">
+                        <i class="fas fa-check-circle mr-1"></i>Active
+                    </span>
+                {% else %}
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 border border-red-200 dark:border-red-500/20">
+                        <i class="fas fa-times-circle mr-1"></i>Inactive
+                    </span>
+                {% endif %}
+            </div>
+
+            <div class="flex items-center gap-4 text-sm text-gray-500 dark:text-slate-400 mb-3">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-at mr-1.5 text-gray-400 dark:text-slate-500"></i>
+                    <span>{{ user.username }}</span>
+                    {% if has2FA %}
+                        <span class="inline-flex items-center px-1.5 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 rounded text-[10px] font-semibold border border-green-200 dark:border-green-500/20" title="Two-factor authentication enabled">
+                            <i class="fas fa-shield-alt mr-0.5"></i>2FA
+                        </span>
+                    {% else %}
+                        <span class="inline-flex items-center px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 rounded text-[10px] font-medium border border-gray-200 dark:border-slate-600" title="Two-factor authentication not enabled">
+                            <i class="fas fa-shield-alt mr-0.5"></i>No 2FA
+                        </span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center">
+                    <i class="fas fa-envelope mr-1.5 text-gray-400 dark:text-slate-500"></i>
+                    <span>{{ user.email }}</span>
+                    {% if isVerified %}
+                        <i class="fas fa-check-circle text-green-500 ml-1" title="Email verified"></i>
+                    {% else %}
+                        <i class="fas fa-exclamation-circle text-orange-500 ml-1" title="Email not verified"></i>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="flex items-center gap-6 text-xs text-gray-500 dark:text-slate-400">
+                <div class="flex items-center">
+                    <i class="fas fa-calendar mr-1.5"></i>
+                    Member since {{ user.created_at|date('M d, Y') }}
+                </div>
+                <div class="flex items-center">
+                    <i class="fas fa-clock mr-1.5"></i>
+                    Last login: {{ user.last_login ? user.last_login|date('M d, Y H:i') : 'Never' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="flex items-center gap-4 ml-6">
+            <div class="text-center px-4 py-2 bg-gray-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700">
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ totalDomains }}</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400">Domains</p>
+            </div>
+            <div class="text-center px-4 py-2 bg-gray-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700">
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ totalTags }}</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400">Tags</p>
+            </div>
+            <div class="text-center px-4 py-2 bg-gray-50 dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-700">
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">{{ totalGroups }}</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400">Groups</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+    <div class="border-b border-gray-200 dark:border-slate-700">
+        <nav class="-mb-px flex overflow-x-auto">
+            <button onclick="switchTab('overview')" id="tab-overview" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600 whitespace-nowrap">
+                <i class="fas fa-chart-bar mr-2"></i>
+                Overview
+            </button>
+            <button onclick="switchTab('domains')" id="tab-domains" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600 whitespace-nowrap">
+                <i class="fas fa-globe mr-2"></i>
+                Domains ({{ totalDomains }})
+            </button>
+            <button onclick="switchTab('tags')" id="tab-tags" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600 whitespace-nowrap">
+                <i class="fas fa-tags mr-2"></i>
+                Tags ({{ totalTags }})
+            </button>
+            <button onclick="switchTab('groups')" id="tab-groups" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600 whitespace-nowrap">
+                <i class="fas fa-bell mr-2"></i>
+                Notification Groups ({{ totalGroups }})
+            </button>
+        </nav>
+    </div>
+
+    <div class="p-6">
+
+        <!-- Overview Tab -->
+        <div id="content-overview" class="tab-content hidden">
+            <!-- Domain Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow duration-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">Total Domains</p>
+                            <p class="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{{ totalDomains }}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-blue-50 dark:bg-blue-500/10 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-globe text-blue-600 dark:text-blue-400 text-lg"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow duration-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">Active</p>
+                            <p class="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{{ userDomainStats.active|default(0) }}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-green-50 dark:bg-green-500/10 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-check-circle text-green-600 dark:text-green-400 text-lg"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow duration-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">Expiring Soon</p>
+                            <p class="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{{ userDomainStats.expiring_soon|default(0) }}</p>
+                            <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">within 30 days</p>
+                        </div>
+                        <div class="w-12 h-12 bg-orange-50 dark:bg-orange-500/10 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-exclamation-triangle text-orange-600 dark:text-orange-400 text-lg"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow duration-200">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">Expired</p>
+                            <p class="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{{ userDomainStats.expired|default(0) }}</p>
+                        </div>
+                        <div class="w-12 h-12 bg-red-50 dark:bg-red-500/10 rounded-lg flex items-center justify-center">
+                            <i class="fas fa-times-circle text-red-600 dark:text-red-400 text-lg"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Requires Attention -->
+                <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-200 dark:border-slate-700">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center">
+                                <i class="fas fa-exclamation-triangle text-orange-500 mr-2 text-xs"></i>
+                                Requires Attention
+                            </h3>
+                            {% if attentionCount > 5 %}
+                                <a href="#domains" onclick="switchTab('domains'); document.getElementById('domainStatusFilter').value='Expiring Soon'; filterDomains(); return false;" class="text-xs text-primary hover:text-primary-dark font-medium">
+                                    View all {{ attentionCount }}
+                                    <i class="fas fa-arrow-right ml-1"></i>
+                                </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% if attentionPreview is not empty %}
+                        <div class="p-4 space-y-2">
+                            {% for ad in attentionPreview %}
+                                {% set isExpired = (ad.daysLeft|default(0)) < 0 %}
+                                <div class="flex items-center justify-between p-3 border border-gray-100 dark:border-slate-700 rounded-lg hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-sm transition-all duration-200">
+                                    <div class="flex-1 min-w-0">
+                                        <a href="/domains/{{ ad.id }}" class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary truncate block">{{ ad.domain_name }}</a>
+                                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                                            {{ ad.expiration_date ? ad.expiration_date|date('M d, Y') : 'Unknown' }}
+                                            {% if isExpired %}
+                                                <span class="text-red-600 dark:text-red-400 font-semibold ml-2">Expired {{ ad.daysLeft|abs }} day{{ ad.daysLeft|abs != 1 ? 's' : '' }} ago</span>
+                                            {% else %}
+                                                <span class="{{ ad.daysLeft <= 7 ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400' }} font-semibold ml-2">{{ ad.daysLeft }} day{{ ad.daysLeft != 1 ? 's' : '' }} left</span>
+                                            {% endif %}
+                                        </p>
+                                    </div>
+                                    <a href="/domains/{{ ad.id }}" class="text-gray-400 dark:text-slate-500 hover:text-primary ml-3">
+                                        <i class="fas fa-chevron-right text-sm"></i>
+                                    </a>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="p-6 text-center">
+                            <i class="fas fa-check-circle text-green-500 text-3xl mb-2"></i>
+                            <p class="text-sm text-gray-600 dark:text-slate-400">All domains are in good standing</p>
+                            <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">No expired or expiring domains</p>
+                        </div>
+                    {% endif %}
+                </div>
+
+                <!-- Top Registrars -->
+                <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center">
+                            <i class="fas fa-building text-gray-400 dark:text-slate-500 mr-2 text-xs"></i>
+                            Registrar Distribution
+                        </h3>
+                        <span class="text-xs text-gray-500 dark:text-slate-400">{{ registrarTotal }} registrar{{ registrarTotal != 1 ? 's' : '' }}</span>
+                    </div>
+                    <div class="p-5">
+                        {% if topRegistrars is not empty %}
+                            <div class="space-y-3">
+                                {% for regName, regCount in topRegistrars %}
+                                    {% set regPct = totalDomains > 0 ? ((regCount / totalDomains) * 100)|round : 0 %}
+                                    <div>
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="text-sm text-gray-700 dark:text-slate-300 font-medium truncate mr-3">{{ regName }}</span>
+                                            <span class="text-xs text-gray-500 dark:text-slate-400 whitespace-nowrap">{{ regCount }} ({{ regPct }}%)</span>
+                                        </div>
+                                        <div class="w-full bg-gray-100 dark:bg-slate-700 rounded-full h-1.5">
+                                            <div class="bg-blue-500 rounded-full h-1.5" style="width: {{ max(2, regPct) }}%"></div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center py-4">
+                                <i class="fas fa-building text-gray-300 dark:text-slate-600 text-2xl mb-2"></i>
+                                <p class="text-sm text-gray-500 dark:text-slate-400">No registrar data</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Tag Usage -->
+                <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center">
+                            <i class="fas fa-tags text-gray-400 dark:text-slate-500 mr-2 text-xs"></i>
+                            Tag Usage
+                        </h3>
+                        <span class="text-xs text-gray-500 dark:text-slate-400">{{ totalTags }} tag{{ totalTags != 1 ? 's' : '' }} total</span>
+                    </div>
+                    <div class="p-5">
+                        {% if topTags is not empty %}
+                            <div class="space-y-3">
+                                {% for tt in topTags %}
+                                    {% set pct = totalDomains > 0 ? ((tt.usage_count / totalDomains) * 100)|round : 0 %}
+                                    <div>
+                                        <div class="flex items-center justify-between mb-1">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border {{ tt.color|default('bg-gray-100 text-gray-700 border-gray-300') }}">
+                                                <i class="fas fa-tag mr-1" style="font-size: 8px;"></i>
+                                                {{ tt.name }}
+                                            </span>
+                                            <span class="text-xs text-gray-500 dark:text-slate-400">{{ tt.usage_count }} domain{{ tt.usage_count != 1 ? 's' : '' }} ({{ pct }}%)</span>
+                                        </div>
+                                        <div class="w-full bg-gray-100 dark:bg-slate-700 rounded-full h-1.5">
+                                            <div class="bg-primary rounded-full h-1.5" style="width: {{ max(2, pct) }}%"></div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center py-4">
+                                <i class="fas fa-tags text-gray-300 dark:text-slate-600 text-2xl mb-2"></i>
+                                <p class="text-sm text-gray-500 dark:text-slate-400">No tags in use</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Notification Coverage -->
+                <div class="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                    <div class="px-5 py-3 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center">
+                            <i class="fas fa-bell text-gray-400 dark:text-slate-500 mr-2 text-xs"></i>
+                            Notification Coverage
+                        </h3>
+                        <span class="text-xs text-gray-500 dark:text-slate-400">{{ totalGroups }} group{{ totalGroups != 1 ? 's' : '' }}, {{ totalChannels }} channel{{ totalChannels != 1 ? 's' : '' }}</span>
+                    </div>
+                    <div class="p-5">
+                        {% if totalDomains > 0 %}
+                            {% set coveragePct = ((domainsWithGroup / totalDomains) * 100)|round %}
+                            <div class="flex items-center justify-center mb-4">
+                                <div class="relative w-28 h-28">
+                                    <svg class="w-28 h-28 transform -rotate-90" viewBox="0 0 36 36">
+                                        <path class="text-gray-200 dark:text-slate-600" stroke="currentColor" stroke-width="3" fill="none" d="M18 2.0845a15.9155 15.9155 0 0 1 0 31.831 15.9155 15.9155 0 0 1 0-31.831"/>
+                                        <path class="text-primary" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="{{ coveragePct }}, 100" stroke-linecap="round" d="M18 2.0845a15.9155 15.9155 0 0 1 0 31.831 15.9155 15.9155 0 0 1 0-31.831"/>
+                                    </svg>
+                                    <div class="absolute inset-0 flex items-center justify-center">
+                                        <span class="text-xl font-bold text-gray-900 dark:text-white">{{ coveragePct }}%</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-3 text-center">
+                                <div class="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg p-3">
+                                    <p class="text-lg font-bold text-green-700 dark:text-green-400">{{ domainsWithGroup }}</p>
+                                    <p class="text-xs text-green-600 dark:text-green-400">With Notifications</p>
+                                </div>
+                                <div class="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-3">
+                                    <p class="text-lg font-bold text-gray-700 dark:text-slate-300">{{ domainsWithoutGroup }}</p>
+                                    <p class="text-xs text-gray-500 dark:text-slate-400">Without Notifications</p>
+                                </div>
+                            </div>
+                        {% else %}
+                            <div class="text-center py-4">
+                                <i class="fas fa-bell-slash text-gray-300 dark:text-slate-600 text-2xl mb-2"></i>
+                                <p class="text-sm text-gray-500 dark:text-slate-400">No domains to monitor</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Domains Tab -->
+        <div id="content-domains" class="tab-content hidden">
+            {% if domains is not empty %}
+                <!-- Filters -->
+                <div class="mb-4">
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Search</label>
+                            <div class="relative">
+                                <input type="text" id="domainSearch" placeholder="Search domains..." onkeyup="filterDomains()" class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                                <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-xs"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Status</label>
+                            <select id="domainStatusFilter" onchange="filterDomains()" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                                <option value="">All Statuses</option>
+                                <option value="Active">Active</option>
+                                <option value="Expiring Soon">Expiring Soon</option>
+                                <option value="Expired">Expired</option>
+                                <option value="Available">Available</option>
+                                <option value="Redemption Period">Redemption Period</option>
+                                <option value="Pending Delete">Pending Delete</option>
+                                <option value="Error">Error</option>
+                                <option value="Inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Tags</label>
+                            <select id="domainTagFilter" onchange="filterDomains()" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                                <option value="">All Tags</option>
+                                {% for dtn in domainTagNames|default([]) %}
+                                    <option value="{{ dtn }}">{{ dtn|capitalize }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Group</label>
+                            <select id="domainGroupFilter" onchange="filterDomains()" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                                <option value="">All Groups</option>
+                                {% for dgn in domainGroupNames|default([]) %}
+                                    <option value="{{ dgn }}">{{ dgn }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="flex items-end space-x-2">
+                            <button onclick="clearDomainFilters()" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm font-medium">
+                                <i class="fas fa-times mr-1"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700" id="domainsTable">
+                        <thead class="bg-gray-50 dark:bg-slate-900">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-primary" onclick="sortDomains(0)">
+                                    <span class="flex items-center">Domain <i class="fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs" id="domain-sort-icon-0"></i></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-primary" onclick="sortDomains(1)">
+                                    <span class="flex items-center">Registrar <i class="fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs" id="domain-sort-icon-1"></i></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-primary" onclick="sortDomains(2)">
+                                    <span class="flex items-center">Expiration <i class="fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs" id="domain-sort-icon-2"></i></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-primary" onclick="sortDomains(3)">
+                                    <span class="flex items-center">Status <i class="fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs" id="domain-sort-icon-3"></i></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-primary" onclick="sortDomains(4)">
+                                    <span class="flex items-center">Group <i class="fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs" id="domain-sort-icon-4"></i></span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white dark:bg-slate-800 divide-y divide-gray-100 dark:divide-slate-700">
+                            {% for domain in domains %}
+                                <tr class="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors domain-row"
+                                    data-domain-name="{{ domain.domain_name|lower }}"
+                                    data-domain-status="{{ domain.statusText|default('') }}"
+                                    data-domain-tags="{{ (domain.tags|default(''))|lower }}"
+                                    data-domain-group="{{ domain.group_name|default('') }}">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center">
+                                            <div class="flex-shrink-0 h-10 w-10 bg-primary bg-opacity-10 rounded-lg flex items-center justify-center">
+                                                <i class="fas fa-globe text-primary"></i>
+                                            </div>
+                                            <div class="ml-4">
+                                                <a href="/domains/{{ domain.id }}" class="text-sm font-semibold text-gray-900 dark:text-white hover:text-primary">{{ domain.domain_name }}</a>
+                                                <div class="flex items-center gap-1.5 mt-1">
+                                                    {% set domainTags = domain.tags ? domain.tags|split(',') : [] %}
+                                                    {% set tagColors = domain.tag_colors ? domain.tag_colors|split('|') : [] %}
+                                                    {% for dtag in domainTags %}
+                                                        {% set dtag = dtag|trim %}
+                                                        {% set colorClass = tagColors[loop.index0]|default('bg-gray-100 text-gray-700 border-gray-200') %}
+                                                        <span class="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border {{ colorClass }}">
+                                                            <i class="fas fa-tag mr-1" style="font-size: 9px;"></i>
+                                                            {{ dtag|capitalize }}
+                                                        </span>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        {% if domain.registrar %}
+                                            <div class="flex items-center">
+                                                <i class="fas fa-building text-gray-400 dark:text-slate-500 mr-2"></i>
+                                                <span class="text-sm text-gray-900 dark:text-white">{{ domain.registrar }}</span>
+                                            </div>
+                                        {% else %}
+                                            <span class="text-sm text-gray-400 dark:text-slate-500">Unknown</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        {% if domain.expiration_date %}
+                                            <div class="text-sm">
+                                                <div class="font-medium text-gray-900 dark:text-white">{{ domain.expiration_date|date('M d, Y') }}</div>
+                                                <div class="text-xs {{ domain.expiryClass }}">
+                                                    {{ domain.daysLeft }} days
+                                                </div>
+                                            </div>
+                                        {% else %}
+                                            <span class="text-sm text-gray-400 dark:text-slate-500">Not set</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border {{ domain.statusClass }}">
+                                            <i class="fas {{ domain.statusIcon }} mr-1"></i>
+                                            {{ domain.statusText }}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-slate-400">
+                                        {{ domain.group_name|default('—') }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Pagination -->
+                <div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                    <div class="text-sm text-gray-500 dark:text-slate-400" id="domainPaginationInfo">
+                        Showing 1-{{ min(25, totalDomains) }} of {{ totalDomains }} domains
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="domainPageNav('prev')" id="domainPrevBtn" class="px-3 py-1.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fas fa-chevron-left mr-1"></i> Previous
+                        </button>
+                        <span id="domainPageNumbers" class="flex items-center gap-1"></span>
+                        <button onclick="domainPageNav('next')" id="domainNextBtn" class="px-3 py-1.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                            Next <i class="fas fa-chevron-right ml-1"></i>
+                        </button>
+                    </div>
+                </div>
+            {% else %}
+                <div class="p-12 text-center">
+                    <i class="fas fa-globe text-gray-300 dark:text-slate-600 text-4xl mb-3"></i>
+                    <p class="text-sm text-gray-600 dark:text-slate-400">This user has no domains</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Tags Tab -->
+        <div id="content-tags" class="tab-content hidden">
+            {% if tags is not empty %}
+                <!-- Filters -->
+                <div class="mb-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div class="relative">
+                            <input type="text" id="tagSearch" placeholder="Search tags..." onkeyup="filterTags()" class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                            <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-xs"></i>
+                        </div>
+                        <div>
+                            <select id="tagTypeFilter" onchange="filterTags()" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                                <option value="">All Types</option>
+                                <option value="personal">Personal</option>
+                                <option value="global">Global</option>
+                            </select>
+                        </div>
+                        <div class="flex items-center">
+                            <button onclick="clearTagFilters()" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm font-medium">
+                                <i class="fas fa-times mr-1"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700" id="tagsTable">
+                        <thead class="bg-gray-50 dark:bg-slate-900">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-primary" onclick="sortTable('tagsTable', 0)">
+                                    <span class="flex items-center">Tag <i class="fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs"></i></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-primary" onclick="sortTable('tagsTable', 1)">
+                                    <span class="flex items-center">Description <i class="fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs"></i></span>
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider cursor-pointer hover:text-primary" onclick="sortTable('tagsTable', 2)">
+                                    <span class="flex items-center">Domains <i class="fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs"></i></span>
+                                </th>
+                                <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white dark:bg-slate-800 divide-y divide-gray-100 dark:divide-slate-700">
+                            {% for tag in tags %}
+                                {% set tagDomainsList = tag.domains|default([]) %}
+                                <tr class="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors tag-row" data-tag-type="{{ tag.user_id is null ? 'global' : 'personal' }}">
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center">
+                                            <span class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border {{ tag.color|default('bg-gray-100 text-gray-800 border-gray-300') }}">
+                                                <i class="fas fa-tag mr-1" style="font-size: 9px;"></i>
+                                                {{ tag.name }}
+                                            </span>
+                                            {% if tag.user_id is null %}
+                                                <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400">
+                                                    <i class="fas fa-globe mr-1" style="font-size: 8px;"></i>
+                                                    Global
+                                                </span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <div class="text-sm text-gray-900 dark:text-white">
+                                            {% if tag.description %}
+                                                {{ tag.description }}
+                                            {% else %}
+                                                <span class="text-gray-400 dark:text-slate-500 italic">No description</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center text-sm text-gray-500 dark:text-slate-400">
+                                            <i class="fas fa-link mr-1"></i>
+                                            {{ tag.usage_count|default(0) }} domain{{ (tag.usage_count|default(0)) != 1 ? 's' : '' }}
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <div class="flex items-center justify-end space-x-2">
+                                            {% if tagDomainsList is not empty %}
+                                                <button onclick="toggleTagDomains({{ tag.id }})" class="text-gray-500 dark:text-slate-400 hover:text-primary" title="Show domains">
+                                                    <i class="fas fa-chevron-down text-xs" id="tag-chevron-{{ tag.id }}"></i>
+                                                </button>
+                                            {% endif %}
+                                            <a href="/tags/{{ tag.id }}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" title="View tag page">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <!-- Expandable domains list for this tag -->
+                                {% if tagDomainsList is not empty %}
+                                    <tr id="tag-domains-{{ tag.id }}" class="hidden tag-domains-row" data-parent-tag="{{ tag.id }}">
+                                        <td colspan="4" class="px-6 py-0">
+                                            <div class="py-3 pl-4 border-l-2 border-primary ml-2">
+                                                <div class="space-y-1.5">
+                                                    {% for td in tagDomainsList %}
+                                                        <div class="flex items-center justify-between py-1.5 px-3 bg-gray-50 dark:bg-slate-900 rounded-lg text-sm">
+                                                            <div class="flex items-center gap-3">
+                                                                <i class="fas fa-globe text-primary text-xs"></i>
+                                                                <a href="/domains/{{ td.id }}" class="font-medium text-gray-900 dark:text-white hover:text-primary">{{ td.domain_name }}</a>
+                                                            </div>
+                                                            <div class="flex items-center gap-4">
+                                                                {% if td.expiration_date %}
+                                                                    <span class="text-xs text-gray-500 dark:text-slate-400">{{ td.expiration_date|date('M d, Y') }}</span>
+                                                                {% endif %}
+                                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border {{ td.statusClass }}">
+                                                                    <i class="fas {{ td.statusIcon }} mr-1" style="font-size: 8px;"></i>
+                                                                    {{ td.statusText }}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="p-12 text-center">
+                    <i class="fas fa-tags text-gray-300 dark:text-slate-600 text-4xl mb-3"></i>
+                    <p class="text-sm text-gray-600 dark:text-slate-400">This user has no tags</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Notification Groups Tab -->
+        <div id="content-groups" class="tab-content hidden">
+            {% if groups is not empty %}
+                {% set channelIcons = {
+                    'email': {'icon': 'fa-envelope', 'color': 'text-blue-500', 'bg': 'bg-blue-50 dark:bg-blue-500/10'},
+                    'telegram': {'icon': 'fa-paper-plane', 'color': 'text-sky-500', 'bg': 'bg-sky-50 dark:bg-sky-500/10'},
+                    'discord': {'icon': 'fa-comment', 'color': 'text-indigo-500', 'bg': 'bg-indigo-50 dark:bg-indigo-500/10'},
+                    'slack': {'icon': 'fa-hashtag', 'color': 'text-purple-500', 'bg': 'bg-purple-50 dark:bg-purple-500/10'},
+                    'webhook': {'icon': 'fa-link', 'color': 'text-gray-500', 'bg': 'bg-gray-50 dark:bg-slate-700'},
+                    'pushover': {'icon': 'fa-mobile-alt', 'color': 'text-green-500', 'bg': 'bg-green-50 dark:bg-green-500/10'},
+                    'mattermost': {'icon': 'fa-comments', 'color': 'text-blue-600', 'bg': 'bg-blue-50 dark:bg-blue-500/10'}
+                } %}
+                <div class="space-y-2">
+                    {% for group in groups %}
+                        {% set groupChannels = group.channels|default([]) %}
+                        <div class="border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                            <!-- Group Header (clickable) -->
+                            <button onclick="toggleGroup({{ group.id }})" class="w-full flex items-center justify-between bg-gray-50 dark:bg-slate-900 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors p-4 text-left">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 bg-primary bg-opacity-10 rounded-lg flex items-center justify-center flex-shrink-0">
+                                        <i class="fas fa-bell text-primary"></i>
+                                    </div>
+                                    <div>
+                                        <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ group.name }}</div>
+                                        <div class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{{ group.description|default('No description') }}</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400">
+                                        <i class="fas fa-plug mr-1"></i>
+                                        {{ group.channel_count|default(0) }} channel{{ (group.channel_count|default(0)) != 1 ? 's' : '' }}
+                                    </span>
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400">
+                                        <i class="fas fa-globe mr-1"></i>
+                                        {{ group.domain_count|default(0) }} domain{{ (group.domain_count|default(0)) != 1 ? 's' : '' }}
+                                    </span>
+                                    <i class="fas fa-chevron-down text-gray-400 dark:text-slate-500 text-xs transition-transform" id="group-chevron-{{ group.id }}"></i>
+                                </div>
+                            </button>
+                            <!-- Channels (hidden by default) -->
+                            <div id="group-channels-{{ group.id }}" class="hidden border-t border-gray-200 dark:border-slate-700">
+                                {% if groupChannels is not empty %}
+                                    <div class="divide-y divide-gray-100 dark:divide-slate-700">
+                                        {% for channel in groupChannels %}
+                                            {% set type = channel.channel_type|default('webhook') %}
+                                            {% set chIcon = channelIcons[type]|default({'icon': 'fa-bell', 'color': 'text-gray-500', 'bg': 'bg-gray-50 dark:bg-slate-700'}) %}
+                                            {% set isChActive = channel.is_active|default(false) %}
+                                            <div class="flex items-center justify-between px-4 py-3 {{ not isChActive ? 'opacity-50' : '' }}">
+                                                <div class="flex items-center gap-3">
+                                                    <div class="w-8 h-8 {{ chIcon.bg }} rounded-lg flex items-center justify-center flex-shrink-0">
+                                                        <i class="fas {{ chIcon.icon }} {{ chIcon.color }} text-sm"></i>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ channel.name|default(type|capitalize) }}</p>
+                                                        <p class="text-xs text-gray-500 dark:text-slate-400">{{ type|capitalize }}</p>
+                                                    </div>
+                                                </div>
+                                                {% if isChActive %}
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400">
+                                                        <i class="fas fa-check-circle mr-1" style="font-size: 8px;"></i>Active
+                                                    </span>
+                                                {% else %}
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400">
+                                                        <i class="fas fa-times-circle mr-1" style="font-size: 8px;"></i>Inactive
+                                                    </span>
+                                                {% endif %}
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}
+                                    <div class="p-4 text-center text-sm text-gray-500 dark:text-slate-400">
+                                        <i class="fas fa-plug text-gray-300 dark:text-slate-600 mr-1"></i>
+                                        No channels configured
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="p-12 text-center">
+                    <i class="fas fa-bell-slash text-gray-300 dark:text-slate-600 text-4xl mb-3"></i>
+                    <p class="text-sm text-gray-600 dark:text-slate-400">This user has no notification groups</p>
+                </div>
+            {% endif %}
+        </div>
+
+    </div>
+</div>
+
+<script>
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('border-primary', 'text-primary');
+        button.classList.add('border-transparent', 'text-gray-500');
+    });
+    document.getElementById('content-' + tabName).classList.remove('hidden');
+    const activeTab = document.getElementById('tab-' + tabName);
+    activeTab.classList.add('border-primary', 'text-primary');
+    activeTab.classList.remove('border-transparent', 'text-gray-500');
+    history.replaceState(null, null, '#' + tabName);
+}
+
+window.addEventListener('DOMContentLoaded', function() {
+    const hash = window.location.hash.substring(1);
+    const validTabs = ['overview', 'domains', 'tags', 'groups'];
+    switchTab(hash && validTabs.includes(hash) ? hash : 'overview');
+
+    filteredDomainRows = Array.from(document.querySelectorAll('.domain-row'));
+    renderDomainPage();
+});
+
+const DOMAINS_PER_PAGE = 25;
+let domainCurrentPage = 1;
+let filteredDomainRows = [];
+
+function filterDomains() {
+    const query = document.getElementById('domainSearch').value.toLowerCase();
+    const statusFilter = document.getElementById('domainStatusFilter').value;
+    const tagFilter = document.getElementById('domainTagFilter').value.toLowerCase();
+    const groupFilter = document.getElementById('domainGroupFilter').value;
+
+    const allRows = Array.from(document.querySelectorAll('.domain-row'));
+
+    filteredDomainRows = allRows.filter(row => {
+        const name = row.getAttribute('data-domain-name') || '';
+        const status = row.getAttribute('data-domain-status') || '';
+        const tags = row.getAttribute('data-domain-tags') || '';
+        const group = row.getAttribute('data-domain-group') || '';
+        const text = row.textContent.toLowerCase();
+
+        const matchesSearch = !query || text.includes(query);
+        const matchesStatus = !statusFilter || status === statusFilter;
+        const matchesTag = !tagFilter || tags.split(',').map(t => t.trim()).includes(tagFilter);
+        const matchesGroup = !groupFilter || group === groupFilter;
+
+        return matchesSearch && matchesStatus && matchesTag && matchesGroup;
+    });
+
+    domainCurrentPage = 1;
+    renderDomainPage();
+}
+
+function renderDomainPage() {
+    const allRows = Array.from(document.querySelectorAll('.domain-row'));
+    const total = filteredDomainRows.length;
+    const totalPages = Math.max(1, Math.ceil(total / DOMAINS_PER_PAGE));
+    const start = (domainCurrentPage - 1) * DOMAINS_PER_PAGE;
+    const end = start + DOMAINS_PER_PAGE;
+
+    allRows.forEach(row => row.style.display = 'none');
+
+    filteredDomainRows.forEach((row, i) => {
+        row.style.display = (i >= start && i < end) ? '' : 'none';
+    });
+
+    const info = document.getElementById('domainPaginationInfo');
+    if (info) {
+        if (total === 0) {
+            info.textContent = 'No domains match your filters';
+        } else {
+            info.textContent = 'Showing ' + (start + 1) + '-' + Math.min(end, total) + ' of ' + total + ' domains';
+        }
+    }
+
+    const prevBtn = document.getElementById('domainPrevBtn');
+    const nextBtn = document.getElementById('domainNextBtn');
+    if (prevBtn) prevBtn.disabled = domainCurrentPage <= 1;
+    if (nextBtn) nextBtn.disabled = domainCurrentPage >= totalPages;
+
+    const pageNums = document.getElementById('domainPageNumbers');
+    if (pageNums) {
+        pageNums.innerHTML = '';
+        for (let p = 1; p <= totalPages && p <= 7; p++) {
+            const btn = document.createElement('button');
+            btn.textContent = p;
+            btn.className = 'px-3 py-1.5 rounded-lg text-sm ' +
+                (p === domainCurrentPage
+                    ? 'bg-primary text-white font-medium'
+                    : 'border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700');
+            btn.onclick = () => { domainCurrentPage = p; renderDomainPage(); };
+            pageNums.appendChild(btn);
+        }
+        if (totalPages > 7) {
+            const dots = document.createElement('span');
+            dots.textContent = '...';
+            dots.className = 'px-2 text-gray-400 dark:text-slate-500 text-sm';
+            pageNums.appendChild(dots);
+        }
+    }
+}
+
+function domainPageNav(dir) {
+    const totalPages = Math.max(1, Math.ceil(filteredDomainRows.length / DOMAINS_PER_PAGE));
+    if (dir === 'prev' && domainCurrentPage > 1) domainCurrentPage--;
+    if (dir === 'next' && domainCurrentPage < totalPages) domainCurrentPage++;
+    renderDomainPage();
+}
+
+function clearDomainFilters() {
+    document.getElementById('domainSearch').value = '';
+    document.getElementById('domainStatusFilter').value = '';
+    document.getElementById('domainTagFilter').value = '';
+    document.getElementById('domainGroupFilter').value = '';
+    filterDomains();
+}
+
+let domainSortCol = -1;
+let domainSortDir = '';
+function sortDomains(colIndex) {
+    domainSortDir = (domainSortCol === colIndex && domainSortDir === 'asc') ? 'desc' : 'asc';
+    domainSortCol = colIndex;
+
+    filteredDomainRows.sort((a, b) => {
+        const aText = a.cells[colIndex] ? a.cells[colIndex].textContent.trim().toLowerCase() : '';
+        const bText = b.cells[colIndex] ? b.cells[colIndex].textContent.trim().toLowerCase() : '';
+        if (domainSortDir === 'asc') return aText.localeCompare(bText, undefined, { numeric: true });
+        return bText.localeCompare(aText, undefined, { numeric: true });
+    });
+
+    const tbody = document.getElementById('domainsTable').querySelector('tbody');
+    filteredDomainRows.forEach(row => tbody.appendChild(row));
+
+    domainCurrentPage = 1;
+    renderDomainPage();
+
+    for (let i = 0; i <= 4; i++) {
+        const icon = document.getElementById('domain-sort-icon-' + i);
+        if (!icon) continue;
+        if (i === colIndex) {
+            icon.className = 'fas ' + (domainSortDir === 'asc' ? 'fa-sort-up' : 'fa-sort-down') + ' text-primary ml-1 text-xs';
+        } else {
+            icon.className = 'fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs';
+        }
+    }
+}
+
+let sortDirections = {};
+function sortTable(tableId, colIndex) {
+    const table = document.getElementById(tableId);
+    const tbody = table.querySelector('tbody');
+
+    const mainRows = [];
+    const allRows = Array.from(tbody.querySelectorAll('tr'));
+
+    allRows.forEach(row => {
+        if (row.classList.contains('tag-domains-row')) {
+            if (mainRows.length > 0) {
+                mainRows[mainRows.length - 1].children.push(row);
+            }
+        } else {
+            mainRows.push({ row: row, children: [] });
+        }
+    });
+
+    const dir = sortDirections[tableId + '_' + colIndex] === 'asc' ? 'desc' : 'asc';
+    sortDirections[tableId + '_' + colIndex] = dir;
+
+    mainRows.sort((a, b) => {
+        const aText = a.row.cells[colIndex] ? a.row.cells[colIndex].textContent.trim().toLowerCase() : '';
+        const bText = b.row.cells[colIndex] ? b.row.cells[colIndex].textContent.trim().toLowerCase() : '';
+        if (dir === 'asc') return aText.localeCompare(bText, undefined, { numeric: true });
+        return bText.localeCompare(aText, undefined, { numeric: true });
+    });
+
+    mainRows.forEach(item => {
+        tbody.appendChild(item.row);
+        item.children.forEach(child => tbody.appendChild(child));
+    });
+
+    table.querySelectorAll('thead th').forEach((th, i) => {
+        const icon = th.querySelector('i');
+        if (!icon) return;
+        if (i === colIndex) {
+            icon.className = 'fas ' + (dir === 'asc' ? 'fa-sort-up' : 'fa-sort-down') + ' text-primary ml-1 text-xs';
+        } else {
+            icon.className = 'fas fa-sort text-gray-400 dark:text-slate-500 ml-1 text-xs';
+        }
+    });
+}
+
+function filterTags() {
+    const query = document.getElementById('tagSearch').value.toLowerCase();
+    const typeFilter = document.getElementById('tagTypeFilter').value;
+
+    document.querySelectorAll('.tag-row').forEach(row => {
+        const text = row.textContent.toLowerCase();
+        const tagType = row.getAttribute('data-tag-type');
+        const matchesSearch = !query || text.includes(query);
+        const matchesType = !typeFilter || tagType === typeFilter;
+        const visible = matchesSearch && matchesType;
+
+        row.style.display = visible ? '' : 'none';
+
+        const tagId = row.querySelector('[id^="tag-chevron-"]');
+        if (tagId) {
+            const id = tagId.id.replace('tag-chevron-', '');
+            const childRow = document.getElementById('tag-domains-' + id);
+            if (childRow) {
+                childRow.style.display = visible ? '' : 'none';
+                if (!visible) childRow.classList.add('hidden');
+            }
+        }
+    });
+}
+
+function clearTagFilters() {
+    document.getElementById('tagSearch').value = '';
+    document.getElementById('tagTypeFilter').value = '';
+    filterTags();
+}
+
+function toggleTagDomains(tagId) {
+    const domainsRow = document.getElementById('tag-domains-' + tagId);
+    const chevron = document.getElementById('tag-chevron-' + tagId);
+
+    if (domainsRow.classList.contains('hidden')) {
+        domainsRow.classList.remove('hidden');
+        chevron.style.transform = 'rotate(180deg)';
+    } else {
+        domainsRow.classList.add('hidden');
+        chevron.style.transform = 'rotate(0deg)';
+    }
+}
+
+function toggleGroup(groupId) {
+    const channels = document.getElementById('group-channels-' + groupId);
+    const chevron = document.getElementById('group-chevron-' + groupId);
+
+    if (channels.classList.contains('hidden')) {
+        channels.classList.remove('hidden');
+        chevron.style.transform = 'rotate(180deg)';
+    } else {
+        channels.classList.add('hidden');
+        chevron.style.transform = 'rotate(0deg)';
+    }
+}
+</script>
+{% endblock %}

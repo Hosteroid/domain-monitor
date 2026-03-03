@@ -1,0 +1,80 @@
+{#
+ # CAPTCHA Widget Component
+ # Renders the appropriate CAPTCHA widget based on settings
+ # 
+ # Required variables:
+ # - captchaSettings: Array with 'provider' and 'site_key'
+ #}
+
+{% set provider = captchaSettings.provider|default('disabled') %}
+{% set siteKey = captchaSettings.site_key|default('') %}
+
+{% if provider != 'disabled' and siteKey is not empty %}
+{# CAPTCHA Widget #}
+<div class="captcha-container mb-4">
+    {% if provider == 'recaptcha_v2' %}
+        {# reCAPTCHA v2 #}
+        <div class="g-recaptcha" data-sitekey="{{ siteKey }}"></div>
+        <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+    
+    {% elseif provider == 'recaptcha_v3' %}
+        {# reCAPTCHA v3 (Invisible) #}
+        <input type="hidden" id="captcha_response" name="captcha_response">
+        <script src="https://www.google.com/recaptcha/api.js?render={{ siteKey }}"></script>
+    
+    {% elseif provider == 'turnstile' %}
+        {# Cloudflare Turnstile #}
+        <div class="cf-turnstile" data-sitekey="{{ siteKey }}"></div>
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    {% endif %}
+</div>
+
+{% if provider == 'recaptcha_v3' %}
+{# reCAPTCHA v3 Form Submission Handler #}
+<script>
+    // Store the original form submission handler
+    const form = document.querySelector('form');
+    const originalSubmit = form.onsubmit;
+    
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        grecaptcha.ready(function() {
+            grecaptcha.execute('{{ siteKey }}', {action: 'submit'}).then(function(token) {
+                document.getElementById('captcha_response').value = token;
+                
+                // Call original submit handler if it exists
+                if (originalSubmit && originalSubmit.call(form, e) === false) {
+                    return;
+                }
+                
+                // Submit the form
+                form.submit();
+            });
+        });
+    });
+</script>
+{% elseif provider == 'recaptcha_v2' or provider == 'turnstile' %}
+{# reCAPTCHA v2 / Turnstile Response Handler #}
+<script>
+    // Add hidden input to capture response
+    const form = document.querySelector('form');
+    const captchaInput = document.createElement('input');
+    captchaInput.type = 'hidden';
+    captchaInput.name = 'captcha_response';
+    captchaInput.id = 'captcha_response';
+    form.appendChild(captchaInput);
+    
+    // Capture response on form submit
+    form.addEventListener('submit', function(e) {
+        {% if provider == 'recaptcha_v2' %}
+        const response = grecaptcha.getResponse();
+        {% else %}{# turnstile #}
+        const response = turnstile.getResponse();
+        {% endif %}
+        
+        captchaInput.value = response;
+    });
+</script>
+{% endif %}
+{% endif %}

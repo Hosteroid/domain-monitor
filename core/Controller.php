@@ -6,6 +6,15 @@ abstract class Controller
 {
     protected function view(string $view, array $data = []): void
     {
+        $twigPath = __DIR__ . "/../app/Views/$view.twig";
+
+        if (file_exists($twigPath)) {
+            $twig = TwigService::getInstance();
+            echo $twig->render("$view.twig", $data);
+            return;
+        }
+
+        // Fallback to legacy PHP view during migration
         extract($data);
         $viewPath = __DIR__ . "/../app/Views/$view.php";
 
@@ -13,7 +22,7 @@ abstract class Controller
             throw new \Exception("View not found: $view");
         }
 
-        require_once $viewPath;
+        require $viewPath;
     }
 
     protected function json($data, int $status = 200): void

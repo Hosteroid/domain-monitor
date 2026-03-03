@@ -1,0 +1,284 @@
+{% extends 'layout/base.twig' %}
+
+{% set title = 'Edit Domain' %}
+{% set pageTitle = 'Edit Domain' %}
+{% set pageDescription = domain.domain_name %}
+{% set pageIcon = 'fas fa-edit' %}
+
+{% block content %}
+
+<!-- Main Form -->
+<div class="max-w-3xl mx-auto">
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-cog text-gray-400 dark:text-slate-500 mr-2 text-sm"></i>
+                Domain Settings
+            </h2>
+        </div>
+        
+        <div class="p-6">
+            <form method="POST" action="/domains/{{ domain.id }}/update" class="space-y-5">
+                {{ csrf_field() }}
+
+                <!-- Domain Name (Read-only) -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Domain Name
+                    </label>
+                    <div class="relative">
+                        <input type="text" 
+                               class="w-full px-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-900 text-gray-600 dark:text-slate-400 cursor-not-allowed text-sm" 
+                               value="{{ domain.domain_name }}" 
+                               disabled>
+                        <div class="absolute right-3 top-1/2 transform -translate-y-1/2">
+                            <i class="fas fa-lock text-gray-400 dark:text-slate-500 text-xs"></i>
+                        </div>
+                    </div>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                        Domain name cannot be changed after creation
+                    </p>
+                </div>
+
+                <!-- Tags -->
+                <div>
+                    <label for="tags-input" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Tags
+                        <span class="text-gray-400 dark:text-slate-500 font-normal">(Optional)</span>
+                    </label>
+                    
+                    <!-- Tag Display Area -->
+                    <div id="tags-display" class="min-h-[40px] p-2 border border-gray-300 dark:border-slate-600 rounded-lg mb-2 flex flex-wrap gap-1.5 bg-gray-50 dark:bg-slate-900"></div>
+                    
+                    <!-- Tag Input -->
+                    <div class="relative">
+                        <i class="fas fa-tag absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-sm"></i>
+                        <input type="text" 
+                               id="tags-input" 
+                               class="w-full pl-10 pr-20 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm" 
+                               placeholder="Type any tag and press Enter or comma..."
+                               onkeydown="handleTagInput(event)">
+                        <button type="button" onclick="addTagFromInput()" class="absolute right-2 top-1/2 transform -translate-y-1/2 px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary-dark">
+                            Add
+                        </button>
+                    </div>
+                    
+                    <!-- Hidden input to store tags for form submission -->
+                    <input type="hidden" id="tags" name="tags" value="{{ domain.tags|default('') }}">
+                    
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Type any custom tag (letters, numbers, hyphens). Press <kbd class="px-1 py-0.5 bg-gray-200 dark:bg-slate-600 rounded text-xs">Enter</kbd> or <kbd class="px-1 py-0.5 bg-gray-200 dark:bg-slate-600 rounded text-xs">,</kbd> to add.
+                    </p>
+                    
+                    <!-- Available Tags -->
+                    <div class="mt-2">
+                        <p class="text-xs text-gray-600 dark:text-slate-400 mb-1.5">💡 Available Tags:</p>
+                        <div class="flex flex-wrap gap-1.5">
+                            {% for tag in availableTags %}
+                                <button type="button" onclick="addTag('{{ tag.name }}')" 
+                                        class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border {{ tag.color }} hover:opacity-80 transition-colors">
+                                    <i class="fas fa-plus mr-1" style="font-size: 8px;"></i>
+                                    {{ tag.name }}
+                                </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notification Group -->
+                <div>
+                    <label for="notification_group_id" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Notification Group
+                    </label>
+                    <select id="notification_group_id" 
+                            name="notification_group_id" 
+                            class="w-full px-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm">
+                        <option value="">-- No Group (No notifications) --</option>
+                        {% for group in groups %}
+                            <option value="{{ group.id }}" 
+                                    {{ domain.notification_group_id == group.id ? 'selected' : '' }}>
+                                {{ group.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                        Change the notification group or remove it to stop receiving alerts
+                    </p>
+                </div>
+
+                <!-- Manual Expiration Date -->
+                <div>
+                    <label for="manual_expiration_date" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Manual Expiration Date
+                        <span class="text-gray-400 dark:text-slate-500 font-normal">(Optional)</span>
+                    </label>
+                    <div class="relative">
+                        <i class="fas fa-calendar-alt absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-sm"></i>
+                        <input type="date" 
+                               id="manual_expiration_date" 
+                               name="manual_expiration_date" 
+                               value="{{ domain.expiration_date ? domain.expiration_date|date('Y-m-d') : '' }}"
+                               class="w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm">
+                    </div>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Set a manual expiration date if WHOIS/RDAP doesn't provide one (e.g., for .nl domains). 
+                        This will be used for expiration notifications and status calculations.
+                    </p>
+                    {% if domain.expiration_date %}
+                        <p class="mt-1 text-xs text-green-600 dark:text-green-400">
+                            <i class="fas fa-check-circle mr-1"></i>
+                            Current expiration date: {{ domain.expiration_date|date('M j, Y') }}
+                        </p>
+                    {% else %}
+                        <p class="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>
+                            No expiration date available from WHOIS/RDAP. Consider setting a manual date.
+                        </p>
+                    {% endif %}
+                </div>
+
+                <!-- Active Monitoring -->
+                <div class="bg-gray-50 dark:bg-slate-900 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="checkbox" 
+                               name="is_active" 
+                               {{ domain.is_active ? 'checked' : '' }} 
+                               class="w-4 h-4 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">Enable Active Monitoring</span>
+                            <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">When enabled, this domain will be checked regularly and notifications will be sent</p>
+                        </div>
+                    </label>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-col sm:flex-row gap-3 pt-3">
+                    <button type="submit" 
+                            class="inline-flex items-center justify-center px-5 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors text-sm">
+                        <i class="fas fa-save mr-2"></i>
+                        Update Domain
+                    </button>
+                    <a href="{{ referrer|default('/domains/' ~ domain.id) }}" 
+                       class="inline-flex items-center justify-center px-5 py-2.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm">
+                        <i class="fas fa-times mr-2"></i>
+                        Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <a href="/domains/{{ domain.id }}" 
+           class="flex items-center justify-center p-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:border-blue-300 dark:hover:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-500/10 transition-colors group">
+            <i class="fas fa-eye text-blue-600 dark:text-blue-400 mr-2 text-sm"></i>
+            <span class="text-sm font-medium text-gray-700 dark:text-slate-300">View Details</span>
+        </a>
+        <form method="POST" action="/domains/{{ domain.id }}/refresh" class="m-0">
+            {{ csrf_field() }}
+            <button type="submit" 
+                    class="w-full flex items-center justify-center p-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:border-green-300 dark:hover:border-green-700 hover:bg-green-50 dark:hover:bg-green-500/10 transition-colors group">
+                <i class="fas fa-sync-alt text-green-600 dark:text-green-400 mr-2 text-sm"></i>
+                <span class="text-sm font-medium text-gray-700 dark:text-slate-300">Refresh WHOIS</span>
+            </button>
+        </form>
+        <form method="POST" action="/domains/{{ domain.id }}/delete" onsubmit="return confirm('Delete this domain permanently?')" class="m-0">
+            {{ csrf_field() }}
+            <button type="submit" 
+                    class="w-full flex items-center justify-center p-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:border-red-300 dark:hover:border-red-700 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors group">
+                <i class="fas fa-trash text-red-600 dark:text-red-400 mr-2 text-sm"></i>
+                <span class="text-sm font-medium text-gray-700 dark:text-slate-300">Delete Domain</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const existingTags = {{ domain.tags|default('')|json_encode|raw }};
+let tags = existingTags ? existingTags.split(',').map(t => t.trim().toLowerCase()).filter(t => t) : [];
+
+const availableTags = {{ availableTags|json_encode|raw }};
+const tagColors = {};
+availableTags.forEach(tag => {
+    tagColors[tag.name] = tag.color;
+});
+
+function addTag(tagName) {
+    tagName = tagName.trim().toLowerCase();
+    
+    if (!/^[a-z0-9-]+$/.test(tagName)) {
+        return;
+    }
+    
+    if (tags.includes(tagName)) {
+        return;
+    }
+    
+    tags.push(tagName);
+    updateTagsDisplay();
+    updateHiddenInput();
+    
+    document.getElementById('tags-input').value = '';
+}
+
+function removeTag(tagName) {
+    tags = tags.filter(t => t !== tagName);
+    updateTagsDisplay();
+    updateHiddenInput();
+}
+
+function updateTagsDisplay() {
+    const display = document.getElementById('tags-display');
+    display.innerHTML = '';
+    
+    if (tags.length === 0) {
+        display.innerHTML = '<span class="text-xs text-gray-400 dark:text-slate-500 italic">No tags added yet</span>';
+        return;
+    }
+    
+    tags.forEach(tag => {
+        const colorClass = tagColors[tag] || 'bg-gray-100 text-gray-700 border-gray-300';
+        const tagElement = document.createElement('span');
+        tagElement.className = `inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${colorClass}`;
+        tagElement.innerHTML = `
+            <i class="fas fa-tag mr-1" style="font-size: 9px;"></i>
+            ${tag}
+            <button type="button" onclick="removeTag('${tag}')" class="ml-1.5 hover:text-red-600">
+                <i class="fas fa-times" style="font-size: 9px;"></i>
+            </button>
+        `;
+        display.appendChild(tagElement);
+    });
+}
+
+function updateHiddenInput() {
+    document.getElementById('tags').value = tags.join(',');
+}
+
+function handleTagInput(event) {
+    if (event.key === 'Enter' || event.key === ',') {
+        event.preventDefault();
+        addTagFromInput();
+    }
+}
+
+function addTagFromInput() {
+    const input = document.getElementById('tags-input');
+    const value = input.value.trim();
+    
+    if (value) {
+        const newTags = value.split(',').map(t => t.trim().toLowerCase()).filter(t => t);
+        newTags.forEach(tag => addTag(tag));
+        input.value = '';
+    }
+}
+
+updateTagsDisplay();
+</script>
+{% endblock %}

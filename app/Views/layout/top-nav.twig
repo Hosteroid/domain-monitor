@@ -1,0 +1,373 @@
+<!-- Top Navigation Bar -->
+<nav class="h-16 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 fixed top-0 left-0 md:left-64 right-0 z-20 transition-colors duration-200">
+    <div class="h-full px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between h-full">
+            <!-- Left: Menu button and Page Header -->
+            <div class="flex items-center min-w-0">
+                <button onclick="toggleSidebar()" class="flex md:hidden items-center justify-center w-10 h-10 -ml-2 mr-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg transition-colors focus:outline-none">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+                
+                <div class="flex items-center gap-3">
+                    {% if pageIcon is defined %}
+                        <div class="hidden sm:flex items-center justify-center w-11 h-11 bg-primary/10 dark:bg-primary/20 rounded-xl">
+                            <i class="{{ pageIcon }} text-primary text-xl"></i>
+                        </div>
+                    {% endif %}
+                    <div class="min-w-0">
+                        <h2 class="text-lg md:text-xl font-bold text-gray-800 dark:text-white truncate">
+                            {{ pageTitle|default(title)|default('Dashboard') }}
+                        </h2>
+                        {% if pageDescription is defined %}
+                            <p class="hidden sm:block text-sm text-gray-600 dark:text-slate-400 truncate">{{ pageDescription }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center: Search Bar -->
+            <div class="flex-1 max-w-md mx-4 lg:mx-6">
+                <form action="/search" method="GET" class="relative hidden md:block" id="globalSearchForm">
+                    <input type="text" 
+                           name="q"
+                           placeholder="Search domains or lookup WHOIS..." 
+                           class="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-500 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent text-sm transition-colors duration-200"
+                           id="globalSearchInput"
+                           autocomplete="off">
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-sm"></i>
+                    
+                    <div id="searchDropdown" class="hidden absolute top-full left-0 right-0 mt-2 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-gray-200 dark:border-slate-700 max-h-96 overflow-y-auto z-50">
+                        <div id="searchLoading" class="hidden p-4 text-center">
+                            <i class="fas fa-spinner fa-spin text-primary"></i>
+                            <p class="text-sm text-gray-600 dark:text-slate-400 mt-2">Searching...</p>
+                        </div>
+                        <div id="searchResults"></div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Right: Actions & User -->
+            <div class="flex items-center space-x-2">
+                {% if updateBadge.show|default(false) %}
+                    <a href="/settings#updates" class="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-800 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-500/30 transition-colors text-xs font-semibold whitespace-nowrap" title="An update is available">
+                        <i class="fas fa-cloud-download-alt"></i>
+                        <span>Update{{ updateBadge.label ? ' ' ~ updateBadge.label : '' }}</span>
+                    </a>
+                {% endif %}
+
+                <!-- Quick Actions Dropdown -->
+                <div class="relative">
+                    <button onclick="toggleQuickActions()" title="Quick Actions" class="flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg transition-colors duration-150">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <div id="quickActionsDropdown" class="dropdown-menu absolute right-0 mt-2 w-52 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-gray-200 dark:border-slate-700 overflow-hidden py-1">
+                        <div class="px-3 py-2 border-b border-gray-100 dark:border-slate-700">
+                            <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Quick Actions</p>
+                        </div>
+                        <a href="/domains/create" class="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-500/10 hover:text-primary transition-colors">
+                            <div class="w-7 h-7 bg-blue-50 dark:bg-blue-500/20 rounded-md flex items-center justify-center mr-3">
+                                <i class="fas fa-globe text-blue-600 dark:text-blue-400 text-xs"></i>
+                            </div>
+                            Add Domain
+                        </a>
+                        <a href="/groups/create" class="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-green-50 dark:hover:bg-green-500/10 hover:text-green-700 dark:hover:text-green-400 transition-colors">
+                            <div class="w-7 h-7 bg-green-50 dark:bg-green-500/20 rounded-md flex items-center justify-center mr-3">
+                                <i class="fas fa-bell text-green-600 dark:text-green-400 text-xs"></i>
+                            </div>
+                            Create Group
+                        </a>
+                        <a href="/tags" class="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-purple-50 dark:hover:bg-purple-500/10 hover:text-purple-700 dark:hover:text-purple-400 transition-colors">
+                            <div class="w-7 h-7 bg-purple-50 dark:bg-purple-500/20 rounded-md flex items-center justify-center mr-3">
+                                <i class="fas fa-tag text-purple-600 dark:text-purple-400 text-xs"></i>
+                            </div>
+                            Create Tag
+                        </a>
+                        <a href="/debug/whois" class="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 hover:text-indigo-700 dark:hover:text-indigo-400 transition-colors">
+                            <div class="w-7 h-7 bg-indigo-50 dark:bg-indigo-500/20 rounded-md flex items-center justify-center mr-3">
+                                <i class="fas fa-search text-indigo-600 dark:text-indigo-400 text-xs"></i>
+                            </div>
+                            WHOIS Lookup
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Dark/Light Mode Toggle -->
+                <button onclick="toggleTheme()" id="themeToggle" title="Toggle theme" class="flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg transition-colors duration-150">
+                    <i class="fas fa-moon dark:hidden"></i>
+                    <i class="fas fa-sun hidden dark:inline"></i>
+                </button>
+                
+                <!-- Notifications -->
+                <div class="relative">
+                    <button onclick="toggleNotifications()" title="Notifications" class="relative flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-lg transition-colors duration-150">
+                        <i class="fas fa-bell"></i>
+                        {% if unreadNotifications > 0 %}
+                            <span class="absolute top-1 right-1 flex h-2 w-2">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                            </span>
+                        {% endif %}
+                    </button>
+                    
+                    <!-- Notifications Dropdown -->
+                    <div id="notificationsDropdown" class="dropdown-menu absolute right-0 mt-2 w-80 sm:w-96 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-gray-200 dark:border-slate-700 max-h-[32rem] overflow-hidden">
+                        <div class="px-4 py-3 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Notifications</h3>
+                                {% if unreadNotifications > 0 %}
+                                    <span id="dropdownHeaderBadge" class="px-2 py-0.5 bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400 text-xs font-semibold rounded">{{ unreadNotifications }} new</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="max-h-96 overflow-y-auto">
+                            {% if recentNotifications is not empty %}
+                                {% for notif in recentNotifications %}
+                                    {% set hasDomain = notif.domain_id is defined and notif.domain_id %}
+                                    {% if notif.type == 'update_available' %}
+                                        {% set notifUrl = '/notifications/' ~ notif.id ~ '/mark-read?redirect=settings' %}
+                                    {% elseif hasDomain %}
+                                        {% set notifUrl = '/notifications/' ~ notif.id ~ '/mark-read?redirect=domain&domain_id=' ~ notif.domain_id %}
+                                    {% else %}
+                                        {% set notifUrl = '/notifications/' ~ notif.id ~ '/mark-read' %}
+                                    {% endif %}
+                                    {% set loginData = notif.login_data|default(null) %}
+                                    <div class="px-4 py-3 hover:bg-gray-50 dark:hover:bg-slate-700 border-b border-gray-100 dark:border-slate-700 bg-blue-50 dark:bg-blue-900/20 transition-colors notification-item" data-id="{{ notif.id }}">
+                                        <div class="flex items-start space-x-3">
+                                            {% if loginData and notif.type == 'session_failed' %}
+                                                <a href="{{ notifUrl }}" class="w-8 h-8 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                    {% if (loginData.country_code|default('xx')) != 'xx' %}
+                                                        <span class="fi fi-{{ loginData.country_code|lower }} text-base rounded-sm"></span>
+                                                    {% else %}
+                                                        <i class="fas fa-shield-alt text-red-600 dark:text-red-400 text-sm"></i>
+                                                    {% endif %}
+                                                </a>
+                                                <a href="{{ notifUrl }}" class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="text-sm font-semibold text-red-700 dark:text-red-400">{{ notif.title }}</p>
+                                                        <span class="w-2 h-2 bg-red-500 rounded-full flex-shrink-0"></span>
+                                                    </div>
+                                                    <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">
+                                                        {{ format_login_dropdown(loginData) }}
+                                                    </p>
+                                                    <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">
+                                                        <i class="fas fa-{{ loginData.device_icon|default('desktop') }} mr-0.5"></i>
+                                                        {{ loginData.reason|default('Failed') }} &middot; {{ notif.time_ago }}
+                                                    </p>
+                                                </a>
+                                            {% elseif loginData and notif.type == 'session_new' %}
+                                                <a href="{{ notifUrl }}" class="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                    {% if loginData.country_code != 'xx' %}
+                                                        <span class="fi fi-{{ loginData.country_code|lower }} text-base rounded-sm"></span>
+                                                    {% else %}
+                                                        <i class="fas fa-sign-in-alt text-blue-600 dark:text-blue-400 text-sm"></i>
+                                                    {% endif %}
+                                                </a>
+                                                <a href="{{ notifUrl }}" class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ notif.title }}</p>
+                                                        <span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+                                                    </div>
+                                                    <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">
+                                                        {{ format_login_dropdown(loginData) }}
+                                                    </p>
+                                                    <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">
+                                                        <i class="fas fa-{{ loginData.device_icon|default('desktop') }} mr-0.5"></i>
+                                                        {{ loginData.method|default('Login') }} &middot; {{ notif.time_ago }}
+                                                    </p>
+                                                </a>
+                                            {% else %}
+                                                <a href="{{ notifUrl }}" class="w-8 h-8 bg-{{ notif.color }}-100 dark:bg-{{ notif.color }}-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                    <i class="fas fa-{{ notif.icon }} text-{{ notif.color }}-600 dark:text-{{ notif.color }}-400 text-sm"></i>
+                                                </a>
+                                                <a href="{{ notifUrl }}" class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2">
+                                                        <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ notif.title }}</p>
+                                                        <span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
+                                                    </div>
+                                                    <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">{{ notif.message }}</p>
+                                                    <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">
+                                                        {{ notif.time_ago }}
+                                                        {% if hasDomain %}
+                                                            <span class="text-primary ml-1"><i class="fas fa-external-link-alt text-[10px]"></i> View domain</span>
+                                                        {% endif %}
+                                                    </p>
+                                                </a>
+                                            {% endif %}
+                                            <button onclick="event.stopPropagation(); markNotifRead({{ notif.id }}, this)" 
+                                                    class="w-7 h-7 flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-500/10 rounded transition-colors flex-shrink-0" 
+                                                    title="Mark as read">
+                                                <i class="fas fa-check text-xs"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="px-4 py-8 text-center">
+                                    <i class="fas fa-bell-slash text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>
+                                    <p class="text-sm text-gray-600 dark:text-slate-400">No new notifications</p>
+                                    <p class="text-xs text-gray-400 dark:text-slate-500 mt-0.5">You're all caught up!</p>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="px-4 py-3 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                            <a href="/notifications" class="block text-center text-sm font-medium text-primary hover:text-primary-dark">
+                                View All Notifications
+                                <i class="fas fa-arrow-right ml-1 text-xs"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="hidden md:block h-8 w-px bg-gray-300 dark:bg-slate-700"></div>
+                
+                <!-- User Dropdown -->
+                <div class="relative">
+                    <button onclick="toggleDropdown()" class="flex items-center space-x-3 p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors duration-150 focus:outline-none">
+                        {% if avatar and (avatar.type == 'uploaded' or avatar.type == 'gravatar') %}
+                            <img src="{{ avatar.url }}" 
+                                 alt="{{ avatar.alt|default('User avatar') }}" 
+                                 class="w-9 h-9 rounded-full object-cover"
+                                 loading="lazy">
+                        {% else %}
+                            <div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-semibold">
+                                {{ (auth.username|default('A'))|first|upper }}
+                            </div>
+                        {% endif %}
+                        <div class="hidden lg:block text-left">
+                            <p class="text-sm font-medium text-gray-700 dark:text-white">{{ auth.fullName|default(auth.username)|default('User') }}</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400">{{ session.email|default('') }}</p>
+                        </div>
+                        <i class="fas fa-chevron-down text-gray-400 dark:text-slate-500 text-xs hidden md:block"></i>
+                    </button>
+
+                    <div id="userDropdown" class="dropdown-menu absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 overflow-hidden pb-2">
+                        <div class="px-4 py-4 border-b border-gray-200 dark:border-slate-700 bg-gradient-to-r from-gray-50 to-gray-100 dark:from-slate-900 dark:to-slate-800">
+                            <div class="text-center">
+                                <div class="relative w-12 h-12 mx-auto mb-2">
+                                    {% if avatar and (avatar.type == 'uploaded' or avatar.type == 'gravatar') %}
+                                        <img src="{{ avatar.url }}" 
+                                             alt="{{ avatar.alt|default('User avatar') }}" 
+                                             class="w-12 h-12 rounded-full object-cover"
+                                             loading="lazy">
+                                    {% else %}
+                                        <div class="w-12 h-12 rounded-full bg-primary flex items-center justify-center text-white font-bold text-lg">
+                                            {{ (auth.username|default('A'))|first|upper }}
+                                        </div>
+                                    {% endif %}
+                                    <div class="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-slate-800 flex items-center justify-center">
+                                        <div class="w-2 h-2 bg-white rounded-full"></div>
+                                    </div>
+                                </div>
+                                <p class="text-sm font-semibold text-gray-900 dark:text-white">Welcome back!</p>
+                                <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">{{ auth.fullName|default(auth.username)|default('User') }}</p>
+                                <div class="mt-2">
+                                    {{ role_badge(auth.role|default('user'), 'xs') }}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <a href="/profile#profile" class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors duration-150">
+                            <i class="fas fa-user-circle w-5 text-gray-400 dark:text-slate-500 mr-3"></i>
+                            My Profile
+                        </a>
+                        
+                        <a href="/profile#security" class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors duration-150">
+                            <i class="fas fa-cog w-5 text-gray-400 dark:text-slate-500 mr-3"></i>
+                            Account Settings
+                        </a>
+                        
+                        <a href="/notifications" class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors duration-150">
+                            <i class="fas fa-bell w-5 text-gray-400 dark:text-slate-500 mr-3"></i>
+                            Notifications
+                            {% if unreadNotifications > 0 %}
+                                <span id="userDropdownNotifBadge" class="ml-auto px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-full">
+                                    {{ unreadNotifications }}
+                                </span>
+                            {% endif %}
+                        </a>
+                        
+                        <div class="border-t border-gray-200 dark:border-slate-700 my-1"></div>
+                        
+                        <a href="https://github.com/Hosteroid/domain-monitor" target="_blank" class="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors duration-150">
+                            <i class="fab fa-github w-5 text-gray-400 dark:text-slate-500 mr-3"></i>
+                            Help & Support
+                            <i class="fas fa-external-link-alt ml-auto text-xs text-gray-400 dark:text-slate-500"></i>
+                        </a>
+                        
+                        <div class="border-t border-gray-200 dark:border-slate-700 my-1"></div>
+                        
+                        <a href="/logout" class="flex items-center px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150">
+                            <i class="fas fa-sign-out-alt w-5 mr-3"></i>
+                            Logout
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<script>
+function markNotifRead(notifId, btn) {
+    fetch('/notifications/' + notifId + '/mark-read?ajax=1', {
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(r => {
+        if (!r.ok) throw new Error('Request failed');
+        return r.json();
+    })
+    .then(data => {
+        if (!data.success) return;
+
+        const newCount = data.unread_count ?? 0;
+
+        const item = btn.closest('.notification-item');
+        if (item) {
+            const scrollable = document.querySelector('#notificationsDropdown .max-h-96');
+            const isLast = scrollable && scrollable.querySelectorAll('.notification-item').length <= 1;
+
+            if (isLast && scrollable) {
+                scrollable.style.transition = 'opacity 0.2s';
+                scrollable.style.opacity = '0';
+                setTimeout(() => {
+                    scrollable.innerHTML = '<div class="px-4 py-8 text-center">' +
+                        '<i class="fas fa-bell-slash text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>' +
+                        '<p class="text-sm text-gray-600 dark:text-slate-400">No new notifications</p>' +
+                        '<p class="text-xs text-gray-400 dark:text-slate-500 mt-0.5">You\'re all caught up!</p>' +
+                        '</div>';
+                    scrollable.style.opacity = '1';
+                }, 200);
+            } else {
+                item.style.transition = 'opacity 0.2s, max-height 0.3s';
+                item.style.opacity = '0';
+                item.style.maxHeight = '0';
+                item.style.overflow = 'hidden';
+                item.style.padding = '0';
+                item.style.margin = '0';
+                setTimeout(() => item.remove(), 300);
+            }
+        }
+
+        const headerBadge = document.getElementById('dropdownHeaderBadge');
+        const userBadge = document.getElementById('userDropdownNotifBadge');
+        const bellDot = document.querySelector('[onclick="toggleNotifications()"] .absolute.top-1');
+
+        if (newCount <= 0) {
+            if (headerBadge) headerBadge.remove();
+            if (userBadge) userBadge.remove();
+            if (bellDot) bellDot.remove();
+        } else {
+            if (headerBadge) headerBadge.textContent = newCount + ' new';
+            if (userBadge) userBadge.textContent = newCount;
+        }
+    })
+    .catch(() => {
+        window.location.href = '/notifications/' + notifId + '/mark-read';
+    });
+}
+</script>

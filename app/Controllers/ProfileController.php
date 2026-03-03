@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\SessionManager;
 use App\Models\RememberToken;
 use App\Services\Logger;
+use App\Services\TwoFactorService;
 use App\Helpers\AvatarHelper;
 
 class ProfileController extends Controller
@@ -71,10 +72,30 @@ class ProfileController extends Controller
         // Format sessions for display (adds deviceIcon, browserInfo, timeAgo, sessionAge)
         $formattedSessions = \App\Helpers\SessionHelper::formatForDisplay($sessions);
 
+        // Avatar data
+        $avatar = AvatarHelper::getAvatar($user, 80);
+
+        // 2FA status
+        $twoFactorService = new TwoFactorService();
+        $twoFactorPolicy = $twoFactorService->getTwoFactorPolicy();
+
+        $backupCodes = !empty($user['two_factor_backup_codes'])
+            ? json_decode($user['two_factor_backup_codes'], true)
+            : [];
+
+        $twoFactorStatus = [
+            'enabled' => !empty($user['two_factor_enabled']),
+            'setup_at' => $user['two_factor_setup_at'] ?? null,
+            'backup_codes_count' => is_array($backupCodes) ? count($backupCodes) : 0,
+            'required' => $twoFactorService->isTwoFactorRequired($userId),
+        ];
+
         $this->view('profile/index', [
             'user' => $user,
             'sessions' => $formattedSessions,
-            'userModel' => $this->userModel,
+            'avatar' => $avatar,
+            'twoFactorStatus' => $twoFactorStatus,
+            'twoFactorPolicy' => $twoFactorPolicy,
             'title' => 'My Profile'
         ]);
     }

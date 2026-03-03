@@ -1,0 +1,115 @@
+{# Toast Notifications Container #}
+<div id="toast-container" class="fixed bottom-4 right-4 z-[9999] space-y-3 max-w-sm">
+    
+    {# Success Toast #}
+    {% if flash.success is defined %}
+        <div class="toast bg-white dark:bg-slate-800 border-l-4 border-green-500 rounded-lg shadow-lg dark:shadow-slate-900/50 p-4 flex items-start animate-slide-in">
+            <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
+                    <i class="fas fa-check text-green-600 dark:text-green-400 text-sm"></i>
+                </div>
+            </div>
+            <div class="ml-3 flex-1">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">Success</p>
+                <p class="text-sm text-gray-600 dark:text-slate-400 mt-0.5">{{ flash.success }}</p>
+            </div>
+            <button onclick="this.parentElement.remove()" class="ml-3 flex-shrink-0 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
+                <i class="fas fa-times text-sm"></i>
+            </button>
+        </div>
+    {% endif %}
+
+    {# Error Toast #}
+    {% if flash.error is defined %}
+        <div class="toast bg-white dark:bg-slate-800 border-l-4 border-red-500 rounded-lg shadow-lg dark:shadow-slate-900/50 p-4 flex items-start animate-slide-in">
+            <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                    <i class="fas fa-times text-red-600 dark:text-red-400 text-sm"></i>
+                </div>
+            </div>
+            <div class="ml-3 flex-1">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">Error</p>
+                <p class="text-sm text-gray-600 dark:text-slate-400 mt-0.5">{{ flash.error }}</p>
+            </div>
+            <button onclick="this.parentElement.remove()" class="ml-3 flex-shrink-0 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
+                <i class="fas fa-times text-sm"></i>
+            </button>
+        </div>
+    {% endif %}
+
+    {# Warning Toast #}
+    {% if flash.warning is defined %}
+        <div class="toast bg-white dark:bg-slate-800 border-l-4 border-orange-500 rounded-lg shadow-lg dark:shadow-slate-900/50 p-4 flex items-start animate-slide-in">
+            <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">
+                    <i class="fas fa-exclamation-triangle text-orange-600 dark:text-orange-400 text-sm"></i>
+                </div>
+            </div>
+            <div class="ml-3 flex-1">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">Warning</p>
+                <p class="text-sm text-gray-600 dark:text-slate-400 mt-0.5">{{ flash.warning }}</p>
+            </div>
+            <button onclick="this.parentElement.remove()" class="ml-3 flex-shrink-0 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
+                <i class="fas fa-times text-sm"></i>
+            </button>
+        </div>
+    {% endif %}
+
+    {# Info Toast #}
+    {% if flash.info is defined %}
+        <div class="toast bg-white dark:bg-slate-800 border-l-4 border-blue-500 rounded-lg shadow-lg dark:shadow-slate-900/50 p-4 flex items-start animate-slide-in">
+            <div class="flex-shrink-0">
+                <div class="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                    <i class="fas fa-info text-blue-600 dark:text-blue-400 text-sm"></i>
+                </div>
+            </div>
+            <div class="ml-3 flex-1">
+                <p class="text-sm font-medium text-gray-900 dark:text-white">Info</p>
+                <p class="text-sm text-gray-600 dark:text-slate-400 mt-0.5">{{ flash.info }}</p>
+            </div>
+            <button onclick="this.parentElement.remove()" class="ml-3 flex-shrink-0 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-300 transition-colors">
+                <i class="fas fa-times text-sm"></i>
+            </button>
+        </div>
+    {% endif %}
+
+</div>
+
+{# Toast Auto-Dismiss Script #}
+<script>
+    // Auto-dismiss toasts after 5 seconds
+    document.addEventListener('DOMContentLoaded', function() {
+        const toasts = document.querySelectorAll('.toast');
+        
+        toasts.forEach(toast => {
+            // Add fade-out animation after 5 seconds
+            setTimeout(() => {
+                toast.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                
+                // Remove from DOM after animation
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 5000);
+        });
+    });
+</script>
+
+<style>
+    @keyframes slideIn {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+    
+    .animate-slide-in {
+        animation: slideIn 0.3s ease-out;
+    }
+</style>

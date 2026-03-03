@@ -1,0 +1,482 @@
+{% extends 'layout/base.twig' %}
+
+{% set title = 'Error Details' %}
+{% set pageTitle = 'Error Details' %}
+{% set pageDescription = 'Detailed information about this error' %}
+{% set pageIcon = 'fas fa-bug' %}
+
+{% set isResolved = error.is_resolved %}
+{% set errorTypeShort = error.error_type|split('\\')|last %}
+
+{% block content %}
+<!-- Back Navigation -->
+<div class="mb-4 flex items-center justify-between">
+    <a href="/errors" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+        <i class="fas fa-arrow-left mr-2"></i>
+        Back to Error Logs
+    </a>
+    
+    <div class="flex items-center space-x-2">
+        <button onclick="copyErrorReport()" class="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+            <i class="fas fa-clipboard mr-2"></i>
+            Copy Error Report
+        </button>
+        {% if isResolved %}
+            <form method="POST" action="/errors/{{ error.error_id }}/unresolve" class="inline">
+                {{ csrf_field() }}
+                <button type="submit" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">
+                    <i class="fas fa-undo mr-2"></i>
+                    Mark as Unresolved
+                </button>
+            </form>
+        {% else %}
+            <button onclick="markResolved()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
+                <i class="fas fa-check mr-2"></i>
+                Mark as Resolved
+            </button>
+        {% endif %}
+        
+        <button onclick="deleteError()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+            <i class="fas fa-trash mr-2"></i>
+            Delete Error
+        </button>
+    </div>
+</div>
+
+<!-- Error Header Card -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6 mb-6">
+    <div class="flex items-start justify-between mb-4">
+        <div class="flex items-start">
+            <div class="flex-shrink-0 h-14 w-14 bg-red-100 dark:bg-red-500/10 rounded-lg flex items-center justify-center mr-4">
+                <i class="fas fa-bug text-red-600 dark:text-red-400 text-2xl"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-3 mb-2">
+                    <h2 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ errorTypeShort }}</h2>
+                    {% if isResolved %}
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 border border-green-200 dark:border-green-500/20">
+                            <i class="fas fa-check-circle mr-1"></i>Resolved
+                        </span>
+                    {% else %}
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 border border-orange-200 dark:border-orange-500/20">
+                            <i class="fas fa-exclamation-triangle mr-1"></i>Unresolved
+                        </span>
+                    {% endif %}
+                </div>
+                <p class="text-gray-600 dark:text-slate-400 mb-3">{{ error.error_message }}</p>
+                <div class="flex items-center gap-4 text-sm text-gray-500 dark:text-slate-400">
+                    <div class="flex items-center">
+                        <i class="fas fa-hashtag mr-1.5"></i>
+                        <span class="font-mono font-semibold text-primary">{{ error.error_id }}</span>
+                        <button onclick="copyToClipboard('{{ error.error_id }}')" class="ml-2 text-gray-400 dark:text-slate-500 hover:text-primary" title="Copy Error ID">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center">
+                        <i class="fas fa-redo mr-1.5"></i>
+                        <span>{{ error.occurrences|default(1) }} occurrence{{ error.occurrences|default(1) != 1 ? 's' : '' }}</span>
+                    </div>
+                    <div class="flex items-center">
+                        <i class="far fa-clock mr-1.5"></i>
+                        <span>Last: {{ (error.last_occurred_at|default(error.occurred_at))|date("M d, Y H:i:s") }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-gray-50 dark:bg-slate-900 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">File</p>
+                <p class="font-mono text-sm text-gray-900 dark:text-white break-all">{{ error.error_file }}</p>
+            </div>
+            <div>
+                <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">Line</p>
+                <p class="font-mono text-sm text-gray-900 dark:text-white">{{ error.error_line }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if isResolved and error.resolved_at %}
+<div class="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-lg p-4 mb-6">
+    <div class="flex items-start">
+        <i class="fas fa-check-circle text-green-600 dark:text-green-400 mt-0.5 mr-3"></i>
+        <div class="flex-1">
+            <h3 class="text-sm font-semibold text-green-900 dark:text-green-400 mb-2">Resolved</h3>
+            <div class="text-sm text-green-800 dark:text-green-300 space-y-1">
+                <p><strong>Date:</strong> {{ error.resolved_at|date("M d, Y H:i:s") }}</p>
+                {% if error.notes %}
+                    <p><strong>Notes:</strong> {{ error.notes }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Tabs -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mb-6">
+    <div class="border-b border-gray-200 dark:border-slate-700">
+        <nav class="-mb-px flex">
+            <button onclick="switchTab('stack-trace')" id="tab-stack-trace" class="tab-button active px-6 py-3 text-sm font-medium border-b-2 border-primary text-primary">
+                <i class="fas fa-layer-group mr-2"></i>Stack Trace
+            </button>
+            <button onclick="switchTab('request')" id="tab-request" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600">
+                <i class="fas fa-exchange-alt mr-2"></i>Request Data
+            </button>
+            <button onclick="switchTab('session')" id="tab-session" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600">
+                <i class="fas fa-user mr-2"></i>Session Data
+            </button>
+            <button onclick="switchTab('occurrences')" id="tab-occurrences" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600">
+                <i class="fas fa-history mr-2"></i>Occurrence Details ({{ error.occurrences|default(1) }})
+            </button>
+        </nav>
+    </div>
+
+    <div class="p-6">
+        <!-- Stack Trace Tab -->
+        <div id="content-stack-trace" class="tab-content">
+            {% if error.stack_trace_array is defined and error.stack_trace_array %}
+                <div class="space-y-2">
+                    {% for index, trace in error.stack_trace_array %}
+                        <div class="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4 hover:border-primary transition-colors">
+                            <div class="flex items-start">
+                                <div class="flex-shrink-0 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-semibold text-sm mr-3">
+                                    {{ index }}
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    {% if trace.file is defined %}
+                                        <p class="font-mono text-xs text-gray-600 dark:text-slate-400 break-all mb-1">
+                                            {{ trace.file }} 
+                                            <span class="text-primary font-semibold">line {{ trace.line|default('?') }}</span>
+                                        </p>
+                                    {% endif %}
+                                    {% if trace.function is defined %}
+                                        <p class="font-mono text-sm text-gray-900 dark:text-white">
+                                            {% if trace.class is defined %}
+                                                <span class="text-blue-600 dark:text-blue-400">{{ trace.class }}</span>{{ trace.type }}
+                                            {% endif %}
+                                            <span class="text-indigo-600 dark:text-indigo-400">{{ trace.function }}</span>()
+                                        </p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-gray-500 dark:text-slate-400 text-center py-8">No stack trace available</p>
+            {% endif %}
+        </div>
+
+        <!-- Request Data Tab -->
+        <div id="content-request" class="tab-content hidden">
+            {% if error.request_data is defined and error.request_data %}
+                <div class="space-y-4">
+                    <div>
+                        <h3 class="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-2">Request Info</h3>
+                        <div class="bg-gray-50 dark:bg-slate-900 rounded-lg p-4 font-mono text-xs">
+                            <p><strong>Method:</strong> {{ error.request_method }}</p>
+                            <p><strong>URI:</strong> {{ error.request_uri }}</p>
+                            <p><strong>IP:</strong> {{ error.ip_address }}</p>
+                            <p><strong>User Agent:</strong> {{ error.user_agent }}</p>
+                        </div>
+                    </div>
+                    {% for key, value in error.request_data %}
+                        <div>
+                            <h3 class="text-sm font-semibold text-gray-700 dark:text-slate-300 mb-2">{{ key|upper }}</h3>
+                            <pre class="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-xs">{{ value|json_encode(constant('JSON_PRETTY_PRINT')) }}</pre>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="text-gray-500 dark:text-slate-400 text-center py-8">No request data available</p>
+            {% endif %}
+        </div>
+
+        <!-- Session Data Tab -->
+        <div id="content-session" class="tab-content hidden">
+            {% if error.session_data is defined and error.session_data %}
+                <pre class="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-xs">{{ error.session_data|json_encode(constant('JSON_PRETTY_PRINT')) }}</pre>
+            {% else %}
+                <p class="text-gray-500 dark:text-slate-400 text-center py-8">No session data available</p>
+            {% endif %}
+        </div>
+
+        <!-- Occurrences Tab -->
+        <div id="content-occurrences" class="tab-content hidden">
+            <div class="space-y-4">
+                <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg p-4">
+                    <div class="flex items-start">
+                        <i class="fas fa-info-circle text-blue-600 dark:text-blue-400 mt-0.5 mr-3"></i>
+                        <div>
+                            <p class="text-sm font-semibold text-blue-900 dark:text-blue-400 mb-1">Error Occurrence Tracking</p>
+                            <p class="text-sm text-blue-800 dark:text-blue-300">
+                                This error has occurred <strong>{{ error.occurrences|default(1) }} time{{ error.occurrences|default(1) != 1 ? 's' : '' }}</strong>.
+                                Similar errors are automatically grouped together and the occurrence count is incremented.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-4">
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-3">Occurrence Information</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">First Occurred</p>
+                            <p class="text-sm text-gray-900 dark:text-white">{{ error.occurred_at|date("M d, Y H:i:s") }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">Last Occurred</p>
+                            <p class="text-sm text-gray-900 dark:text-white">{{ (error.last_occurred_at|default(error.occurred_at))|date("M d, Y H:i:s") }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">Total Occurrences</p>
+                            <p class="text-sm text-gray-900 dark:text-white">{{ error.occurrences|default(1) }}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">Request Details</p>
+                            <p class="text-xs text-gray-600 dark:text-slate-400">{{ error.request_method }} {{ error.request_uri }}</p>
+                            <p class="text-xs text-gray-600 dark:text-slate-400 mt-1">IP: {{ error.ip_address }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Information -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-6">
+    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Information</h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div>
+            <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">PHP Version</p>
+            <p class="text-sm text-gray-900 dark:text-white">{{ error.php_version }}</p>
+        </div>
+        <div>
+            <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">Memory Usage</p>
+            <p class="text-sm text-gray-900 dark:text-white">{{ error.memory_usage }}</p>
+        </div>
+        <div>
+            <p class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">First Occurred</p>
+            <p class="text-sm text-gray-900 dark:text-white">{{ error.occurred_at|date("M d, Y H:i:s") }}</p>
+        </div>
+    </div>
+</div>
+
+<!-- Resolution Notes Modal -->
+<div id="resolutionModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border w-full max-w-md shadow-lg rounded-lg bg-white">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900">
+                    <i class="fas fa-check-circle text-green-600 mr-2"></i>Mark Error as Resolved
+                </h3>
+                <button onclick="closeResolutionModal()" class="text-gray-400 hover:text-gray-600">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+            <div class="mb-4">
+                <label for="resolutionNotes" class="block text-sm font-medium text-gray-700 mb-2">Resolution Notes (Optional)</label>
+                <textarea id="resolutionNotes" rows="4" 
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                    placeholder="Describe how you resolved this error or any relevant notes..."></textarea>
+                <p class="mt-1 text-xs text-gray-500">Add any details about the fix or resolution for future reference.</p>
+            </div>
+            <div class="flex items-center justify-end gap-3">
+                <button onclick="closeResolutionModal()" class="px-4 py-2 bg-gray-200 dark:bg-slate-700 text-gray-800 dark:text-slate-200 rounded-lg hover:bg-gray-300 dark:hover:bg-slate-600 transition-colors text-sm font-medium">Cancel</button>
+                <button onclick="submitResolution()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
+                    <i class="fas fa-check mr-2"></i>Mark as Resolved
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(content => { content.classList.add('hidden'); });
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('active', 'border-primary', 'text-primary');
+        button.classList.add('border-transparent', 'text-gray-500', 'dark:text-slate-400');
+    });
+    document.getElementById('content-' + tabName).classList.remove('hidden');
+    const activeTab = document.getElementById('tab-' + tabName);
+    activeTab.classList.add('active', 'border-primary', 'text-primary');
+    activeTab.classList.remove('border-transparent', 'text-gray-500', 'dark:text-slate-400');
+}
+
+function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => { showCopySuccess(); }).catch(() => { fallbackCopy(text); });
+    } else {
+        fallbackCopy(text);
+    }
+}
+
+function fallbackCopy(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.left = '-999999px';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try { document.execCommand('copy'); showCopySuccess(); } catch (err) { console.error('Copy failed:', err); }
+    document.body.removeChild(textArea);
+}
+
+function copyErrorReport() {
+    const errorType = {{ error.error_type|default('Error')|json_encode|raw }};
+    const errorMessage = {{ error.error_message|default('Unknown error')|json_encode|raw }};
+    const errorFile = {{ error.error_file|default('Unknown')|json_encode|raw }};
+    const errorLine = {{ error.error_line|default('?')|json_encode|raw }};
+    const errorId = {{ error.error_id|default('N/A')|json_encode|raw }};
+    const phpVersion = {{ error.php_version|default('Unknown')|json_encode|raw }};
+    const memoryUsage = {{ error.memory_usage|default('Unknown')|json_encode|raw }};
+    const requestMethod = {{ error.request_method|default('GET')|json_encode|raw }};
+    const requestUri = {{ error.request_uri|default('/')|json_encode|raw }};
+    const userAgent = {{ error.user_agent|default('Unknown')|json_encode|raw }};
+    const ipAddress = {{ error.ip_address|default('Unknown')|json_encode|raw }};
+    const occurredAt = {{ error.occurred_at|date("Y-m-d H:i:s")|json_encode|raw }};
+    const lastOccurredAt = {{ (error.last_occurred_at|default(error.occurred_at))|date("Y-m-d H:i:s")|json_encode|raw }};
+    const occurrences = {{ error.occurrences|default(1)|json_encode|raw }};
+    const isResolved = {{ isResolved|json_encode|raw }};
+    const requestData = {{ error.request_data|default(null)|json_encode|raw }};
+    const sessionData = {{ error.session_data|default(null)|json_encode|raw }};
+
+    const traceFrames = document.querySelectorAll('#content-stack-trace .bg-gray-50');
+    let stackTrace = 'Not available';
+    if (traceFrames.length > 0) {
+        let traceLines = [];
+        traceFrames.forEach((frame, i) => {
+            const fileLine = frame.querySelector('.font-mono.text-xs');
+            const funcLine = frame.querySelector('.font-mono.text-sm');
+            let line = '#' + i + ' ';
+            if (fileLine) line += fileLine.textContent.trim().replace(/\s+/g, ' ');
+            if (funcLine) line += ' ' + funcLine.textContent.trim().replace(/\s+/g, '');
+            traceLines.push(line);
+        });
+        stackTrace = traceLines.join('\n');
+    }
+
+    let requestDataText = 'Not available';
+    if (requestData && typeof requestData === 'object' && Object.keys(requestData).length > 0) {
+        let sections = [];
+        for (const [key, value] of Object.entries(requestData)) {
+            sections.push(`  [${key.toUpperCase()}]\n  ${JSON.stringify(value, null, 2).split('\n').join('\n  ')}`);
+        }
+        requestDataText = sections.join('\n\n');
+    }
+
+    let sessionDataText = 'Not available';
+    if (sessionData && typeof sessionData === 'object' && Object.keys(sessionData).length > 0) {
+        sessionDataText = '  ' + JSON.stringify(sessionData, null, 2).split('\n').join('\n  ');
+    }
+
+    const errorReport = `=== DOMAIN MONITOR ERROR REPORT ===
+
+ERROR INFORMATION:
+- Error ID: ${errorId}
+- Type: ${errorType}
+- Message: ${errorMessage}
+- Status: ${isResolved ? 'Resolved' : 'Unresolved'}
+- Occurrences: ${occurrences}
+
+LOCATION:
+- File: ${errorFile}
+- Line: ${errorLine}
+
+REQUEST DETAILS:
+- Method: ${requestMethod}
+- URI: ${requestUri}
+- IP Address: ${ipAddress}
+- User Agent: ${userAgent}
+- First Occurred: ${occurredAt}
+- Last Occurred: ${lastOccurredAt}
+
+REQUEST DATA:
+${requestDataText}
+
+SESSION DATA:
+${sessionDataText}
+
+SYSTEM INFORMATION:
+- PHP Version: ${phpVersion}
+- Memory Usage: ${memoryUsage}
+
+STACK TRACE:
+${stackTrace}
+
+=== END OF ERROR REPORT ===
+
+Reference ID: ${errorId}
+Please include this report when reporting bugs.`;
+
+    copyToClipboard(errorReport);
+}
+
+function showCopySuccess() {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'fixed bottom-4 right-4 z-[9999] space-y-3 max-w-sm';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'toast bg-white dark:bg-slate-800 border-l-4 border-green-500 rounded-lg shadow-lg p-4 flex items-start animate-slide-in';
+    toast.innerHTML = '<div class="flex-shrink-0"><div class="w-8 h-8 bg-green-100 dark:bg-green-500/10 rounded-full flex items-center justify-center"><i class="fas fa-check text-green-600 dark:text-green-400 text-sm"></i></div></div><div class="ml-3 flex-1"><p class="text-sm font-medium text-gray-900 dark:text-white">Success</p><p class="text-sm text-gray-600 dark:text-slate-400 mt-0.5">Copied to clipboard!</p></div><button onclick="this.parentElement.remove()" class="ml-3 flex-shrink-0 text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300 transition-colors"><i class="fas fa-times text-sm"></i></button>';
+    container.appendChild(toast);
+    setTimeout(() => { toast.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out'; toast.style.opacity = '0'; toast.style.transform = 'translateX(100%)'; setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+function markResolved() {
+    document.getElementById('resolutionModal').classList.remove('hidden');
+}
+
+function closeResolutionModal() {
+    document.getElementById('resolutionModal').classList.add('hidden');
+    document.getElementById('resolutionNotes').value = '';
+}
+
+function submitResolution() {
+    const notes = document.getElementById('resolutionNotes').value;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/errors/{{ error.error_id }}/resolve';
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '{{ csrf_token() }}';
+    form.appendChild(csrfInput);
+    if (notes) {
+        const notesInput = document.createElement('input');
+        notesInput.type = 'hidden';
+        notesInput.name = 'notes';
+        notesInput.value = notes;
+        form.appendChild(notesInput);
+    }
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function deleteError() {
+    if (!confirm('Are you sure you want to delete this error and all its occurrences? This action cannot be undone.')) return;
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/errors/{{ error.error_id }}/delete';
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '{{ csrf_token() }}';
+    form.appendChild(csrfInput);
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
+{% endblock %}

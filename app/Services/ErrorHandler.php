@@ -297,7 +297,29 @@ class ErrorHandler
         $session_data = json_decode($errorData['session_data'], true);
         
         // Display debug page in development, clean 500 in production
-        if ($this->isDevelopment) {
+        $twigTemplate = $this->isDevelopment ? 'errors/debug.twig' : 'errors/500.twig';
+        $twigFile = __DIR__ . '/../Views/' . $twigTemplate;
+
+        if (file_exists($twigFile)) {
+            try {
+                $memory_usage_mb = round(($memory_usage ?? 0) / 1024 / 1024, 2);
+                $peak_memory_mb = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
+                $errorContext = compact(
+                    'error_id', 'error_type', 'error_message', 'error_file', 'error_line',
+                    'stack_trace', 'request_method', 'request_uri', 'user_agent',
+                    'ip_address', 'php_version', 'memory_usage', 'memory_usage_mb',
+                    'peak_memory_mb', 'occurred_at', 'user_info', 'request_data', 'session_data'
+                );
+                echo \Core\TwigService::getInstance()->render($twigTemplate, $errorContext);
+            } catch (\Throwable $e) {
+                // Twig itself failed — fall back to raw PHP view
+                if ($this->isDevelopment) {
+                    require __DIR__ . '/../Views/errors/debug.php';
+                } else {
+                    require __DIR__ . '/../Views/errors/500.php';
+                }
+            }
+        } elseif ($this->isDevelopment) {
             require __DIR__ . '/../Views/errors/debug.php';
         } else {
             require __DIR__ . '/../Views/errors/500.php';

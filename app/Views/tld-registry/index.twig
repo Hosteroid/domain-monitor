@@ -1,0 +1,842 @@
+{% extends 'layout/base.twig' %}
+
+{% set title = 'TLD Registry' %}
+{% set pageTitle = 'TLD Registry' %}
+{% set pageDescription = 'Manage Top-Level Domain registry information' %}
+{% set pageIcon = 'fas fa-database' %}
+
+{% set currentFilters = filters|default({search: '', sort: 'tld', order: 'asc'}) %}
+
+{% block content %}
+
+{# Action Buttons #}
+{% if session.role is defined and session.role == 'admin' %}
+<div class="mb-4 flex flex-wrap gap-2 justify-end">
+    {# IANA Dropdown #}
+    <div class="relative" id="ianaDropdownWrapper">
+        <button onclick="document.getElementById('ianaDropdownMenu').classList.toggle('hidden')" class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors font-medium">
+            <i class="fas fa-globe mr-2"></i>
+            IANA
+            <i class="fas fa-chevron-down ml-2 text-xs"></i>
+        </button>
+        <div id="ianaDropdownMenu" class="hidden absolute right-0 mt-1 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-30 overflow-hidden">
+            <form method="POST" action="/tld-registry/start-progressive-import">
+                {{ csrf_field() }}
+                <input type="hidden" name="import_type" value="complete_workflow">
+                <button type="submit" class="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors" title="Complete TLD import workflow: TLD List → RDAP → WHOIS → Registry URLs">
+                    <i class="fas fa-rocket text-indigo-600 mr-2.5"></i>
+                    Import TLDs from IANA
+                </button>
+            </form>
+            <form method="POST" action="/tld-registry/start-progressive-import">
+                {{ csrf_field() }}
+                <input type="hidden" name="import_type" value="check_updates">
+                <button type="submit" {{ tldStats.total == 0 ? 'disabled' : '' }} class="w-full flex items-center px-4 py-2.5 text-sm {{ tldStats.total == 0 ? 'text-gray-400 dark:text-slate-500 cursor-not-allowed' : 'text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700' }} transition-colors border-t border-gray-100 dark:border-slate-700" title="{{ tldStats.total == 0 ? 'Import TLDs first' : 'Check for IANA updates' }}">
+                    <i class="fas fa-sync-alt text-blue-600 mr-2.5"></i>
+                    Check for Updates
+                </button>
+            </form>
+            <a href="/tld-registry/import-logs" class="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors border-t border-gray-100 dark:border-slate-700">
+                <i class="fas fa-history text-gray-500 dark:text-slate-400 mr-2.5"></i>
+                IANA Import Logs
+            </a>
+        </div>
+    </div>
+    {# Export Dropdown #}
+    <div class="relative" id="tldExportDropdownWrapper">
+        <button onclick="document.getElementById('tldExportDropdownMenu').classList.toggle('hidden')" class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition-colors font-medium">
+            <i class="fas fa-download mr-2"></i>
+            Export
+            <i class="fas fa-chevron-down ml-2 text-xs"></i>
+        </button>
+        <div id="tldExportDropdownMenu" class="hidden absolute right-0 mt-1 w-44 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-30 overflow-hidden">
+            <a href="/tld-registry/export?format=csv" class="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                <i class="fas fa-file-csv text-green-600 mr-2.5"></i>
+                Export as CSV
+            </a>
+            <a href="/tld-registry/export?format=json" class="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors border-t border-gray-100 dark:border-slate-700">
+                <i class="fas fa-file-code text-blue-600 mr-2.5"></i>
+                Export as JSON
+            </a>
+        </div>
+    </div>
+    {# Import Button #}
+    <button onclick="document.getElementById('tldImportModal').classList.remove('hidden')" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+        <i class="fas fa-upload mr-2"></i>
+        Import
+    </button>
+    {# Create Button #}
+    <button onclick="openCreateTldModal()" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+        <i class="fas fa-plus mr-2"></i>
+        Create TLD
+    </button>
+</div>
+{% else %}
+<div class="mb-4 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/30 rounded-lg p-4">
+    <div class="flex items-center">
+        <i class="fas fa-info-circle text-yellow-600 mr-2"></i>
+        <p class="text-sm text-yellow-800 dark:text-yellow-400">
+            View-only mode. Contact admin to import or modify TLD data.
+        </p>
+    </div>
+</div>
+{% endif %}
+
+{# Statistics Cards #}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    {# Total TLDs Card #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow duration-200">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">Total TLDs</p>
+                <p class="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{{ tldStats.total|default(0) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-blue-50 dark:bg-blue-500/10 rounded-lg flex items-center justify-center">
+                <i class="fas fa-globe text-blue-600 dark:text-blue-400 text-lg"></i>
+            </div>
+        </div>
+    </div>
+
+    {# Active TLDs Card #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow duration-200">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">Active</p>
+                <p class="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{{ tldStats.active|default(0) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-green-50 dark:bg-green-500/10 rounded-lg flex items-center justify-center">
+                <i class="fas fa-check-circle text-green-600 dark:text-green-400 text-lg"></i>
+            </div>
+        </div>
+    </div>
+
+    {# With RDAP Card #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow duration-200">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">With RDAP</p>
+                <p class="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{{ tldStats.with_rdap|default(0) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-indigo-50 dark:bg-indigo-500/10 rounded-lg flex items-center justify-center">
+                <i class="fas fa-database text-indigo-600 dark:text-indigo-400 text-lg"></i>
+            </div>
+        </div>
+    </div>
+
+    {# With WHOIS Card #}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 hover:shadow-md transition-shadow duration-200">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">With WHOIS</p>
+                <p class="text-2xl font-semibold text-gray-900 dark:text-white mt-1">{{ tldStats.with_whois|default(0) }}</p>
+            </div>
+            <div class="w-12 h-12 bg-orange-50 dark:bg-orange-500/10 rounded-lg flex items-center justify-center">
+                <i class="fas fa-server text-orange-600 dark:text-orange-400 text-lg"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Search and Filters #}
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 mb-4">
+    <form method="GET" action="/tld-registry" id="filter-form">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {# Search #}
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Search TLDs</label>
+                <div class="relative">
+                    <input type="text" name="search" id="tldSearch" value="{{ currentFilters.search }}" placeholder="Search TLDs..." class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-xs"></i>
+                </div>
+            </div>
+
+            {# Status Filter #}
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Status</label>
+                <select name="status" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                    <option value="">All Status</option>
+                    <option value="active" {{ currentFilters.status|default('') == 'active' ? 'selected' : '' }}>Active</option>
+                    <option value="inactive" {{ currentFilters.status|default('') == 'inactive' ? 'selected' : '' }}>Inactive</option>
+                </select>
+            </div>
+
+            {# Data Type Filter #}
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Data Type</label>
+                <select name="data_type" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                    <option value="">All Types</option>
+                    <option value="with_rdap" {{ currentFilters.data_type|default('') == 'with_rdap' ? 'selected' : '' }}>With RDAP</option>
+                    <option value="with_whois" {{ currentFilters.data_type|default('') == 'with_whois' ? 'selected' : '' }}>With WHOIS</option>
+                    <option value="with_registry" {{ currentFilters.data_type|default('') == 'with_registry' ? 'selected' : '' }}>With Registry URL</option>
+                    <option value="missing_data" {{ currentFilters.data_type|default('') == 'missing_data' ? 'selected' : '' }}>Missing Data</option>
+                </select>
+            </div>
+
+            {# Actions #}
+            <div class="flex items-end space-x-2">
+                <button type="submit" class="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+                    <i class="fas fa-filter mr-2"></i>
+                    Apply
+                </button>
+                <a href="/tld-registry" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm font-medium">
+                    <i class="fas fa-times mr-2"></i>
+                    Clear
+                </a>
+            </div>
+        </div>
+        <input type="hidden" name="sort" value="{{ currentFilters.sort }}">
+        <input type="hidden" name="order" value="{{ currentFilters.order }}">
+    </form>
+</div>
+
+{# Pagination Info & Per Page Selector #}
+<div class="mb-4 flex justify-between items-center">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Showing <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_from }}</span> to
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_to }}</span> of
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.total }}</span> TLD(s)
+    </div>
+
+    <form method="GET" action="/tld-registry" class="flex items-center gap-2">
+        <input type="hidden" name="search" value="{{ currentFilters.search }}">
+        <input type="hidden" name="sort" value="{{ currentFilters.sort }}">
+        <input type="hidden" name="order" value="{{ currentFilters.order }}">
+
+        <label for="per_page" class="text-sm text-gray-600 dark:text-slate-400">Show:</label>
+        <select name="per_page" id="per_page" onchange="this.form.submit()" class="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+            <option value="10" {{ pagination.per_page == 10 ? 'selected' : '' }}>10</option>
+            <option value="25" {{ pagination.per_page == 25 ? 'selected' : '' }}>25</option>
+            <option value="50" {{ pagination.per_page == 50 ? 'selected' : '' }}>50</option>
+            <option value="100" {{ pagination.per_page == 100 ? 'selected' : '' }}>100</option>
+        </select>
+    </form>
+</div>
+
+{# TLD Registry Table #}
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+    {% if session.role is defined and session.role == 'admin' %}
+    {# Bulk Actions Bar #}
+    <div id="bulk-actions" class="hidden px-6 py-3 bg-blue-50 dark:bg-blue-500/10 border-b border-blue-200 dark:border-blue-500/30 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <span id="selected-count" class="text-sm font-medium text-gray-700 dark:text-slate-300"></span>
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                    <form method="POST" action="/tld-registry/bulk-delete" id="bulk-delete-form" class="inline">
+                        {{ csrf_field() }}
+                        <button type="button" onclick="confirmBulkDelete()" class="inline-flex items-center px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+                            <i class="fas fa-trash mr-1"></i> Delete Selected
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <button type="button" onclick="clearSelection()" class="inline-flex items-center text-sm font-medium text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-blue-100 dark:hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors">
+            <i class="fas fa-times mr-1.5"></i> Clear Selection
+        </button>
+    </div>
+    {% endif %}
+    {% if tlds is not empty %}
+        {# Table View (Desktop) #}
+        <div class="hidden lg:block overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        {% if session.role is defined and session.role == 'admin' %}
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                            <input type="checkbox" id="select-all" class="rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary" onchange="toggleAllCheckboxes(this)">
+                        </th>
+                        {% endif %}
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                            <a href="{{ sort_url('tld', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                                TLD {{ sort_icon('tld', currentFilters.sort, currentFilters.order)|raw }}
+                            </a>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                            <a href="{{ sort_url('rdap_servers', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                                RDAP Servers {{ sort_icon('rdap_servers', currentFilters.sort, currentFilters.order)|raw }}
+                            </a>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                            <a href="{{ sort_url('whois_server', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                                WHOIS Server {{ sort_icon('whois_server', currentFilters.sort, currentFilters.order)|raw }}
+                            </a>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                            <a href="{{ sort_url('updated_at', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                                Last Updated {{ sort_icon('updated_at', currentFilters.sort, currentFilters.order)|raw }}
+                            </a>
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                            <a href="{{ sort_url('is_active', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                                Status {{ sort_icon('is_active', currentFilters.sort, currentFilters.order)|raw }}
+                            </a>
+                        </th>
+                        <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for tld in tlds %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors duration-150">
+                            {% if session.role is defined and session.role == 'admin' %}
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <input type="checkbox" name="tld_ids[]" value="{{ tld.id }}" class="tld-checkbox rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary">
+                            </td>
+                            {% endif %}
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="flex items-center">
+                                    <div class="flex-shrink-0 h-10 w-10 bg-primary bg-opacity-10 rounded-lg flex items-center justify-center">
+                                        <i class="fas fa-globe text-primary"></i>
+                                    </div>
+                                    <div class="ml-4">
+                                        <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ tld.tld }}</div>
+                                        {% if tld.registry_url %}
+                                        <div class="text-sm text-gray-500 dark:text-slate-400">
+                                            <a href="{{ tld.registry_url }}" target="_blank" class="text-primary hover:text-primary-dark">
+                                                <i class="fas fa-external-link-alt mr-1"></i>
+                                                Registry
+                                            </a>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="px-6 py-4">
+                                {% if tld.rdap_servers %}
+                                    {% set rdapServers = tld.rdap_servers|from_json %}
+                                    {% if rdapServers is iterable and rdapServers is not empty %}
+                                    <div class="text-sm text-gray-900 dark:text-white">
+                                        {% for server in rdapServers|slice(0, 2) %}
+                                        <div class="font-mono text-xs bg-gray-50 dark:bg-slate-700 px-2 py-1 rounded mb-1 text-gray-900 dark:text-white">{{ server }}</div>
+                                        {% endfor %}
+                                        {% if rdapServers|length > 2 %}
+                                        <div class="text-xs text-gray-500 dark:text-slate-400">+{{ rdapServers|length - 2 }} more</div>
+                                        {% endif %}
+                                    </div>
+                                    {% else %}
+                                    <span class="text-sm text-gray-400 dark:text-slate-500">None</span>
+                                    {% endif %}
+                                {% else %}
+                                <span class="text-sm text-gray-400 dark:text-slate-500">None</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                {% if tld.whois_server %}
+                                <div class="text-sm font-mono text-gray-900 dark:text-white bg-gray-50 dark:bg-slate-700 px-2 py-1 rounded">{{ tld.whois_server }}</div>
+                                {% else %}
+                                <span class="text-sm text-gray-400 dark:text-slate-500">None</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400">
+                                {% if tld.updated_at %}
+                                <div class="flex items-center">
+                                    <i class="far fa-clock mr-2"></i>
+                                    {{ tld.updated_at|date('M d, H:i') }}
+                                </div>
+                                {% else %}
+                                <span class="text-gray-400 dark:text-slate-500">Never</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border {{ tld.is_active ? 'bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 border-green-200 dark:border-green-500/30' : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 border-gray-200 dark:border-slate-600' }}">
+                                    <i class="fas {{ tld.is_active ? 'fa-check-circle' : 'fa-pause-circle' }} mr-1"></i>
+                                    {{ tld.is_active ? 'Active' : 'Inactive' }}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <div class="flex items-center justify-end space-x-2">
+                                    <a href="/tld-registry/{{ tld.id }}" class="text-blue-600 hover:text-blue-800" title="View">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    {% if session.role is defined and session.role == 'admin' %}
+                                    <a href="/tld-registry/{{ tld.id }}/refresh" class="text-green-600 hover:text-green-800" title="Refresh" onclick="return confirm('Refresh TLD data from IANA?')">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </a>
+                                    <a href="/tld-registry/{{ tld.id }}/toggle-active" class="text-orange-600 hover:text-orange-800" title="Toggle Status" onclick="return confirm('Toggle TLD status?')">
+                                        <i class="fas fa-power-off"></i>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {# Card View (Mobile) #}
+        <div class="lg:hidden divide-y divide-gray-200 dark:divide-slate-700">
+            {% for tld in tlds %}
+                <div class="p-6 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors duration-150">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 bg-primary bg-opacity-10 rounded-lg flex items-center justify-center mr-3">
+                                <i class="fas fa-globe text-primary"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-gray-900 dark:text-white">{{ tld.tld }}</h3>
+                                {% if tld.registry_url %}
+                                <a href="{{ tld.registry_url }}" target="_blank" class="text-xs text-primary hover:text-primary-dark">
+                                    <i class="fas fa-external-link-alt mr-1"></i>
+                                    Registry
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold {{ tld.is_active ? 'bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300' }}">
+                            {{ tld.is_active ? 'Active' : 'Inactive' }}
+                        </span>
+                    </div>
+
+                    <div class="space-y-2 text-sm">
+                        {% if tld.rdap_servers %}
+                            {% set rdapServers = tld.rdap_servers|from_json %}
+                            {% if rdapServers is iterable and rdapServers is not empty %}
+                            <div class="flex items-start">
+                                <i class="fas fa-database text-gray-400 dark:text-slate-500 mr-2 w-4 mt-0.5"></i>
+                                <div class="flex-1">
+                                    <div class="font-mono text-xs bg-gray-50 dark:bg-slate-700 px-2 py-1 rounded mb-1 text-gray-900 dark:text-white">{{ rdapServers[0] }}</div>
+                                    {% if rdapServers|length > 1 %}
+                                    <div class="text-xs text-gray-500 dark:text-slate-400">+{{ rdapServers|length - 1 }} more RDAP server(s)</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endif %}
+                        {% endif %}
+
+                        {% if tld.whois_server %}
+                        <div class="flex items-center">
+                            <i class="fas fa-server text-gray-400 dark:text-slate-500 mr-2 w-4"></i>
+                            <span class="font-mono text-xs bg-gray-50 dark:bg-slate-700 px-2 py-1 rounded text-gray-900 dark:text-white">{{ tld.whois_server }}</span>
+                        </div>
+                        {% endif %}
+
+                        <div class="flex items-center">
+                            <i class="far fa-clock text-gray-400 dark:text-slate-500 mr-2 w-4"></i>
+                            <span class="text-gray-500 dark:text-slate-400">{{ tld.updated_at ? tld.updated_at|date('M d, H:i') : 'Never updated' }}</span>
+                        </div>
+                    </div>
+
+                    <div class="flex space-x-2 mt-3">
+                        <a href="/tld-registry/{{ tld.id }}" class="{{ (session.role is defined and session.role == 'admin') ? 'flex-1' : 'w-full' }} px-3 py-1.5 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded text-center text-sm hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors">
+                            <i class="fas fa-eye mr-1"></i> View
+                        </a>
+                        {% if session.role is defined and session.role == 'admin' %}
+                        <a href="/tld-registry/{{ tld.id }}/refresh" class="flex-1 px-3 py-1.5 bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 rounded text-center text-sm hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors" onclick="return confirm('Refresh TLD data?')">
+                            <i class="fas fa-sync-alt mr-1"></i> Refresh
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="text-center py-12 px-6">
+            <div class="mb-4">
+                <i class="fas fa-globe text-gray-300 dark:text-slate-600 text-6xl"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-700 dark:text-slate-300 mb-1">No TLDs Found</h3>
+            <p class="text-sm text-gray-500 dark:text-slate-400 mb-4">
+                {% if currentFilters.search is not empty %}
+                    No TLDs match your search criteria.
+                {% else %}
+                    Start by importing the TLD list from IANA.
+                {% endif %}
+            </p>
+            {% if currentFilters.search is empty %}
+            <form method="POST" action="/tld-registry/start-progressive-import" class="inline">
+                {{ csrf_field() }}
+                <input type="hidden" name="import_type" value="complete_workflow">
+                <button type="submit" class="inline-flex items-center px-5 py-2.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                    <i class="fas fa-rocket mr-2"></i>
+                    Import TLDs
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>
+
+{# Pagination Controls #}
+{% if pagination.total_pages > 1 %}
+<div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Page <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.current_page }}</span> of
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.total_pages }}</span>
+    </div>
+
+    <div class="flex items-center gap-1">
+        {% set currentPage = pagination.current_page %}
+        {% set totalPages = pagination.total_pages %}
+
+        {# First Page #}
+        {% if currentPage > 1 %}
+            <a href="{{ pagination_url(1, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-double-left"></i>
+            </a>
+        {% endif %}
+
+        {# Previous Page #}
+        {% if currentPage > 1 %}
+            <a href="{{ pagination_url(currentPage - 1, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-left"></i> Previous
+            </a>
+        {% endif %}
+
+        {# Page Numbers #}
+        {% set range = 2 %}
+        {% set start = max(1, currentPage - range) %}
+        {% set end = min(totalPages, currentPage + range) %}
+
+        {% if start > 1 %}
+            <a href="{{ pagination_url(1, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">1</a>
+            {% if start > 2 %}
+                <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+            {% endif %}
+        {% endif %}
+
+        {% for i in start..end %}
+            {% if i == currentPage %}
+                <span class="px-3 py-2 text-sm bg-primary text-white rounded-lg font-semibold">{{ i }}</span>
+            {% else %}
+                <a href="{{ pagination_url(i, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ i }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if end < totalPages %}
+            {% if end < totalPages - 1 %}
+                <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+            {% endif %}
+            <a href="{{ pagination_url(totalPages, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ totalPages }}</a>
+        {% endif %}
+
+        {# Next Page #}
+        {% if currentPage < totalPages %}
+            <a href="{{ pagination_url(currentPage + 1, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                Next <i class="fas fa-angle-right"></i>
+            </a>
+        {% endif %}
+
+        {# Last Page #}
+        {% if currentPage < totalPages %}
+            <a href="{{ pagination_url(totalPages, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-double-right"></i>
+            </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# Create TLD Modal #}
+<div id="createTldModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl max-w-md w-full">
+            <form method="POST" action="/tld-registry/create">
+                <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Create New TLD</h3>
+                </div>
+
+                <div class="px-6 py-4 space-y-4">
+                    <div>
+                        <label for="create_tld" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">TLD Name</label>
+                        <input type="text" id="create_tld" name="tld" required
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 text-gray-900 dark:text-white"
+                               placeholder="e.g., .com, .xyz, .co.uk">
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">The dot prefix will be added automatically. Multi-level TLDs supported (e.g., co.uk, com.au)</p>
+                    </div>
+
+                    <div>
+                        <label for="create_whois_server" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">WHOIS Server (Optional)</label>
+                        <input type="text" id="create_whois_server" name="whois_server"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 text-gray-900 dark:text-white"
+                               placeholder="e.g., whois.verisign-grs.com">
+                    </div>
+
+                    <div>
+                        <label for="create_rdap_servers" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">RDAP Servers (Optional)</label>
+                        <textarea id="create_rdap_servers" name="rdap_servers" rows="2"
+                                  class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 text-gray-900 dark:text-white"
+                                  placeholder="e.g., https://rdap.verisign.com/com/v1/"></textarea>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">One URL per line or comma-separated</p>
+                    </div>
+
+                    <div>
+                        <label for="create_registry_url" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Registry URL (Optional)</label>
+                        <input type="url" id="create_registry_url" name="registry_url"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 text-gray-900 dark:text-white"
+                               placeholder="e.g., https://www.verisign.com">
+                    </div>
+                </div>
+
+                <div class="px-6 py-4 bg-gray-50 dark:bg-slate-900 flex justify-end space-x-3 rounded-b-lg">
+                    <button type="button" onclick="closeCreateTldModal()"
+                            class="px-4 py-2 text-sm font-medium text-gray-700 dark:text-slate-300 bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-md hover:bg-gray-50 dark:hover:bg-slate-700">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700">
+                        Create TLD
+                    </button>
+                </div>
+
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            </form>
+        </div>
+    </div>
+</div>
+
+{# Import TLD Modal #}
+<div id="tldImportModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                <i class="fas fa-upload text-primary mr-2"></i>Import TLDs
+            </h3>
+            <button onclick="document.getElementById('tldImportModal').classList.add('hidden')" class="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="/tld-registry/import" enctype="multipart/form-data" id="tldImportForm">
+            {{ csrf_field() }}
+            <div class="p-6 space-y-4">
+                {# Drag & Drop Zone #}
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Select File</label>
+                    <div id="tldDropzone" class="relative border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 text-center cursor-pointer transition-all hover:border-primary hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <input type="file" name="import_file" accept=".csv,.json" required id="tldFileInput"
+                               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="tldDropzoneContent">
+                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 dark:text-slate-500 mb-2"></i>
+                            <p class="text-sm text-gray-600 dark:text-slate-400 font-medium">Drag & drop your file here</p>
+                            <p class="text-xs text-gray-400 dark:text-slate-500 my-1">or</p>
+                            <span class="inline-flex items-center px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-medium">
+                                <i class="fas fa-folder-open mr-1.5"></i>Browse Files
+                            </span>
+                            <p class="mt-2.5 text-xs text-gray-400 dark:text-slate-500">CSV, JSON &middot; Max {{ max_upload_size() }}</p>
+                        </div>
+                        <div id="tldDropzoneFile" class="hidden">
+                            <i class="fas fa-file-alt text-2xl text-primary mb-1.5"></i>
+                            <p class="text-sm font-medium text-gray-700 dark:text-slate-300" id="tldFileName"></p>
+                            <p class="text-xs text-gray-400 dark:text-slate-500" id="tldFileSize"></p>
+                            <button type="button" id="tldFileRemove" class="mt-1.5 text-xs text-red-500 hover:text-red-700 font-medium">
+                                <i class="fas fa-trash-alt mr-1"></i>Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-lg p-3">
+                    <p class="text-xs text-gray-700 dark:text-slate-300 font-medium mb-1"><i class="fas fa-info-circle text-blue-500 mr-1"></i> Expected Format</p>
+                    <p class="text-xs text-gray-600 dark:text-slate-400">CSV columns: <code class="bg-white dark:bg-slate-800 px-1 rounded">tld, whois_server, rdap_servers, registry_url, is_active</code></p>
+                    <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">JSON: array of objects with same fields</p>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Existing TLDs will be updated. New TLDs will be created as active.</p>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="document.getElementById('tldImportModal').classList.add('hidden')" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" id="tldImportBtn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                    <i class="fas fa-upload mr-1.5"></i>Import TLDs
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function toggleAllCheckboxes(selectAllCheckbox) {
+    const checkboxes = document.querySelectorAll('.tld-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const checkboxes = document.querySelectorAll('.tld-checkbox:checked');
+    const count = checkboxes.length;
+    const bulkActions = document.getElementById('bulk-actions');
+    const selectedCount = document.getElementById('selected-count');
+    const selectAllCheckbox = document.getElementById('select-all');
+
+    if (count > 0) {
+        bulkActions.classList.remove('hidden');
+        selectedCount.textContent = count + ' TLD(s) selected';
+    } else {
+        bulkActions.classList.add('hidden');
+    }
+
+    const allCheckboxes = document.querySelectorAll('.tld-checkbox');
+    if (selectAllCheckbox) {
+        if (count === 0) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = false;
+        } else if (count === allCheckboxes.length) {
+            selectAllCheckbox.indeterminate = false;
+            selectAllCheckbox.checked = true;
+        } else {
+            selectAllCheckbox.indeterminate = true;
+        }
+    }
+}
+
+function clearSelection() {
+    const checkboxes = document.querySelectorAll('.tld-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = false;
+    });
+    const selectAllCheckbox = document.getElementById('select-all');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+    }
+    updateSelectedCount();
+}
+
+function confirmBulkDelete() {
+    const checkboxes = document.querySelectorAll('.tld-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('Please select TLDs to delete');
+        return;
+    }
+
+    if (confirm(`Are you sure you want to delete ${checkboxes.length} selected TLD(s)? This action cannot be undone.`)) {
+        const form = document.getElementById('bulk-delete-form');
+        checkboxes.forEach(checkbox => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'tld_ids[]';
+            input.value = checkbox.value;
+            form.appendChild(input);
+        });
+        form.submit();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('.tld-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedCount);
+    });
+    updateSelectedCount();
+});
+
+function openCreateTldModal() {
+    document.getElementById('createTldModal').classList.remove('hidden');
+    document.getElementById('create_tld').focus();
+}
+
+function closeCreateTldModal() {
+    document.getElementById('createTldModal').classList.add('hidden');
+    document.querySelector('#createTldModal form').reset();
+}
+
+document.getElementById('createTldModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeCreateTldModal();
+    }
+});
+
+document.getElementById('tldImportModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        document.getElementById('tldImportModal').classList.add('hidden');
+    }
+});
+
+document.addEventListener('click', function(e) {
+    const exportWrapper = document.getElementById('tldExportDropdownWrapper');
+    if (exportWrapper && !exportWrapper.contains(e.target)) {
+        document.getElementById('tldExportDropdownMenu').classList.add('hidden');
+    }
+    const ianaWrapper = document.getElementById('ianaDropdownWrapper');
+    if (ianaWrapper && !ianaWrapper.contains(e.target)) {
+        document.getElementById('ianaDropdownMenu').classList.add('hidden');
+    }
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeCreateTldModal();
+        document.getElementById('tldImportModal').classList.add('hidden');
+    }
+});
+
+(function() {
+    const dropzone = document.getElementById('tldDropzone');
+    const fileInput = document.getElementById('tldFileInput');
+    const content = document.getElementById('tldDropzoneContent');
+    const fileInfo = document.getElementById('tldDropzoneFile');
+    const fileName = document.getElementById('tldFileName');
+    const fileSize = document.getElementById('tldFileSize');
+    const removeBtn = document.getElementById('tldFileRemove');
+    const form = document.getElementById('tldImportForm');
+    const submitBtn = document.getElementById('tldImportBtn');
+
+    if (!dropzone) return;
+
+    function formatSize(bytes) {
+        if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+        if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return bytes + ' B';
+    }
+
+    function showFile(file) {
+        fileName.textContent = file.name;
+        fileSize.textContent = formatSize(file.size);
+        content.classList.add('hidden');
+        fileInfo.classList.remove('hidden');
+        dropzone.classList.remove('border-gray-300');
+        dropzone.classList.add('border-primary', 'bg-primary/5');
+    }
+
+    function resetDropzone() {
+        fileInput.value = '';
+        content.classList.remove('hidden');
+        fileInfo.classList.add('hidden');
+        dropzone.classList.add('border-gray-300');
+        dropzone.classList.remove('border-primary', 'bg-primary/5');
+    }
+
+    fileInput.addEventListener('change', function() {
+        if (this.files.length) showFile(this.files[0]);
+    });
+
+    removeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        resetDropzone();
+    });
+
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            dropzone.classList.add('border-primary', 'bg-primary/5');
+            dropzone.classList.remove('border-gray-300');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            if (!fileInput.files.length) {
+                dropzone.classList.remove('border-primary', 'bg-primary/5');
+                dropzone.classList.add('border-gray-300');
+            }
+        });
+    });
+
+    dropzone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            fileInput.files = files;
+            showFile(files[0]);
+        }
+    });
+
+    form.addEventListener('submit', function() {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Importing...';
+    });
+})();
+</script>
+
+{% endblock %}

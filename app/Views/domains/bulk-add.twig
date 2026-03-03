@@ -1,0 +1,425 @@
+{% extends 'layout/base.twig' %}
+
+{% set title = 'Bulk Add Domains' %}
+{% set pageTitle = 'Bulk Add Domains' %}
+{% set pageDescription = 'Add multiple domains at once' %}
+{% set pageIcon = 'fas fa-layer-group' %}
+
+{% block content %}
+
+<!-- Main Container -->
+<div class="max-w-4xl mx-auto">
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+            <button onclick="switchTab('paste')" id="tab-paste" class="px-6 py-3 text-sm font-medium border-b-2 border-primary text-primary bg-white dark:bg-slate-800 transition-colors">
+                <i class="fas fa-keyboard mr-2"></i>Paste Domains
+            </button>
+            <button onclick="switchTab('import')" id="tab-import" class="px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600 transition-colors">
+                <i class="fas fa-file-upload mr-2"></i>Import from File
+            </button>
+        </div>
+
+        <!-- Tab 1: Paste Domains -->
+        <div id="panel-paste" class="p-6">
+            <form method="POST" action="/domains/bulk-add" class="space-y-5">
+                {{ csrf_field() }}
+                <!-- Domains Textarea -->
+                <div>
+                    <label for="domains" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Domain Names *
+                    </label>
+                    <textarea 
+                        id="domains" 
+                        name="domains" 
+                        rows="10"
+                        class="w-full px-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm font-mono" 
+                        placeholder="example.com&#10;google.com&#10;github.com&#10;..."
+                        required
+                        autofocus></textarea>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                        Enter one domain per line. Domains without http:// or www.
+                    </p>
+                </div>
+
+                <!-- Tags -->
+                <div>
+                    <label for="tags-input" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Tags
+                        <span class="text-gray-400 dark:text-slate-500 font-normal">(Optional)</span>
+                    </label>
+                    
+                    <div id="tags-display" class="min-h-[40px] p-2 border border-gray-300 dark:border-slate-600 rounded-lg mb-2 flex flex-wrap gap-1.5 bg-gray-50 dark:bg-slate-900"></div>
+                    
+                    <div class="relative">
+                        <i class="fas fa-tag absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-sm"></i>
+                        <input type="text" 
+                               id="tags-input" 
+                               class="w-full pl-10 pr-20 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm" 
+                               placeholder="Type any tag and press Enter or comma..."
+                               onkeydown="handleTagInput(event)">
+                        <button type="button" onclick="addTagFromInput()" class="absolute right-2 top-1/2 transform -translate-y-1/2 px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary-dark">
+                            Add
+                        </button>
+                    </div>
+                    
+                    <input type="hidden" id="tags" name="tags" value="">
+                    
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        All imported domains will be tagged with these tags.
+                    </p>
+                    
+                    <div class="mt-2">
+                        <p class="text-xs text-gray-600 dark:text-slate-400 mb-1.5">Available Tags:</p>
+                        <div class="flex flex-wrap gap-1.5">
+                            {% for tag in availableTags %}
+                                <button type="button" onclick="addTag('{{ tag.name }}')" 
+                                        class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border {{ tag.color }} hover:opacity-80 transition-colors">
+                                    <i class="fas fa-plus mr-1" style="font-size: 8px;"></i>
+                                    {{ tag.name }}
+                                </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notification Group -->
+                <div>
+                    <label for="notification_group_id" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Notification Group (Optional)
+                    </label>
+                    <select id="notification_group_id" 
+                            name="notification_group_id" 
+                            class="w-full px-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm">
+                        <option value="">-- No Group (No notifications) --</option>
+                        {% for group in groups %}
+                            <option value="{{ group.id }}">{{ group.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                        Assign all domains to this notification group
+                    </p>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-col sm:flex-row gap-3 pt-3">
+                    <button type="submit" 
+                            class="inline-flex items-center justify-center px-5 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors text-sm">
+                        <i class="fas fa-plus-circle mr-2"></i>
+                        Add All Domains
+                    </button>
+                    <a href="/domains" 
+                       class="inline-flex items-center justify-center px-5 py-2.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm">
+                        <i class="fas fa-times mr-2"></i>
+                        Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Tab 2: Import from File -->
+        <div id="panel-import" class="hidden p-6">
+            <form method="POST" action="/domains/import" enctype="multipart/form-data" class="space-y-5" id="domainImportForm">
+                {{ csrf_field() }}
+                
+                <!-- Drag & Drop Zone -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Select File *
+                    </label>
+                    <div id="domainDropzone" class="relative border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-8 text-center cursor-pointer transition-all hover:border-primary hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <input type="file" name="import_file" accept=".csv,.json" required id="domainFileInput"
+                               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="domainDropzoneContent">
+                            <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 dark:text-slate-500 mb-3"></i>
+                            <p class="text-sm text-gray-600 dark:text-slate-400 font-medium">Drag & drop your file here</p>
+                            <p class="text-xs text-gray-400 dark:text-slate-500 my-1.5">or</p>
+                            <span class="inline-flex items-center px-4 py-2 bg-primary text-white text-xs rounded-lg font-medium">
+                                <i class="fas fa-folder-open mr-1.5"></i>Browse Files
+                            </span>
+                            <p class="mt-3 text-xs text-gray-400 dark:text-slate-500">CSV, JSON &middot; Max {{ max_upload_size() }}</p>
+                        </div>
+                        <div id="domainDropzoneFile" class="hidden">
+                            <i class="fas fa-file-alt text-2xl text-primary mb-1.5"></i>
+                            <p class="text-sm font-medium text-gray-700 dark:text-slate-300" id="domainFileName"></p>
+                            <p class="text-xs text-gray-400 dark:text-slate-500" id="domainFileSize"></p>
+                            <button type="button" id="domainFileRemove" class="mt-1.5 text-xs text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium">
+                                <i class="fas fa-trash-alt mr-1"></i>Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expected Format Info -->
+                <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white mb-2"><i class="fas fa-info-circle text-blue-500 dark:text-blue-400 mr-1.5"></i>Expected File Format</p>
+                    <p class="text-xs text-gray-600 dark:text-slate-400 mb-2">CSV columns or JSON fields:</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        <code class="px-2 py-0.5 bg-white dark:bg-slate-800 rounded text-xs border border-blue-200 dark:border-blue-800 font-semibold text-blue-800 dark:text-blue-400">domain_name *</code>
+                        <code class="px-2 py-0.5 bg-white dark:bg-slate-800 rounded text-xs border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-400">tags</code>
+                        <code class="px-2 py-0.5 bg-white dark:bg-slate-800 rounded text-xs border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-400">notes</code>
+                        <code class="px-2 py-0.5 bg-white dark:bg-slate-800 rounded text-xs border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-400">notification_group</code>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-2">Only <code class="bg-white dark:bg-slate-800 px-1 rounded">domain_name</code> is required. Tags should be comma-separated. Notification group is matched by name.</p>
+                </div>
+
+                <!-- Fallback Notification Group -->
+                <div>
+                    <label for="import_notification_group_id" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Default Notification Group
+                        <span class="text-gray-400 dark:text-slate-500 font-normal">(for domains without a group in the file)</span>
+                    </label>
+                    <select id="import_notification_group_id" 
+                            name="notification_group_id" 
+                            class="w-full px-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm">
+                        <option value="">-- No Group (No notifications) --</option>
+                        {% for group in groups %}
+                            <option value="{{ group.id }}">{{ group.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-col sm:flex-row gap-3 pt-3">
+                    <button type="submit" id="domainImportBtn"
+                            class="inline-flex items-center justify-center px-5 py-2.5 bg-primary hover:bg-primary-dark text-white rounded-lg font-medium transition-colors text-sm">
+                        <i class="fas fa-file-import mr-2"></i>
+                        Import Domains
+                    </button>
+                    <a href="/domains" 
+                       class="inline-flex items-center justify-center px-5 py-2.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm">
+                        <i class="fas fa-times mr-2"></i>
+                        Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div><!-- end card -->
+
+    <!-- Info Cards -->
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-info-circle text-white"></i>
+                    </div>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">How It Works</h3>
+                    <p class="text-xs text-gray-600 dark:text-slate-400 leading-relaxed">
+                        Paste domain names or upload a CSV/JSON file. The system will fetch WHOIS information 
+                        for each domain automatically. This may take a few moments depending on how many domains you're adding.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
+            <div class="flex items-start">
+                <div class="flex-shrink-0">
+                    <div class="w-10 h-10 bg-orange-500 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-exclamation-triangle text-white"></i>
+                    </div>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">Important Notes</h3>
+                    <ul class="text-xs text-gray-600 dark:text-slate-400 space-y-1">
+                        <li class="flex items-start">
+                            <i class="fas fa-circle text-orange-500 mt-1 mr-2" style="font-size: 6px;"></i>
+                            <span>Duplicate domains will be skipped</span>
+                        </li>
+                        <li class="flex items-start">
+                            <i class="fas fa-circle text-orange-500 mt-1 mr-2" style="font-size: 6px;"></i>
+                            <span>Invalid domains will be reported</span>
+                        </li>
+                        <li class="flex items-start">
+                            <i class="fas fa-circle text-orange-500 mt-1 mr-2" style="font-size: 6px;"></i>
+                            <span>Large batches may take several minutes</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchTab(tab) {
+    document.getElementById('panel-paste').classList.toggle('hidden', tab !== 'paste');
+    document.getElementById('panel-import').classList.toggle('hidden', tab !== 'import');
+    
+    const pasteTab = document.getElementById('tab-paste');
+    const importTab = document.getElementById('tab-import');
+    
+    [pasteTab, importTab].forEach(btn => {
+        btn.classList.remove('border-primary', 'text-primary', 'bg-white', 'dark:bg-slate-800', 'border-transparent', 'text-gray-500', 'dark:text-slate-400');
+    });
+    const active = tab === 'paste' ? pasteTab : importTab;
+    const inactive = tab === 'paste' ? importTab : pasteTab;
+    active.classList.add('border-primary', 'text-primary', 'bg-white', 'dark:bg-slate-800');
+    inactive.classList.add('border-transparent', 'text-gray-500', 'dark:text-slate-400');
+}
+
+let tags = [];
+
+const availableTags = {{ availableTags|json_encode|raw }};
+const tagColors = {};
+availableTags.forEach(tag => {
+    tagColors[tag.name] = tag.color;
+});
+
+function addTag(tagName) {
+    tagName = tagName.trim().toLowerCase();
+    
+    if (!/^[a-z0-9-]+$/.test(tagName)) {
+        return;
+    }
+    
+    if (tags.includes(tagName)) {
+        return;
+    }
+    
+    tags.push(tagName);
+    updateTagsDisplay();
+    updateHiddenInput();
+    
+    document.getElementById('tags-input').value = '';
+}
+
+function removeTag(tagName) {
+    tags = tags.filter(t => t !== tagName);
+    updateTagsDisplay();
+    updateHiddenInput();
+}
+
+function updateTagsDisplay() {
+    const display = document.getElementById('tags-display');
+    display.innerHTML = '';
+    
+    if (tags.length === 0) {
+        display.innerHTML = '<span class="text-xs text-gray-400 dark:text-slate-500 italic">No tags added yet</span>';
+        return;
+    }
+    
+    tags.forEach(tag => {
+        const colorClass = tagColors[tag] || 'bg-gray-100 text-gray-700 border-gray-300';
+        const tagElement = document.createElement('span');
+        tagElement.className = `inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${colorClass}`;
+        tagElement.innerHTML = `
+            <i class="fas fa-tag mr-1" style="font-size: 9px;"></i>
+            ${tag}
+            <button type="button" onclick="removeTag('${tag}')" class="ml-1.5 hover:text-red-600">
+                <i class="fas fa-times" style="font-size: 9px;"></i>
+            </button>
+        `;
+        display.appendChild(tagElement);
+    });
+}
+
+function updateHiddenInput() {
+    document.getElementById('tags').value = tags.join(',');
+}
+
+function handleTagInput(event) {
+    if (event.key === 'Enter' || event.key === ',') {
+        event.preventDefault();
+        addTagFromInput();
+    }
+}
+
+function addTagFromInput() {
+    const input = document.getElementById('tags-input');
+    const value = input.value.trim();
+    
+    if (value) {
+        const newTags = value.split(',').map(t => t.trim().toLowerCase()).filter(t => t);
+        newTags.forEach(tag => addTag(tag));
+        input.value = '';
+    }
+}
+
+updateTagsDisplay();
+
+(function() {
+    const dropzone = document.getElementById('domainDropzone');
+    const fileInput = document.getElementById('domainFileInput');
+    const content = document.getElementById('domainDropzoneContent');
+    const fileInfo = document.getElementById('domainDropzoneFile');
+    const fileName = document.getElementById('domainFileName');
+    const fileSize = document.getElementById('domainFileSize');
+    const removeBtn = document.getElementById('domainFileRemove');
+    const form = document.getElementById('domainImportForm');
+    const submitBtn = document.getElementById('domainImportBtn');
+
+    function formatSize(bytes) {
+        if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+        if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return bytes + ' B';
+    }
+
+    function showFile(file) {
+        fileName.textContent = file.name;
+        fileSize.textContent = formatSize(file.size);
+        content.classList.add('hidden');
+        fileInfo.classList.remove('hidden');
+        dropzone.classList.remove('border-gray-300', 'dark:border-slate-600');
+        dropzone.classList.add('border-primary', 'bg-primary/5');
+    }
+
+    function resetDropzone() {
+        fileInput.value = '';
+        content.classList.remove('hidden');
+        fileInfo.classList.add('hidden');
+        dropzone.classList.add('border-gray-300', 'dark:border-slate-600');
+        dropzone.classList.remove('border-primary', 'bg-primary/5');
+    }
+
+    fileInput.addEventListener('change', function() {
+        if (this.files.length) showFile(this.files[0]);
+    });
+
+    removeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        resetDropzone();
+    });
+
+    ['dragenter', 'dragover'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            dropzone.classList.add('border-primary', 'bg-primary/5');
+            dropzone.classList.remove('border-gray-300', 'dark:border-slate-600');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            if (!fileInput.files.length) {
+                dropzone.classList.remove('border-primary', 'bg-primary/5');
+                dropzone.classList.add('border-gray-300', 'dark:border-slate-600');
+            }
+        });
+    });
+
+    dropzone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        if (files.length) {
+            fileInput.files = files;
+            showFile(files[0]);
+        }
+    });
+
+    form.addEventListener('submit', function() {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Importing & Fetching WHOIS...';
+    });
+})();
+</script>
+{% endblock %}

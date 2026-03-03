@@ -1,0 +1,124 @@
+{% extends 'layout/base.twig' %}
+
+{% set title = '2FA Backup Codes' %}
+{% set pageTitle = '2FA Backup Codes' %}
+{% set pageDescription = 'Save these backup codes in a safe place' %}
+{% set pageIcon = 'fas fa-key' %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="bg-white dark:bg-slate-800 shadow rounded-lg border border-gray-200 dark:border-slate-700">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">2FA Backup Codes</h3>
+            <p class="text-sm text-gray-600 dark:text-slate-400 mt-1">Save these codes in a safe place - they can be used to access your account if you lose your authenticator device</p>
+        </div>
+
+        <div class="p-6">
+            {# Warning #}
+            <div class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-lg p-4 mb-6">
+                <div class="flex items-start">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-exclamation-triangle text-red-400 dark:text-red-400"></i>
+                    </div>
+                    <div class="ml-3">
+                        <h4 class="text-sm font-medium text-red-800 dark:text-red-300">Important Security Notice</h4>
+                        <p class="text-sm text-red-700 dark:text-red-400/80 mt-1">
+                            These backup codes are shown only once. Each code can only be used once. Store them securely and never share them with anyone.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            {# Backup Codes #}
+            <div class="mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h4 class="text-md font-semibold text-gray-900 dark:text-white">Your Backup Codes</h4>
+                    <button onclick="printCodes()" class="text-sm text-primary hover:text-primary-dark dark:text-blue-400 dark:hover:text-blue-300">
+                        <i class="fas fa-print mr-1"></i>Print Codes
+                    </button>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="backup-codes">
+                    {% for code in backupCodes %}
+                    <div class="flex items-center justify-between bg-gray-50 dark:bg-slate-700/50 p-3 rounded-lg border border-gray-200 dark:border-slate-600">
+                        <code class="font-mono text-sm text-gray-900 dark:text-slate-200">{{ code }}</code>
+                        <button onclick="copyCode('{{ code }}', this)" class="ml-2 px-2 py-1 text-xs bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 rounded hover:bg-gray-300 dark:hover:bg-slate-500 transition-colors">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            {# Instructions #}
+            <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg p-4 mb-6">
+                <h4 class="text-sm font-medium text-blue-800 dark:text-blue-300 mb-2">How to use backup codes:</h4>
+                <ul class="text-sm text-blue-700 dark:text-blue-400/80 space-y-1">
+                    <li>• When logging in, enter a backup code instead of your 2FA code</li>
+                    <li>• Each backup code can only be used once</li>
+                    <li>• After using a code, it will be automatically removed from your account</li>
+                    <li>• If you run out of backup codes, you'll need to disable and re-enable 2FA</li>
+                </ul>
+            </div>
+
+            {# Actions #}
+            <div class="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-slate-700">
+                <a href="/profile" class="text-sm text-gray-600 dark:text-slate-400 hover:text-gray-500 dark:hover:text-slate-300">
+                    <i class="fas fa-arrow-left mr-1"></i>Back to Profile
+                </a>
+                <div class="flex space-x-3">
+                    <button onclick="downloadCodes()" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-slate-600 text-sm font-medium rounded-md text-gray-700 dark:text-slate-300 bg-white dark:bg-slate-700 hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors">
+                        <i class="fas fa-download mr-2"></i>Download
+                    </button>
+                    <a href="/" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark transition-colors">
+                        <i class="fas fa-check mr-2"></i>I've Saved These Codes
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const backupCodesData = {{ backupCodes|json_encode|raw }};
+const userName = '{{ user.full_name|default(user.username) }}';
+const userEmail = '{{ user.email }}';
+
+function copyCode(code, button) {
+    navigator.clipboard.writeText(code).then(() => {
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check"></i>';
+        button.classList.replace('bg-gray-200', 'bg-green-500');
+        button.classList.replace('text-gray-700', 'text-white');
+        button.classList.replace('dark:bg-slate-600', 'dark:bg-green-600');
+        button.classList.replace('dark:text-slate-300', 'dark:text-white');
+        setTimeout(() => {
+            button.innerHTML = originalHTML;
+            button.classList.replace('bg-green-500', 'bg-gray-200');
+            button.classList.replace('text-white', 'text-gray-700');
+            button.classList.replace('dark:bg-green-600', 'dark:bg-slate-600');
+            button.classList.replace('dark:text-white', 'dark:text-slate-300');
+        }, 2000);
+    });
+}
+
+function printCodes() {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`<!DOCTYPE html><html><head><title>2FA Backup Codes</title>
+        <style>body{font-family:Arial,sans-serif;padding:20px}.codes{background:#f5f5f5;padding:15px;border:1px solid #ddd;margin:20px 0}.code{margin:5px 0;font-family:monospace}</style>
+        </head><body><h1>2FA Backup Codes</h1><p><strong>Account:</strong> ${userName} (${userEmail})</p><p><strong>Generated:</strong> ${new Date().toLocaleString()}</p>
+        <div class="codes">${backupCodesData.map((c,i) => '<div class="code">'+(i+1)+'. '+c+'</div>').join('')}</div></body></html>`);
+    printWindow.document.close();
+    printWindow.print();
+}
+
+function downloadCodes() {
+    const content = `2FA Backup Codes\nAccount: ${userName} (${userEmail})\nGenerated: ${new Date().toLocaleString()}\n\n${backupCodesData.map((c,i) => (i+1)+'. '+c).join('\n')}`;
+    const blob = new Blob([content], {type: 'text/plain'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '2fa-backup-codes.txt';
+    a.click();
+}
+</script>
+{% endblock %}

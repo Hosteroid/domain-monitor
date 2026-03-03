@@ -1,0 +1,504 @@
+{% extends 'layout/base.twig' %}
+
+{% set title = 'User Management' %}
+{% set pageTitle = 'User Management' %}
+{% set pageDescription = 'Manage system users and permissions' %}
+{% set pageIcon = 'fas fa-users' %}
+
+{% set currentFilters = filters|default({search: '', role: '', status: '', sort: 'username', order: 'asc'}) %}
+{% set pagination = pagination|default({current_page: 1, total_pages: 1, per_page: 25, total: users|length, showing_from: 1, showing_to: users|length}) %}
+
+{% block content %}
+<!-- Action Buttons -->
+<div class="mb-4 flex justify-end">
+    <a href="/users/create" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+        <i class="fas fa-user-plus mr-2"></i>
+        Add User
+    </a>
+</div>
+
+<!-- Filters & Search -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 mb-4">
+    <form method="GET" action="/users" id="filter-form">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <!-- Search -->
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Search</label>
+                <div class="relative">
+                    <input type="text" name="search" value="{{ currentFilters.search }}" placeholder="Search users..." class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-xs"></i>
+                </div>
+            </div>
+
+            <!-- Role Filter -->
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Role</label>
+                <select name="role" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                    <option value="">All Roles</option>
+                    <option value="admin" {{ currentFilters.role == 'admin' ? 'selected' : '' }}>Admin</option>
+                    <option value="user" {{ currentFilters.role == 'user' ? 'selected' : '' }}>User</option>
+                </select>
+            </div>
+
+            <!-- Status Filter -->
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Status</label>
+                <select name="status" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+                    <option value="">All Statuses</option>
+                    <option value="active" {{ currentFilters.status == 'active' ? 'selected' : '' }}>Active</option>
+                    <option value="inactive" {{ currentFilters.status == 'inactive' ? 'selected' : '' }}>Inactive</option>
+                </select>
+            </div>
+
+            <!-- Apply/Reset Buttons -->
+            <div class="flex items-end space-x-2">
+                <button type="submit" class="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+                    <i class="fas fa-filter mr-2"></i>
+                    Apply Filters
+                </button>
+                <a href="/users" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm font-medium">
+                    <i class="fas fa-times mr-2"></i>
+                    Clear
+                </a>
+            </div>
+        </div>
+        <input type="hidden" name="sort" value="{{ currentFilters.sort }}">
+        <input type="hidden" name="order" value="{{ currentFilters.order }}">
+    </form>
+</div>
+
+<!-- Pagination Info & Per Page Selector -->
+<div class="mb-4 flex justify-between items-center">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Showing <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_from }}</span> to
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_to }}</span> of
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.total }}</span> user(s)
+    </div>
+
+    <form method="GET" action="/users" class="flex items-center gap-2">
+        <!-- Preserve current filters -->
+        <input type="hidden" name="search" value="{{ currentFilters.search }}">
+        <input type="hidden" name="role" value="{{ currentFilters.role }}">
+        <input type="hidden" name="status" value="{{ currentFilters.status }}">
+        <input type="hidden" name="sort" value="{{ currentFilters.sort }}">
+        <input type="hidden" name="order" value="{{ currentFilters.order }}">
+
+        <label for="per_page" class="text-sm text-gray-600 dark:text-slate-400">Show:</label>
+        <select name="per_page" id="per_page" onchange="this.form.submit()" class="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
+            <option value="10" {{ pagination.per_page == 10 ? 'selected' : '' }}>10</option>
+            <option value="25" {{ pagination.per_page == 25 ? 'selected' : '' }}>25</option>
+            <option value="50" {{ pagination.per_page == 50 ? 'selected' : '' }}>50</option>
+            <option value="100" {{ pagination.per_page == 100 ? 'selected' : '' }}>100</option>
+        </select>
+    </form>
+</div>
+
+<!-- Users Table -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+    <!-- Bulk Actions Bar (shown when users are selected) -->
+    <div id="bulk-actions" class="hidden px-6 py-3 bg-blue-50 dark:bg-blue-500/10 border-b border-blue-200 dark:border-blue-500/20 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+            <span id="selected-count" class="text-sm font-medium text-gray-700 dark:text-slate-300"></span>
+            <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="bulkToggleStatus('active')" class="inline-flex items-center px-4 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-user-check mr-1"></i> Activate Selected
+                    </button>
+                    <button type="button" onclick="bulkToggleStatus('inactive')" class="inline-flex items-center px-4 py-1.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-user-slash mr-1"></i> Deactivate Selected
+                    </button>
+                    <button type="button" onclick="bulkDeleteUsers()" class="inline-flex items-center px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+                        <i class="fas fa-trash mr-1"></i> Delete Selected
+                    </button>
+                </div>
+            </div>
+        </div>
+        <button type="button" onclick="clearSelection()" class="inline-flex items-center text-sm font-medium text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-blue-100 dark:hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors">
+            <i class="fas fa-times mr-1.5"></i> Clear Selection
+        </button>
+    </div>
+    {% if users is not empty %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+            <thead class="bg-gray-50 dark:bg-slate-900">
+                <tr>
+                    <th class="px-6 py-3 text-left">
+                        <input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" class="rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary">
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                        <a href="{{ sort_url('full_name', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                            User {{ sort_icon('full_name', currentFilters.sort, currentFilters.order) }}
+                        </a>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                        <a href="{{ sort_url('username', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                            Username {{ sort_icon('username', currentFilters.sort, currentFilters.order) }}
+                        </a>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                        <a href="{{ sort_url('role', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                            Role {{ sort_icon('role', currentFilters.sort, currentFilters.order) }}
+                        </a>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                        <a href="{{ sort_url('is_active', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                            Status {{ sort_icon('is_active', currentFilters.sort, currentFilters.order) }}
+                        </a>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                        <a href="{{ sort_url('email_verified', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                            Email Verified {{ sort_icon('email_verified', currentFilters.sort, currentFilters.order) }}
+                        </a>
+                    </th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+                        <a href="{{ sort_url('last_login', currentFilters.sort, currentFilters.order, currentFilters) }}" class="hover:text-primary flex items-center">
+                            Last Login {{ sort_icon('last_login', currentFilters.sort, currentFilters.order) }}
+                        </a>
+                    </th>
+                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                {% for user in users %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors duration-150">
+                        <td class="px-6 py-4">
+                            {% if user.id != auth.id %}
+                                <input type="checkbox" class="user-checkbox rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary" value="{{ user.id }}" onchange="updateBulkActions()">
+                            {% else %}
+                                <span class="text-gray-300 dark:text-slate-600" title="Cannot select your own account">
+                                    <i class="fas fa-lock text-xs"></i>
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0 h-10 w-10 rounded-lg overflow-hidden bg-primary bg-opacity-10 flex items-center justify-center">
+                                    {% if user.avatar.type == 'uploaded' or user.avatar.type == 'gravatar' %}
+                                        <img src="{{ user.avatar.url }}"
+                                             alt="{{ user.avatar.alt }}"
+                                             class="w-full h-full object-cover"
+                                             loading="lazy">
+                                    {% else %}
+                                        <span class="text-primary font-semibold text-sm">
+                                            {{ user.avatar.initials }}
+                                        </span>
+                                    {% endif %}
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ user.full_name|default('N/A') }}</div>
+                                    <div class="text-xs text-gray-500 dark:text-slate-400">{{ user.email }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm text-gray-900 dark:text-white">{{ user.username }}</span>
+                                {% if user.two_factor_enabled %}
+                                    <span class="inline-flex items-center px-1.5 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 rounded text-[10px] font-semibold border border-green-200 dark:border-green-500/20" title="Two-factor authentication enabled">
+                                        <i class="fas fa-shield-alt mr-0.5"></i>2FA
+                                    </span>
+                                {% else %}
+                                    <span class="inline-flex items-center px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 rounded text-[10px] font-medium border border-gray-200 dark:border-slate-600" title="Two-factor authentication not enabled">
+                                        <i class="fas fa-shield-alt mr-0.5"></i>No 2FA
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {{ role_badge(user.role) }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border
+                                {{ user.is_active ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20' : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20' }}">
+                                <i class="fas fa-{{ user.is_active ? 'check-circle' : 'times-circle' }} mr-1"></i>
+                                {{ user.is_active ? 'Active' : 'Inactive' }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="flex items-center">
+                                {% if user.email_verified %}
+                                    <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                                    <span class="text-sm text-gray-900 dark:text-white">Verified</span>
+                                {% else %}
+                                    <i class="fas fa-times-circle text-red-500 mr-2"></i>
+                                    <span class="text-sm text-gray-500 dark:text-slate-400">Not Verified</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-slate-400">
+                            {% if user.last_login %}
+                                <div class="flex items-center">
+                                    <i class="far fa-clock mr-2"></i>
+                                    {{ user.last_login|date('M d, H:i') }}
+                                </div>
+                            {% else %}
+                                <span class="text-gray-400 dark:text-slate-500">Never</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <div class="flex items-center justify-end space-x-2">
+                                <a href="/users/{{ user.id }}" class="text-gray-600 dark:text-slate-400 hover:text-primary" title="View Profile">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="/users/{{ user.id }}/edit" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                {% if user.id != auth.id %}
+                                    <a href="#"
+                                       class="text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300"
+                                       title="{{ user.is_active ? 'Deactivate' : 'Activate' }}"
+                                       onclick="toggleUserStatus({{ user.id }}); return false;">
+                                        <i class="fas fa-{{ user.is_active ? 'user-slash' : 'user-check' }}"></i>
+                                    </a>
+                                    <a href="#"
+                                       class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                       title="Delete"
+                                       onclick="deleteUser({{ user.id }}); return false;">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                {% else %}
+                                    <span class="text-gray-400 dark:text-slate-500" title="Cannot modify your own account">
+                                        <i class="fas fa-lock"></i>
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <!-- Empty State -->
+        <div class="p-12 text-center">
+            <i class="fas fa-users text-gray-300 dark:text-slate-600 text-6xl mb-4"></i>
+            <h3 class="text-lg font-semibold text-gray-700 dark:text-slate-300 mb-1">No Users Yet</h3>
+            <p class="text-sm text-gray-500 dark:text-slate-400 mb-4">Start by adding your first user</p>
+            <a href="/users/create" class="inline-flex items-center px-5 py-2.5 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+                <i class="fas fa-user-plus mr-2"></i>
+                Add Your First User
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Pagination Controls -->
+{% if pagination.total_pages > 1 %}
+<div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <!-- Page Info -->
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Page <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.current_page }}</span> of
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.total_pages }}</span>
+    </div>
+
+    <!-- Pagination Buttons -->
+    <div class="flex items-center gap-1">
+        {% set currentPage = pagination.current_page %}
+        {% set totalPages = pagination.total_pages %}
+
+        {# First Page #}
+        {% if currentPage > 1 %}
+            <a href="{{ pagination_url(1, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-double-left"></i>
+            </a>
+        {% endif %}
+
+        {# Previous Page #}
+        {% if currentPage > 1 %}
+            <a href="{{ pagination_url(currentPage - 1, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-left"></i> Previous
+            </a>
+        {% endif %}
+
+        {# Page Numbers #}
+        {% set startPage = (currentPage - 2) > 1 ? (currentPage - 2) : 1 %}
+        {% set endPage = (currentPage + 2) < totalPages ? (currentPage + 2) : totalPages %}
+
+        {% if startPage > 1 %}
+            <a href="{{ pagination_url(1, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">1</a>
+            {% if startPage > 2 %}
+                <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+            {% endif %}
+        {% endif %}
+
+        {% for i in startPage..endPage %}
+            {% if i == currentPage %}
+                <span class="px-3 py-2 text-sm bg-primary text-white rounded-lg font-semibold">{{ i }}</span>
+            {% else %}
+                <a href="{{ pagination_url(i, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ i }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if endPage < totalPages %}
+            {% if endPage < totalPages - 1 %}
+                <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+            {% endif %}
+            <a href="{{ pagination_url(totalPages, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ totalPages }}</a>
+        {% endif %}
+
+        {# Next Page #}
+        {% if currentPage < totalPages %}
+            <a href="{{ pagination_url(currentPage + 1, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                Next <i class="fas fa-angle-right"></i>
+            </a>
+        {% endif %}
+
+        {# Last Page #}
+        {% if currentPage < totalPages %}
+            <a href="{{ pagination_url(totalPages, currentFilters, pagination.per_page) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-double-right"></i>
+            </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<script>
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.user-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateBulkActions();
+}
+
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+    const bulkActions = document.getElementById('bulk-actions');
+    const selectedCount = document.getElementById('selected-count');
+    const selectAllCheckbox = document.getElementById('select-all');
+
+    if (checkboxes.length > 0) {
+        bulkActions.classList.remove('hidden');
+        selectedCount.textContent = checkboxes.length + ' user(s) selected';
+    } else {
+        bulkActions.classList.add('hidden');
+    }
+
+    const allCheckboxes = document.querySelectorAll('.user-checkbox');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = allCheckboxes.length > 0 && checkboxes.length === allCheckboxes.length;
+        selectAllCheckbox.indeterminate = checkboxes.length > 0 && checkboxes.length < allCheckboxes.length;
+    }
+}
+
+function clearSelection() {
+    const checkboxes = document.querySelectorAll('.user-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = false;
+    });
+    document.getElementById('select-all').checked = false;
+    updateBulkActions();
+}
+
+function getSelectedUserIds() {
+    const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.value);
+}
+
+function bulkToggleStatus(action) {
+    const userIds = getSelectedUserIds();
+
+    if (userIds.length === 0) {
+        alert('Please select at least one user');
+        return;
+    }
+
+    const actionText = action === 'active' ? 'activate' : 'deactivate';
+    if (!confirm(`Are you sure you want to ${actionText} ${userIds.length} user(s)?`)) {
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/users/bulk-toggle-status';
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '{{ csrf_token() }}';
+    form.appendChild(csrfInput);
+
+    const idsInput = document.createElement('input');
+    idsInput.type = 'hidden';
+    idsInput.name = 'user_ids';
+    idsInput.value = JSON.stringify(userIds);
+    form.appendChild(idsInput);
+
+    const actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = 'action';
+    actionInput.value = action;
+    form.appendChild(actionInput);
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function toggleUserStatus(userId) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/users/' + userId + '/toggle-status';
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '{{ csrf_token() }}';
+    form.appendChild(csrfInput);
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function deleteUser(userId) {
+    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/users/' + userId + '/delete';
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '{{ csrf_token() }}';
+    form.appendChild(csrfInput);
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function bulkDeleteUsers() {
+    const userIds = getSelectedUserIds();
+
+    if (userIds.length === 0) {
+        alert('Please select at least one user to delete');
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${userIds.length} user(s)? This action cannot be undone.`)) {
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/users/bulk-delete';
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '{{ csrf_token() }}';
+    form.appendChild(csrfInput);
+
+    const idsInput = document.createElement('input');
+    idsInput.type = 'hidden';
+    idsInput.name = 'user_ids';
+    idsInput.value = JSON.stringify(userIds);
+    form.appendChild(idsInput);
+
+    document.body.appendChild(form);
+    form.submit();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,431 @@
+{% extends 'layout/base.twig' %}
+
+{% set title = 'Domain Details' %}
+{% set pageTitle = domain.domain_name %}
+{% set pageDescription = 'Domain information and monitoring status' %}
+{% set pageIcon = 'fas fa-globe' %}
+
+{% set daysLeft = domain.daysLeft %}
+{% set domainStatus = domain.displayStatus %}
+{% set expiryColor = domain.expiryColor %}
+
+{% block content %}
+
+<!-- Top Action Bar -->
+<div class="mb-3 flex flex-wrap gap-2 justify-between items-center">
+    <div class="flex flex-wrap gap-2">
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold {{ domain.statusClass }}">
+            <i class="fas {{ domain.statusIcon }} mr-1.5"></i>
+            {{ domain.statusText }}
+        </span>
+        {% if domainStatus != 'available' %}
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-{{ expiryColor }}-100 text-{{ expiryColor }}-800 dark:bg-{{ expiryColor }}-500/10 dark:text-{{ expiryColor }}-400 border border-{{ expiryColor }}-200 dark:border-{{ expiryColor }}-800">
+            <i class="fas fa-calendar-alt mr-1.5"></i>
+            {{ daysLeft is not null ? daysLeft ~ ' days left' : 'No expiry date' }}
+        </span>
+        {% endif %}
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-100 dark:bg-indigo-500/10 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+            <i class="fas fa-{{ domain.is_active ? 'check-circle' : 'pause-circle' }} mr-1.5"></i>
+            {{ domain.is_active ? 'Monitoring Active' : 'Monitoring Paused' }}
+        </span>
+        
+        <!-- Tags Display -->
+        {% set domainTags = domain.tags ? domain.tags|split(',') : [] %}
+        {% set tagColorList = domain.tag_colors ? domain.tag_colors|split('|') : [] %}
+        
+        {% for tag in domainTags %}
+            {% set tagName = tag|trim %}
+            {% set matchedTags = availableTags|filter(t => t.name == tagName) %}
+            {% if matchedTags|length > 0 %}
+                {% set colorClass = matchedTags|first.color %}
+            {% elseif tagColorList[loop.index0] is defined %}
+                {% set colorClass = tagColorList[loop.index0] %}
+            {% else %}
+                {% set colorClass = 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 border-gray-200 dark:border-slate-700' %}
+            {% endif %}
+            <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold border {{ colorClass }}">
+                <i class="fas fa-tag mr-1.5" style="font-size: 10px;"></i>
+                {{ tagName|capitalize }}
+            </span>
+        {% endfor %}
+    </div>
+    <div class="flex gap-2 items-center">
+        <form method="POST" action="/domains/{{ domain.id }}/refresh" class="inline">
+            {{ csrf_field() }}
+            <button type="submit" class="inline-flex items-center justify-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium min-w-[80px] h-[32px]">
+                <i class="fas fa-sync-alt mr-1.5"></i>
+                Refresh
+            </button>
+        </form>
+        <a href="/domains/{{ domain.id }}/edit?from=/domains/{{ domain.id }}" class="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors font-medium min-w-[80px] h-[32px]">
+            <i class="fas fa-edit mr-1.5"></i>
+            Edit
+        </a>
+        <form method="POST" action="/domains/{{ domain.id }}/delete" onsubmit="return confirm('Delete this domain?')" class="inline">
+            {{ csrf_field() }}
+            <button type="submit" class="inline-flex items-center justify-center px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium min-w-[80px] h-[32px]">
+                <i class="fas fa-trash mr-1.5"></i>
+                Delete
+            </button>
+        </form>
+        <a href="/domains" class="inline-flex items-center justify-center px-3 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium min-w-[80px] h-[32px]">
+            <i class="fas fa-arrow-left mr-1.5"></i>
+            Back
+        </a>
+    </div>
+</div>
+
+<!-- Main 2-Column Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    
+    <!-- LEFT COLUMN -->
+    <div class="space-y-3">
+        
+        <!-- Registration Details -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-building text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Registration Details
+                </h3>
+            </div>
+            <div class="p-4">
+                <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                    <div>
+                        <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Registrar</label>
+                        <p class="text-gray-900 dark:text-white font-semibold">{{ domain.registrar|default('Unknown') }}</p>
+                    </div>
+                    {% if domain.registrar_url is not empty %}
+                    <div>
+                        <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Registrar URL</label>
+                        <a href="{{ domain.registrar_url }}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center">
+                            <i class="fas fa-external-link-alt mr-1" style="font-size: 9px;"></i>
+                            Visit
+                        </a>
+                    </div>
+                    {% endif %}
+                    {% if domain.abuse_email is not empty %}
+                    <div>
+                        <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Abuse Contact</label>
+                        <a href="mailto:{{ domain.abuse_email }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                            {{ domain.abuse_email }}
+                        </a>
+                    </div>
+                    {% endif %}
+                    {% if whoisData.whois_server is defined %}
+                    <div>
+                        <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">WHOIS Server</label>
+                        <p class="text-gray-900 dark:text-white font-mono">{{ whoisData.whois_server }}</p>
+                    </div>
+                    {% endif %}
+                    {% if whoisData.owner is defined %}
+                    <div class="col-span-2">
+                        <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Owner</label>
+                        <p class="text-gray-900 dark:text-white">{{ whoisData.owner }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Important Dates -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-calendar text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Important Dates
+                </h3>
+            </div>
+            <div class="p-4">
+                <div class="space-y-2">
+                    {% if domain.expiration_date is not empty %}
+                    <div class="flex items-center justify-between p-2 bg-{{ expiryColor }}-50 dark:bg-{{ expiryColor }}-500/10 rounded border border-{{ expiryColor }}-200 dark:border-{{ expiryColor }}-800">
+                        <div class="flex items-center">
+                            <div class="w-7 h-7 bg-{{ expiryColor }}-500 rounded flex items-center justify-center mr-2">
+                                <i class="fas fa-exclamation-triangle text-white text-xs"></i>
+                            </div>
+                            <div>
+                                <p class="text-xs text-gray-600 dark:text-slate-400 font-medium">
+                                    Expiration
+                                    {% if domain.isManualExpiration %}
+                                        <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400">
+                                            <i class="fas fa-edit mr-1" style="font-size: 8px;"></i>
+                                            Manual
+                                        </span>
+                                    {% endif %}
+                                </p>
+                                <p class="text-xs font-semibold text-gray-900 dark:text-white">{{ domain.expiration_date ? domain.expiration_date|date('M j, Y') : 'Unknown' }}</p>
+                            </div>
+                        </div>
+                        <span class="px-2 py-1 bg-{{ expiryColor }}-100 dark:bg-{{ expiryColor }}-500/20 text-{{ expiryColor }}-800 dark:text-{{ expiryColor }}-400 rounded text-xs font-bold">
+                            {{ daysLeft }} days
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    {% if domain.updated_date is not empty %}
+                    <div class="flex items-center p-2 bg-blue-50 dark:bg-blue-500/10 rounded border border-blue-200 dark:border-blue-800">
+                        <div class="w-7 h-7 bg-blue-500 rounded flex items-center justify-center mr-2">
+                            <i class="fas fa-clock text-white text-xs"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-600 dark:text-slate-400 font-medium">Last Updated</p>
+                            <p class="text-xs font-semibold text-gray-900 dark:text-white">{{ domain.updated_date|date('M j, Y') }}</p>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if whoisData.creation_date is defined %}
+                    <div class="flex items-center p-2 bg-green-50 dark:bg-green-500/10 rounded border border-green-200 dark:border-green-800">
+                        <div class="w-7 h-7 bg-green-500 rounded flex items-center justify-center mr-2">
+                            <i class="fas fa-calendar-plus text-white text-xs"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-600 dark:text-slate-400 font-medium">Created</p>
+                            <p class="text-xs font-semibold text-gray-900 dark:text-white">{{ whoisData.creation_date|date('M j, Y') }}</p>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="flex items-center p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded border border-indigo-200 dark:border-indigo-800">
+                        <div class="w-7 h-7 bg-indigo-500 rounded flex items-center justify-center mr-2">
+                            <i class="fas fa-sync text-white text-xs"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-600 dark:text-slate-400 font-medium">Last Checked</p>
+                            <p class="text-xs font-semibold text-gray-900 dark:text-white">{{ domain.last_checked|date('M j, Y H:i') }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Nameservers -->
+        {% if whoisData.nameservers is not empty %}
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-server text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Nameservers ({{ whoisData.nameservers|length }})
+                </h3>
+            </div>
+            <div class="p-4">
+                <div class="space-y-1.5">
+                    {% for ns in whoisData.nameservers %}
+                    <div class="flex items-center p-2 bg-gray-50 dark:bg-slate-700 rounded hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors">
+                        <div class="w-6 h-6 bg-teal-500 rounded flex items-center justify-center text-white font-bold text-xs mr-2">
+                            {{ loop.index }}
+                        </div>
+                        <p class="font-mono text-xs text-gray-800 dark:text-slate-200">{{ ns }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Domain Status -->
+        {% if domain.parsedStatuses is not empty %}
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-info-circle text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Domain Status ({{ domain.parsedStatuses|length }})
+                </h3>
+            </div>
+            <div class="p-4">
+                <div class="flex flex-wrap gap-1.5">
+                    {% for status in domain.parsedStatuses %}
+                    <span class="px-2 py-1 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 rounded text-xs font-medium" title="{{ status }}">
+                        {{ status }}
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="space-y-3">
+        
+        <!-- Notification Group -->
+        {% if domain.group_name is not empty %}
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-bell text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Notification Group
+                </h3>
+            </div>
+            <div class="p-4">
+                <div class="flex items-center mb-3">
+                    <div class="w-10 h-10 bg-green-100 dark:bg-green-500/10 rounded-lg flex items-center justify-center mr-3">
+                        <i class="fas fa-users text-green-600 dark:text-green-400"></i>
+                    </div>
+                    <div>
+                        <p class="font-semibold text-sm text-gray-900 dark:text-white">{{ domain.group_name }}</p>
+                        {% if domain.channels is not empty %}
+                        <p class="text-xs text-gray-600 dark:text-slate-400">
+                            {{ domain.activeChannelCount|default(0) }} / {{ domain.channels|length }} channels active
+                        </p>
+                        {% endif %}
+                    </div>
+                </div>
+                {% if domain.channels is not empty %}
+                <div class="grid grid-cols-2 gap-2">
+                    {% for channel in domain.channels %}
+                    <div class="flex items-center p-2 rounded {{ channel.is_active ? 'bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-700' }}">
+                        <i class="fas fa-{{ channel.is_active ? 'check-circle text-green-600 dark:text-green-400' : 'times-circle text-gray-400 dark:text-slate-500' }} mr-2 text-xs"></i>
+                        <span class="text-xs font-medium text-gray-700 dark:text-slate-300">{{ channel.channel_type|capitalize }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-orange-50 dark:bg-orange-500/10 rounded-lg border border-orange-200 dark:border-orange-800 p-4">
+            <div class="flex items-start mb-2">
+                <i class="fas fa-exclamation-triangle text-orange-500 dark:text-orange-400 mr-2 mt-0.5"></i>
+                <div>
+                    <h3 class="text-xs font-semibold text-gray-900 dark:text-white">No Group Assigned</h3>
+                    <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">Won't receive notifications</p>
+                </div>
+            </div>
+            <a href="/domains/{{ domain.id }}/edit?from=/domains/{{ domain.id }}" class="block w-full text-center px-3 py-1.5 bg-orange-500 text-white text-xs rounded-lg hover:bg-orange-600 transition-colors font-medium">
+                <i class="fas fa-plus mr-1"></i>
+                Assign Group
+            </a>
+        </div>
+        {% endif %}
+
+        <!-- Notes Section -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-sticky-note text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Notes
+                </h3>
+            </div>
+            <div class="p-4">
+                <form method="POST" action="/domains/{{ domain.id }}/update-notes" id="notes-form">
+                    {{ csrf_field() }}
+                    <textarea 
+                        name="notes" 
+                        id="notes-textarea"
+                        rows="6" 
+                        class="w-full px-3 py-2 text-xs border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                        placeholder="Add notes about this domain...">{{ domain.notes|default('') }}</textarea>
+                    
+                    <div class="flex gap-2 mt-3">
+                        <button 
+                            type="submit" 
+                            class="flex-1 inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                            <i class="fas fa-save mr-1.5"></i>
+                            Update Notes
+                        </button>
+                        <button 
+                            type="button" 
+                            onclick="resetNotes()" 
+                            class="flex-1 inline-flex items-center justify-center px-3 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+                            <i class="fas fa-times mr-1.5"></i>
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Notification History -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-history text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Notification History ({{ logs|length }})
+                </h3>
+            </div>
+            <div class="overflow-hidden">
+                {% if logs is empty %}
+                <div class="p-8 text-center">
+                    <i class="fas fa-bell-slash text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>
+                    <p class="text-xs text-gray-500 dark:text-slate-400">No notifications sent yet</p>
+                </div>
+                {% else %}
+                <div class="max-h-96 overflow-y-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-xs">
+                        <thead class="bg-gray-50 dark:bg-slate-900 sticky top-0">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Channel</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Status</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Date</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Message</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700">
+                            {% for log in logs %}
+                            <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400">
+                                        {{ log.channel_type|capitalize }}
+                                    </span>
+                                </td>
+                                <td class="px-3 py-2 whitespace-nowrap">
+                                    {% set logStatusClass = log.status == 'sent' ? 'bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400' : 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400' %}
+                                    <span class="px-2 py-0.5 rounded text-xs font-medium {{ logStatusClass }}">
+                                        {{ log.status|capitalize }}
+                                    </span>
+                                </td>
+                                <td class="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-slate-400">{{ log.sent_at|date('M j, H:i') }}</td>
+                                <td class="px-3 py-2 text-gray-700 dark:text-slate-300 max-w-xs truncate" title="{{ log.message }}">
+                                    {{ log.message }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Raw WHOIS Data (Collapsible) -->
+        {% if domain.whois_data is not empty %}
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <button onclick="toggleWhoisData()" class="w-full px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 text-left hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
+                    <span class="flex items-center">
+                        <i class="fas fa-code text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                        Raw WHOIS Data
+                    </span>
+                    <i class="fas fa-chevron-down text-gray-400 dark:text-slate-500 text-xs transition-transform" id="whois-chevron"></i>
+                </h3>
+            </button>
+            <div id="whois-data" class="hidden p-4 bg-gray-900 max-h-64 overflow-y-auto">
+                <pre class="text-xs text-green-400 font-mono">{{ whoisData|json_encode(constant('JSON_PRETTY_PRINT')) }}</pre>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleWhoisData() {
+    const dataDiv = document.getElementById('whois-data');
+    const chevron = document.getElementById('whois-chevron');
+    dataDiv.classList.toggle('hidden');
+    chevron.classList.toggle('rotate-180');
+}
+
+function resetNotes() {
+    const originalNotes = {{ domain.notes|default('')|json_encode|raw }};
+    document.getElementById('notes-textarea').value = originalNotes;
+}
+</script>
+{% endblock %}

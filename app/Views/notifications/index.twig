@@ -1,0 +1,422 @@
+{% extends "layout/base.twig" %}
+
+{% set title = 'Notifications' %}
+{% set pageTitle = 'Notifications' %}
+{% set pageDescription = 'View and manage your notifications' %}
+{% set pageIcon = 'fas fa-bell' %}
+
+{% block content %}
+{% set filterType = filters.type ?? '' %}
+{% set filterStatus = filters.status ?? '' %}
+{% set filterDateRange = filters.date_range ?? '' %}
+{% set page = pagination.current_page %}
+{% set totalPages = pagination.total_pages %}
+{% set perPage = pagination.per_page %}
+{% set totalNotifications = pagination.total %}
+{% set offset = pagination.showing_from - 1 %}
+
+<!-- Action Buttons -->
+<div class="mb-4 flex flex-wrap gap-2 justify-between items-center">
+    <div class="flex gap-2">
+    </div>
+    
+    <div class="flex gap-2">
+        <button onclick="markAllAsRead()" class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium">
+            <i class="fas fa-check-double mr-2"></i>
+            Mark All Read
+        </button>
+        <button onclick="clearAll()" class="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
+            <i class="fas fa-trash-alt mr-2"></i>
+            Clear All
+        </button>
+    </div>
+</div>
+
+<!-- Filters & Search -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 mb-4">
+    <form method="GET" action="/notifications" id="filter-form">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <!-- Status Filter -->
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Status</label>
+                <select name="status" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+                    <option value="">All Notifications</option>
+                    <option value="unread" {{ filterStatus == 'unread' ? 'selected' : '' }}>Unread Only</option>
+                    <option value="read" {{ filterStatus == 'read' ? 'selected' : '' }}>Read Only</option>
+                </select>
+            </div>
+            
+            <!-- Type Filter -->
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Type</label>
+                <select name="type" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+                    <option value="">All Types</option>
+                    <optgroup label="Domain">
+                        <option value="domain_expiring" {{ filterType == 'domain_expiring' ? 'selected' : '' }}>Domain Expiring</option>
+                        <option value="domain_expired" {{ filterType == 'domain_expired' ? 'selected' : '' }}>Domain Expired</option>
+                        <option value="domain_available" {{ filterType == 'domain_available' ? 'selected' : '' }}>Domain Available</option>
+                        <option value="domain_registered" {{ filterType == 'domain_registered' ? 'selected' : '' }}>Domain Registered</option>
+                        <option value="domain_redemption" {{ filterType == 'domain_redemption' ? 'selected' : '' }}>Redemption Period</option>
+                        <option value="domain_pending_delete" {{ filterType == 'domain_pending_delete' ? 'selected' : '' }}>Pending Delete</option>
+                        <option value="domain_updated" {{ filterType == 'domain_updated' ? 'selected' : '' }}>Domain Updated</option>
+                        <option value="whois_failed" {{ filterType == 'whois_failed' ? 'selected' : '' }}>WHOIS Failed</option>
+                    </optgroup>
+                    <optgroup label="System">
+                        <option value="session_new" {{ filterType == 'session_new' ? 'selected' : '' }}>New Login</option>
+                        <option value="session_failed" {{ filterType == 'session_failed' ? 'selected' : '' }}>Failed Login</option>
+                        <option value="system_welcome" {{ filterType == 'system_welcome' ? 'selected' : '' }}>Welcome</option>
+                        <option value="system_upgrade" {{ filterType == 'system_upgrade' ? 'selected' : '' }}>System Upgrade</option>
+                        <option value="update_available" {{ filterType == 'update_available' ? 'selected' : '' }}>Update Available</option>
+                    </optgroup>
+                </select>
+            </div>
+            
+            <!-- Date Range -->
+            <div>
+                <label class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Date Range</label>
+                <select name="date_range" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+                    <option value="">All Time</option>
+                    <option value="today" {{ filterDateRange == 'today' ? 'selected' : '' }}>Today</option>
+                    <option value="week" {{ filterDateRange == 'week' ? 'selected' : '' }}>This Week</option>
+                    <option value="month" {{ filterDateRange == 'month' ? 'selected' : '' }}>This Month</option>
+                </select>
+            </div>
+            
+            <!-- Apply/Reset Buttons -->
+            <div class="flex items-end space-x-2">
+                <button type="submit" class="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+                    <i class="fas fa-filter mr-2"></i>
+                    Apply Filters
+                </button>
+                <a href="/notifications" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm font-medium">
+                    <i class="fas fa-times mr-2"></i>
+                    Clear
+                </a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Pagination Info & Per Page Selector -->
+<div class="mb-4 flex justify-between items-center">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Showing <span class="font-semibold text-gray-900 dark:text-white">{{ offset + 1 }}</span> to 
+        <span class="font-semibold text-gray-900 dark:text-white">{{ min(offset + perPage, totalNotifications) }}</span> of 
+        <span class="font-semibold text-gray-900 dark:text-white">{{ totalNotifications }}</span> notification(s)
+        {% if unreadCount > 0 %}
+            <span class="text-gray-400 dark:text-slate-500">•</span>
+            <span class="font-semibold text-blue-600">{{ unreadCount }}</span> unread
+        {% endif %}
+    </div>
+    
+    <form method="GET" action="/notifications" class="flex items-center gap-2">
+        <input type="hidden" name="status" value="{{ filterStatus }}">
+        <input type="hidden" name="type" value="{{ filterType }}">
+        
+        <label for="per_page" class="text-sm text-gray-600 dark:text-slate-400">Show:</label>
+        <select name="per_page" id="per_page" onchange="this.form.submit()" class="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+            <option value="10" {{ perPage == 10 ? 'selected' : '' }}>10</option>
+            <option value="25" {{ perPage == 25 ? 'selected' : '' }}>25</option>
+            <option value="50" {{ perPage == 50 ? 'selected' : '' }}>50</option>
+            <option value="100" {{ perPage == 100 ? 'selected' : '' }}>100</option>
+        </select>
+    </form>
+</div>
+
+<!-- Notifications List -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+    {% if notifications is not empty %}
+        <div class="divide-y divide-gray-100 dark:divide-slate-700">
+            {% for notification in notifications %}
+                {% set bgClass = notification.is_read ? '' : 'bg-blue-50 dark:bg-blue-500/10' %}
+                {% set iconBgClass = 'bg-' ~ notification.color ~ '-100' %}
+                {% set iconTextClass = 'text-' ~ notification.color ~ '-600' %}
+                {% set hasDomain = notification.domain_id is not empty %}
+                {% set domainUrl = hasDomain ? '/domains/' ~ notification.domain_id : null %}
+                {% set clickUrl = null %}
+                {% if notification.type == 'update_available' %}
+                    {% set clickUrl = '/notifications/' ~ notification.id ~ '/mark-read?redirect=settings' %}
+                {% elseif hasDomain and not notification.is_read %}
+                    {% set clickUrl = '/notifications/' ~ notification.id ~ '/mark-read?redirect=domain&domain_id=' ~ notification.domain_id %}
+                {% elseif hasDomain %}
+                    {% set clickUrl = domainUrl %}
+                {% endif %}
+                {% set loginData = notification.login_data ?? null %}
+                {% set isLogin = (notification.type == 'session_new' and loginData) %}
+                {% set isFailedLogin = (notification.type == 'session_failed' and loginData) %}
+
+                <div class="px-4 py-3 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors {{ bgClass }}">
+                    <div class="flex items-start gap-3">
+                        <!-- Icon -->
+                        {% if isFailedLogin %}
+                            <div class="w-10 h-10 bg-red-100 dark:bg-red-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-shield-alt text-red-600"></i>
+                            </div>
+                        {% elseif isLogin %}
+                            <div class="w-10 h-10 bg-blue-100 dark:bg-blue-500/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-sign-in-alt text-blue-600"></i>
+                            </div>
+                        {% elseif clickUrl %}
+                            <a href="{{ clickUrl }}" class="w-10 h-10 {{ iconBgClass }} rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                <i class="fas fa-{{ notification.icon }} {{ iconTextClass }} text-sm"></i>
+                            </a>
+                        {% else %}
+                            <div class="w-10 h-10 {{ iconBgClass }} rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="fas fa-{{ notification.icon }} {{ iconTextClass }} text-sm"></i>
+                            </div>
+                        {% endif %}
+                        
+                        <!-- Content -->
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2">
+                                {% if clickUrl %}
+                                    <a href="{{ clickUrl }}" class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary transition-colors">{{ notification.title }}</a>
+                                {% else %}
+                                    <h3 class="text-sm font-medium text-gray-900 dark:text-white">{{ notification.title }}</h3>
+                                {% endif %}
+                                {% if not notification.is_read %}
+                                    <span class="flex h-1.5 w-1.5 relative">
+                                        <span class="animate-ping absolute inline-flex h-1.5 w-1.5 rounded-full bg-blue-400 opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
+                                    </span>
+                                {% endif %}
+                                <span class="text-xs text-gray-400 dark:text-slate-500 ml-auto flex-shrink-0">
+                                    <i class="fas fa-clock mr-1"></i>
+                                    {{ notification.time_ago }}
+                                </span>
+                            </div>
+
+                            {% if isFailedLogin %}
+                                <!-- Rich failed login details -->
+                                <div class="mt-1.5 bg-red-50 dark:bg-red-500/10 rounded-lg p-3 border border-red-200 dark:border-red-500/20">
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+                                        <!-- Location -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-map-marker-alt text-red-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">Location:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium">
+                                                {% if (loginData.country_code ?? 'xx') != 'xx' %}
+                                                    <span class="fi fi-{{ loginData.country_code|lower }} text-xs mr-0.5 rounded-sm"></span>
+                                                {% endif %}
+                                                {{ loginData.location ?? 'Unknown' }}
+                                            </span>
+                                        </div>
+                                        <!-- IP Address -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-network-wired text-blue-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">IP:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium font-mono text-[11px]">{{ loginData.ip ?? 'unknown' }}</span>
+                                        </div>
+                                        <!-- Browser -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-globe text-green-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">Browser:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium">{{ loginData.browser ?? 'Unknown' }}</span>
+                                        </div>
+                                        <!-- Device -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-{{ loginData.device_icon ?? 'desktop' }} text-purple-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">Device:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium">{{ loginData.device ?? 'Unknown' }}</span>
+                                        </div>
+                                        <!-- OS -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-laptop-code text-indigo-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">OS:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium">{{ loginData.os ?? 'Unknown' }}</span>
+                                        </div>
+                                        <!-- ISP -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-server text-amber-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">ISP:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium truncate">{{ loginData.isp ?? 'Unknown' }}</span>
+                                        </div>
+                                    </div>
+                                    <!-- Reason -->
+                                    <div class="mt-2 pt-2 border-t border-red-200 dark:border-red-500/20 flex items-center gap-1.5 text-xs">
+                                        <i class="fas fa-exclamation-triangle text-gray-400 dark:text-slate-500 w-3.5 text-center"></i>
+                                        <span class="text-gray-500 dark:text-slate-400">Reason:</span>
+                                        <span class="inline-flex items-center px-1.5 py-0.5 bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400 rounded font-medium text-[11px]">{{ loginData.reason ?? 'Unknown' }}</span>
+                                    </div>
+                                </div>
+                            {% elseif isLogin %}
+                                <!-- Rich login details -->
+                                <div class="mt-1.5 bg-gray-50 dark:bg-slate-700 rounded-lg p-3 border border-gray-100 dark:border-slate-600">
+                                    <div class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-xs">
+                                        <!-- Location -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-map-marker-alt text-red-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">Location:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium">
+                                                {% if loginData.country_code != 'xx' %}
+                                                    <span class="fi fi-{{ loginData.country_code|lower }} text-xs mr-0.5 rounded-sm"></span>
+                                                {% endif %}
+                                                {{ loginData.location ?? 'Unknown' }}
+                                            </span>
+                                        </div>
+                                        <!-- IP Address -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-network-wired text-blue-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">IP:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium font-mono text-[11px]">{{ loginData.ip ?? 'unknown' }}</span>
+                                        </div>
+                                        <!-- Browser -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-globe text-green-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">Browser:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium">{{ loginData.browser ?? 'Unknown' }}</span>
+                                        </div>
+                                        <!-- Device -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-{{ loginData.device_icon ?? 'desktop' }} text-purple-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">Device:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium">{{ loginData.device ?? 'Unknown' }}</span>
+                                        </div>
+                                        <!-- OS -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-laptop-code text-indigo-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">OS:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium">{{ loginData.os ?? 'Unknown' }}</span>
+                                        </div>
+                                        <!-- ISP -->
+                                        <div class="flex items-center gap-1.5">
+                                            <i class="fas fa-server text-amber-400 w-3.5 text-center"></i>
+                                            <span class="text-gray-500 dark:text-slate-400">ISP:</span>
+                                            <span class="text-gray-800 dark:text-slate-200 font-medium truncate">{{ loginData.isp ?? 'Unknown' }}</span>
+                                        </div>
+                                    </div>
+                                    <!-- Login method -->
+                                    <div class="mt-2 pt-2 border-t border-gray-200 dark:border-slate-600 flex items-center gap-1.5 text-xs">
+                                        <i class="fas fa-key text-gray-400 dark:text-slate-500 w-3.5 text-center"></i>
+                                        <span class="text-gray-500 dark:text-slate-400">Method:</span>
+                                        <span class="inline-flex items-center px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-400 rounded font-medium text-[11px]">{{ loginData.method ?? 'Login' }}</span>
+                                    </div>
+                                </div>
+                            {% else %}
+                                <!-- Standard notification message -->
+                                <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">{{ notification.message }}</p>
+                                {% if hasDomain and clickUrl %}
+                                    <a href="{{ clickUrl }}" class="text-xs text-primary mt-0.5 hover:underline inline-block">
+                                        <i class="fas fa-external-link-alt text-[10px] mr-1"></i>View domain
+                                    </a>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex items-center gap-1 ml-2 flex-shrink-0">
+                            {% if not notification.is_read %}
+                                <a href="/notifications/{{ notification.id }}/mark-read" class="w-7 h-7 flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10 rounded transition-colors" title="Mark as read">
+                                    <i class="fas fa-check text-xs"></i>
+                                </a>
+                            {% endif %}
+                            <form method="POST" action="/notifications/{{ notification.id }}/delete" class="inline" onsubmit="return confirm('Delete this notification?')">
+                                {{ csrf_field() }}
+                                <button type="submit" class="w-7 h-7 flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors" title="Delete">
+                                    <i class="fas fa-times text-xs"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+        
+    {% else %}
+        <!-- Empty State -->
+        <div class="p-12 text-center">
+            <i class="fas fa-bell-slash text-gray-300 dark:text-slate-600 text-4xl mb-3"></i>
+            <p class="text-sm text-gray-600 dark:text-slate-400">No notifications found</p>
+            <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">Try adjusting your filters</p>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Pagination Controls -->
+{% if totalPages > 1 %}
+<div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <!-- Page Info -->
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Page <span class="font-semibold text-gray-900 dark:text-white">{{ page }}</span> of 
+        <span class="font-semibold text-gray-900 dark:text-white">{{ totalPages }}</span>
+    </div>
+    
+    <!-- Pagination Buttons -->
+    <div class="flex items-center gap-1">
+        <!-- First Page -->
+        {% if page > 1 %}
+            <a href="{{ pagination_url(1, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-double-left"></i>
+            </a>
+        {% endif %}
+        
+        <!-- Previous Page -->
+        {% if page > 1 %}
+            <a href="{{ pagination_url(page - 1, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-left"></i> Previous
+            </a>
+        {% endif %}
+        
+        <!-- Page Numbers -->
+        {% set range = 2 %}
+        {% set startPage = max(1, page - range) %}
+        {% set endPage = min(totalPages, page + range) %}
+        
+        {% if startPage > 1 %}
+            <a href="{{ pagination_url(1, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">1</a>
+            {% if startPage > 2 %}
+                <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+            {% endif %}
+        {% endif %}
+        
+        {% for i in startPage..endPage %}
+            {% if i == page %}
+                <span class="px-3 py-2 text-sm bg-primary text-white rounded-lg font-semibold">{{ i }}</span>
+            {% else %}
+                <a href="{{ pagination_url(i, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ i }}</a>
+            {% endif %}
+        {% endfor %}
+        
+        {% if endPage < totalPages %}
+            {% if endPage < totalPages - 1 %}
+                <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+            {% endif %}
+            <a href="{{ pagination_url(totalPages, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ totalPages }}</a>
+        {% endif %}
+        
+        <!-- Next Page -->
+        {% if page < totalPages %}
+            <a href="{{ pagination_url(page + 1, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                Next <i class="fas fa-angle-right"></i>
+            </a>
+        {% endif %}
+        
+        <!-- Last Page -->
+        {% if page < totalPages %}
+            <a href="{{ pagination_url(totalPages, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-double-right"></i>
+            </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Hidden form for clear all -->
+<form id="clearAllForm" method="POST" action="/notifications/clear-all" class="hidden">
+    {{ csrf_field() }}
+</form>
+
+<script>
+function markAllAsRead() {
+    if (confirm('Mark all notifications as read?')) {
+        window.location.href = '/notifications/mark-all-read';
+    }
+}
+
+function clearAll() {
+    if (confirm('Clear all notifications? This action cannot be undone.')) {
+        document.getElementById('clearAllForm').submit();
+    }
+}
+</script>
+{% endblock %}
