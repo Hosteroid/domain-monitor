@@ -296,33 +296,28 @@ class ErrorHandler
         $request_data = json_decode($errorData['request_data'], true);
         $session_data = json_decode($errorData['session_data'], true);
         
-        // Display debug page in development, clean 500 in production
         $twigTemplate = $this->isDevelopment ? 'errors/debug.twig' : 'errors/500.twig';
-        $twigFile = __DIR__ . '/../Views/' . $twigTemplate;
 
-        if (file_exists($twigFile)) {
-            try {
-                $memory_usage_mb = round(($memory_usage ?? 0) / 1024 / 1024, 2);
-                $peak_memory_mb = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
-                $errorContext = compact(
-                    'error_id', 'error_type', 'error_message', 'error_file', 'error_line',
-                    'stack_trace', 'request_method', 'request_uri', 'user_agent',
-                    'ip_address', 'php_version', 'memory_usage', 'memory_usage_mb',
-                    'peak_memory_mb', 'occurred_at', 'user_info', 'request_data', 'session_data'
-                );
-                echo \Core\TwigService::getInstance()->render($twigTemplate, $errorContext);
-            } catch (\Throwable $e) {
-                // Twig itself failed — fall back to raw PHP view
-                if ($this->isDevelopment) {
-                    require __DIR__ . '/../Views/errors/debug.php';
-                } else {
-                    require __DIR__ . '/../Views/errors/500.php';
-                }
+        try {
+            $memory_usage_mb = round(($memory_usage ?? 0) / 1024 / 1024, 2);
+            $peak_memory_mb = round(memory_get_peak_usage(true) / 1024 / 1024, 2);
+            $errorContext = compact(
+                'error_id', 'error_type', 'error_message', 'error_file', 'error_line',
+                'stack_trace', 'request_method', 'request_uri', 'user_agent',
+                'ip_address', 'php_version', 'memory_usage', 'memory_usage_mb',
+                'peak_memory_mb', 'occurred_at', 'user_info', 'request_data', 'session_data'
+            );
+            echo \Core\TwigService::getInstance()->render($twigTemplate, $errorContext);
+        } catch (\Throwable $e) {
+            $safeId = htmlspecialchars($error_id, ENT_QUOTES, 'UTF-8');
+            if ($this->isDevelopment) {
+                $safeMsg = htmlspecialchars($error_message, ENT_QUOTES, 'UTF-8');
+                $safeFile = htmlspecialchars($error_file, ENT_QUOTES, 'UTF-8');
+                echo "<h1>Internal Server Error</h1><p><strong>ID:</strong> {$safeId}</p>"
+                   . "<p>{$safeMsg} in {$safeFile}:{$error_line}</p>";
+            } else {
+                echo "<h1>Internal Server Error</h1><p>Reference: {$safeId}</p>";
             }
-        } elseif ($this->isDevelopment) {
-            require __DIR__ . '/../Views/errors/debug.php';
-        } else {
-            require __DIR__ . '/../Views/errors/500.php';
         }
         
         exit;

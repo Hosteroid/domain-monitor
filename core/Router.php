@@ -72,12 +72,7 @@ class Router
                 // Silently fail if logging is not available
             }
             
-            $twigPath = __DIR__ . '/../app/Views/errors/404.twig';
-            if (file_exists($twigPath)) {
-                echo TwigService::getInstance()->render('errors/404.twig');
-            } else {
-                require_once __DIR__ . '/../app/Views/errors/404.php';
-            }
+            echo TwigService::getInstance()->render('errors/404.twig');
             return;
         }
 

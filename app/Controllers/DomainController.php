@@ -844,6 +844,7 @@ class DomainController extends Controller
 
         $this->view('domains/view', [
             'domain' => $formattedDomain,
+            'whoisData' => $whoisData,
             'logs' => $logs,
             'availableTags' => $availableTags,
             'title' => $domain['domain_name']
