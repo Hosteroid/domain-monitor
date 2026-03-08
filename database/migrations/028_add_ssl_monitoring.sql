@@ -35,24 +35,6 @@ ALTER TABLE domains
     ADD COLUMN ssl_last_checked TIMESTAMP NULL AFTER dns_last_checked,
     ADD COLUMN ssl_monitoring_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT '1=SSL monitoring active, 0=disabled' AFTER dns_monitoring_enabled;
 
--- Preserve existing monitored SSL domains when upgrading
-UPDATE domains d
-SET d.ssl_monitoring_enabled = 1
-WHERE EXISTS (
-    SELECT 1
-    FROM ssl_certificates s
-    WHERE s.domain_id = d.id
-);
-
--- Carry forward the latest stored SSL check time
-UPDATE domains d
-JOIN (
-    SELECT domain_id, MAX(last_checked) AS max_checked
-    FROM ssl_certificates
-    GROUP BY domain_id
-) s ON s.domain_id = d.id
-SET d.ssl_last_checked = s.max_checked;
-
 -- Add SSL monitoring cron settings
 INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('ssl_check_interval_hours', '12', 'string', 'SSL certificate check interval in hours'),

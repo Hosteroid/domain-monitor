@@ -60,13 +60,29 @@ $startTime = microtime(true);
 
 logMessage("=== Starting SSL check cron job ===");
 
-$domains = $domainModel->where('is_active', 1);
-$domains = array_values(array_filter($domains, static fn(array $domain): bool => ($domain['ssl_monitoring_enabled'] ?? 0) == 1));
-logMessage("Found " . count($domains) . " domain(s) with SSL monitoring enabled");
+// Only check domains that are registered and in use (active or expiring_soon).
+// Skip available, expired, error, redemption_period, pending_delete — they typically have no DNS/SSL.
+$checkableStatuses = ['active', 'expiring_soon'];
+
+$allSslEnabled = array_values(array_filter(
+    $domainModel->where('is_active', 1),
+    static fn(array $d): bool => ($d['ssl_monitoring_enabled'] ?? 0) == 1
+));
+$domains = array_values(array_filter($allSslEnabled, static function (array $domain) use ($checkableStatuses): bool {
+    $status = strtolower($domain['status'] ?? '');
+    return in_array($status, $checkableStatuses, true);
+}));
+$skippedByStatus = count($allSslEnabled) - count($domains);
+logMessage("Found " . count($domains) . " domain(s) with SSL monitoring enabled and checkable status (active/expiring_soon)");
+if ($skippedByStatus > 0) {
+    logMessage("Skipped " . $skippedByStatus . " domain(s) with non-checkable status (available/expired/error/redemption_period/pending_delete)");
+}
 
 $stats = [
     'checked_domains' => 0,
     'checked_hosts' => 0,
+    'skipped_by_status' => $skippedByStatus,
+    'skipped_unresolved' => 0,
     'issues_detected' => 0,
     'notifications_sent' => 0,
     'in_app_notifications' => 0,
@@ -115,6 +131,13 @@ foreach ($domains as $domain) {
             $hostname = $target['hostname'];
             $port = (int)($target['port'] ?? 443);
             $endpointLabel = $sslService->formatTargetLabel($hostname, $port);
+
+            if (!hostnameResolves($hostname)) {
+                logMessage("  {$endpointLabel}: skipped (hostname does not resolve)");
+                $stats['skipped_unresolved']++;
+                continue;
+            }
+
             $existing = $sslModel->findByDomainAndHost($domain['id'], $hostname, $port);
             $previousStatus = $existing['status'] ?? null;
 
@@ -200,6 +223,8 @@ $settingModel->setValue('last_ssl_check_run', date('Y-m-d H:i:s'));
 
 logMessage("\n=== SSL cron job completed ===");
 logMessage("Domains checked:        {$stats['checked_domains']}");
+logMessage("Domains skipped:        {$stats['skipped_by_status']} (non-checkable status)");
+logMessage("Endpoints skipped:      {$stats['skipped_unresolved']} (hostname does not resolve)");
 logMessage("Endpoints checked:      {$stats['checked_hosts']}");
 logMessage("Status changes:         {$stats['status_changes']}");
 logMessage("Issue endpoints:        {$stats['issues_detected']}");
@@ -335,6 +360,13 @@ function logMessage(string $message): void
 function logTimeSince(float $since): void
 {
     logMessage("  -> " . formatDuration(microtime(true) - $since));
+}
+
+function hostnameResolves(string $hostname): bool
+{
+    return @checkdnsrr($hostname, 'SOA')
+        || @checkdnsrr($hostname, 'A')
+        || @checkdnsrr($hostname, 'AAAA');
 }
 
 function formatDuration(float $seconds): string

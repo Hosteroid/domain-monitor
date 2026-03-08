@@ -95,12 +95,27 @@ $startTime = microtime(true);
 
 logMessage("=== Starting DNS check cron job ===");
 
-$domains = $domainModel->where('is_active', 1);
-$domains = array_values(array_filter($domains, fn($d) => ($d['dns_monitoring_enabled'] ?? 1) == 1));
-logMessage("Found " . count($domains) . " domain(s) with DNS monitoring enabled");
+// Only check domains that are registered and in use (active or expiring_soon).
+// Skip available, expired, error, redemption_period, pending_delete — they typically have no DNS.
+$checkableStatuses = ['active', 'expiring_soon'];
+
+$allDnsEnabled = array_values(array_filter(
+    $domainModel->where('is_active', 1),
+    static fn($d): bool => ($d['dns_monitoring_enabled'] ?? 1) == 1
+));
+$domains = array_values(array_filter($allDnsEnabled, static function ($d) use ($checkableStatuses): bool {
+    $status = strtolower($d['status'] ?? '');
+    return in_array($status, $checkableStatuses, true);
+}));
+$skippedByStatus = count($allDnsEnabled) - count($domains);
+logMessage("Found " . count($domains) . " domain(s) with DNS monitoring enabled and checkable status (active/expiring_soon)");
+if ($skippedByStatus > 0) {
+    logMessage("Skipped " . $skippedByStatus . " domain(s) with non-checkable status (available/expired/error/redemption_period/pending_delete)");
+}
 
 $stats = [
     'checked'              => 0,
+    'skipped_by_status'    => $skippedByStatus,
     'changes_detected'     => 0,
     'records_added'        => 0,
     'records_removed'      => 0,
@@ -833,6 +848,7 @@ function printSummary(array $stats, float $startTime): void
 
     logMessage("\n=== DNS cron job completed ===");
     logMessage("Domains checked:            {$stats['checked']}");
+    logMessage("Skipped (by status):        {$stats['skipped_by_status']}");
     logMessage("Skipped (unresolved):       {$stats['skipped_unresolved']}");
     logMessage("Crt.sh fetched:             {$stats['crtsh_fetched']}");
     logMessage("Crt.sh skipped (cached):    {$stats['crtsh_skipped']}");
