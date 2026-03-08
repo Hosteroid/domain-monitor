@@ -205,6 +205,7 @@ class TwoFactorController extends Controller
 
         $this->view('2fa/verify', [
             'user' => $user,
+            'canSendEmailCode' => !empty($user['email_verified']),
             'title' => 'Two-Factor Authentication'
         ]);
     }

@@ -1,0 +1,284 @@
+<!-- OVERVIEW TAB CONTENT -->
+
+<!-- Main 2-Column Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+    <!-- LEFT COLUMN -->
+    <div class="space-y-3">
+        <!-- Domain Info Card -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-info-circle text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Domain Information
+                </h3>
+            </div>
+            <div class="p-4">
+                <div class="space-y-2 text-xs">
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Registrar:</span>
+                        <span class="text-gray-900 dark:text-white font-medium">{{ domain.registrar ?? 'Unknown' }}</span>
+                    </div>
+                    {% if domain.registrar_url is not empty %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Registrar URL:</span>
+                        <a href="{{ domain.registrar_url }}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center">
+                            <i class="fas fa-external-link-alt mr-1" style="font-size: 9px;"></i>
+                            Visit
+                        </a>
+                    </div>
+                    {% endif %}
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Expires:</span>
+                        {% set expiryColor = domain.expiryColor|default('gray') %}
+                        <span class="text-{{ expiryColor }}-600 dark:text-{{ expiryColor }}-400 font-semibold">
+                            {% if domain.expiration_date is defined and domain.expiration_date %}
+                                {{ domain.expiration_date|date('M d, Y') }}{% if domain.daysLeft is defined and domain.daysLeft is not null %} ({{ domain.daysLeft }} days){% endif %}
+                                {% if domain.isManualExpiration %}
+                                    <span class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400">
+                                        <i class="fas fa-edit mr-0.5" style="font-size: 8px;"></i>Manual
+                                    </span>
+                                {% endif %}
+                            {% else %}
+                                Unknown
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Created:</span>
+                        <span class="text-gray-900 dark:text-white">{% if whoisData.creation_date is defined %}{{ whoisData.creation_date|date('M d, Y') }}{% else %}-{% endif %}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Last Updated:</span>
+                        <span class="text-gray-900 dark:text-white">{% if domain.updated_date is defined and domain.updated_date %}{{ domain.updated_date|date('M d, Y') }}{% else %}-{% endif %}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Last Checked:</span>
+                        <span class="text-gray-900 dark:text-white">{% if domain.last_checked is defined and domain.last_checked %}{{ domain.last_checked|date('M d, Y H:i') }}{% else %}-{% endif %}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Financial Summary (Mockup) -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex items-center justify-between">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-dollar-sign text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Financial Summary
+                </h3>
+                <button onclick="switchTab('billing')" class="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                    Details
+                    <i class="fas fa-arrow-right ml-1" style="font-size: 8px;"></i>
+                </button>
+            </div>
+            <div class="p-4">
+                <div class="space-y-2 text-xs">
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Purchase Price:</span>
+                        <span class="text-gray-900 dark:text-white font-medium">$12.99</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Renewal Cost:</span>
+                        <span class="text-gray-900 dark:text-white font-medium">$14.99 / yr</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-500 dark:text-slate-400">Total Spent:</span>
+                        <span class="text-gray-900 dark:text-white font-semibold">$42.97</span>
+                    </div>
+                    <div class="border-t border-gray-100 dark:border-slate-700 pt-2 mt-2">
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-500 dark:text-slate-400">Next Renewal:</span>
+                            {% if domain.expiration_date is defined and domain.expiration_date %}
+                            <span class="inline-flex items-center px-2 py-0.5 bg-{{ (domain.expiryColor ?? 'gray') }}-100 dark:bg-{{ (domain.expiryColor ?? 'gray') }}-500/10 text-{{ (domain.expiryColor ?? 'gray') }}-800 dark:text-{{ (domain.expiryColor ?? 'gray') }}-400 text-xs font-semibold rounded">
+                                {{ domain.expiration_date|date('M d, Y') }}
+                            </span>
+                            {% else %}
+                            <span class="text-gray-400 dark:text-slate-500">-</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3 px-2 py-1.5 bg-amber-50 dark:bg-amber-500/10 rounded border border-amber-200 dark:border-amber-800">
+                    <p class="text-xs text-amber-700 dark:text-amber-400 flex items-center">
+                        <i class="fas fa-info-circle mr-1.5" style="font-size: 9px;"></i>
+                        Sample data &mdash; billing features coming soon
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notes (Inline Editable) -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex items-center justify-between">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-sticky-note text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Notes
+                </h3>
+                <button id="notes-edit-btn" onclick="toggleNotesEdit(true)" class="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                    <i class="fas fa-edit mr-1" style="font-size: 9px;"></i>
+                    Edit
+                </button>
+            </div>
+            <div class="p-4">
+                <!-- View Mode -->
+                <div id="notes-view-mode">
+                    {% if domain.notes is not empty %}
+                    <div class="text-xs text-gray-900 dark:text-white whitespace-pre-wrap font-mono bg-gray-50 dark:bg-slate-900 rounded p-2 border border-gray-200 dark:border-slate-700 max-h-40 overflow-y-auto">{{ domain.notes }}</div>
+                    {% else %}
+                    <p class="text-xs text-gray-500 dark:text-slate-400 italic">No notes yet. <button onclick="toggleNotesEdit(true)" class="text-blue-600 dark:text-blue-400 hover:underline">Add notes</button></p>
+                    {% endif %}
+                </div>
+                <!-- Edit Mode -->
+                <div id="notes-edit-mode" class="hidden">
+                    <form method="POST" action="/domains/{{ domain.id }}/update-notes" id="overview-notes-form">
+                        {{ csrf_field()|raw }}
+                        <textarea
+                            name="notes"
+                            id="overview-notes-textarea"
+                            rows="6"
+                            class="w-full px-3 py-2 text-xs border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                            placeholder="Add notes about this domain...">{{ domain.notes|default('') }}</textarea>
+                        <div class="flex gap-2 mt-2">
+                            <button
+                                type="submit"
+                                class="flex-1 inline-flex items-center justify-center px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                                <i class="fas fa-save mr-1.5"></i>
+                                Save
+                            </button>
+                            <button
+                                type="button"
+                                onclick="toggleNotesEdit(false)"
+                                class="flex-1 inline-flex items-center justify-center px-3 py-1.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+                                <i class="fas fa-times mr-1.5"></i>
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="space-y-3">
+        <!-- Monitoring Status -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-heartbeat text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Monitoring Status
+                </h3>
+            </div>
+            <div class="p-4">
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i class="fas fa-file-alt text-blue-500 dark:text-blue-400 mr-2" style="font-size: 10px;"></i>
+                            <span class="text-xs text-gray-700 dark:text-slate-300">WHOIS</span>
+                        </div>
+                        {% if domain.is_active %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded">
+                            <i class="fas fa-check-circle mr-1" style="font-size: 9px;"></i>Active
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 text-xs font-semibold rounded">
+                            <i class="fas fa-pause-circle mr-1" style="font-size: 9px;"></i>Disabled
+                        </span>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i class="fas fa-lock text-indigo-500 dark:text-indigo-400 mr-2" style="font-size: 10px;"></i>
+                            <span class="text-xs text-gray-700 dark:text-slate-300">SSL</span>
+                        </div>
+                        <span class="inline-flex items-center px-2 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 text-xs font-semibold rounded">
+                            <i class="fas fa-minus-circle mr-1" style="font-size: 9px;"></i>Coming Soon
+                        </span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i class="fas fa-network-wired text-blue-500 dark:text-blue-400 mr-2" style="font-size: 10px;"></i>
+                            <span class="text-xs text-gray-700 dark:text-slate-300">DNS</span>
+                        </div>
+                        {% if domain.dns_monitoring_enabled|default(1) %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded">
+                            <i class="fas fa-check-circle mr-1" style="font-size: 9px;"></i>Active
+                        </span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 text-xs font-semibold rounded">
+                            <i class="fas fa-pause-circle mr-1" style="font-size: 9px;"></i>Disabled
+                        </span>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i class="fas fa-bell text-orange-500 dark:text-orange-400 mr-2" style="font-size: 10px;"></i>
+                            <span class="text-xs text-gray-700 dark:text-slate-300">Notification Group</span>
+                        </div>
+                        {% if domain.group_name is not empty %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded">
+                            <i class="fas fa-bell mr-1" style="font-size: 9px;"></i>{{ domain.group_name }}
+                        </span>
+                        {% else %}
+                        <a href="/domains/{{ domain.id }}/edit?from=/domains/{{ domain.id }}" class="inline-flex items-center px-2 py-0.5 bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 text-xs font-semibold rounded hover:bg-orange-200 dark:hover:bg-orange-500/20 transition-colors">
+                            <i class="fas fa-plus-circle mr-1" style="font-size: 9px;"></i>Assign Group
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Active Channels -->
+        {% if domain.group_name is not empty %}
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-bell text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Active Channels
+                    <span class="ml-auto text-xs font-medium text-gray-500 dark:text-slate-400 normal-case tracking-normal">{{ domain.group_name }}</span>
+                </h3>
+            </div>
+            <div class="p-4">
+                {% if domain.channels is not empty %}
+                <div class="grid grid-cols-2 gap-2">
+                    {% for channel in domain.channels %}
+                    <div class="flex items-center p-2 rounded {{ channel.is_active ? 'bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-800' : 'bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-700' }}">
+                        <i class="fas fa-{{ channel.is_active ? 'check-circle text-green-600 dark:text-green-400' : 'times-circle text-gray-400 dark:text-slate-500' }} mr-2 text-xs"></i>
+                        <span class="text-xs font-medium text-gray-700 dark:text-slate-300">{{ channel.channel_type|capitalize }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <p class="text-xs text-gray-500 dark:text-slate-400 mt-2">{{ domain.activeChannelCount|default(0) }} of {{ domain.channels|length }} channels active</p>
+                {% else %}
+                <p class="text-xs text-gray-500 dark:text-slate-400 italic">No channels configured for this group</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Domain Status Codes -->
+        <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+            <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+                <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                    <i class="fas fa-shield-alt text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                    Domain Status Codes
+                    {% if domain is defined and domain.parsedStatuses is defined and domain.parsedStatuses is not empty %}
+                        <span class="ml-1.5 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded">{{ domain.parsedStatuses|length }}</span>
+                    {% endif %}
+                </h3>
+            </div>
+            <div class="p-4">
+                <div class="flex flex-wrap gap-1.5">
+                    {% if domain is defined and domain.parsedStatuses is defined and domain.parsedStatuses is not empty %}
+                        {% for status in domain.parsedStatuses %}
+                        <span class="px-2 py-1 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 rounded text-xs font-medium" title="{{ status }}">{{ status|replace({'_':' '})|title }}</span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="px-2 py-1 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 rounded text-xs font-medium">No status codes</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

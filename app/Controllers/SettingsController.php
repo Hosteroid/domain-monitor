@@ -136,6 +136,21 @@ class SettingsController extends Controller
         // Rollback availability
         $rollbackAvailable = !empty($updateSettings['update_backup_path']) && file_exists($updateSettings['update_backup_path']);
 
+        // Cron staleness: show warning if last run is overdue
+        $intervalHours = (int)($settings['check_interval_hours'] ?? 24);
+        $domainStaleThreshold = $intervalHours * 1.5; // e.g. 36h for 24h interval
+        $dnsStaleThreshold = 24; // DNS cron runs every 6h, 24h = overdue
+        $domainCronStale = false;
+        $dnsCronStale = false;
+        if (!empty($settings['last_check_run'])) {
+            $hoursSince = (time() - strtotime($settings['last_check_run'])) / 3600;
+            $domainCronStale = $hoursSince > $domainStaleThreshold;
+        }
+        if (!empty($settings['last_dns_check_run'])) {
+            $hoursSince = (time() - strtotime($settings['last_dns_check_run'])) / 3600;
+            $dnsCronStale = $hoursSince > $dnsStaleThreshold;
+        }
+
         $this->view('settings/index', [
             'settings' => $settings,
             'appSettings' => $appSettings,
@@ -154,6 +169,8 @@ class SettingsController extends Controller
             'cachedUpdateAvailable' => $cachedUpdateAvailable,
             'cachedUpdateData' => $cachedUpdateData,
             'rollbackAvailable' => $rollbackAvailable,
+            'domainCronStale' => $domainCronStale,
+            'dnsCronStale' => $dnsCronStale,
             'title' => 'Settings'
         ]);
     }
@@ -316,9 +333,16 @@ class SettingsController extends Controller
             // Update registration settings
             $registrationEnabled = isset($_POST['registration_enabled']) ? '1' : '0';
             $requireEmailVerification = isset($_POST['require_email_verification']) ? '1' : '0';
-            
+
             $this->settingModel->setValue('registration_enabled', $registrationEnabled);
             $this->settingModel->setValue('require_email_verification', $requireEmailVerification);
+
+            // Update domain view template
+            $viewTemplate = trim($_POST['domain_view_template'] ?? 'detailed');
+            if (!in_array($viewTemplate, ['legacy', 'detailed'])) {
+                $viewTemplate = 'detailed';
+            }
+            $this->settingModel->setValue('domain_view_template', $viewTemplate);
             
             $_SESSION['success'] = 'Application settings updated successfully';
             $this->redirect('/settings#app');

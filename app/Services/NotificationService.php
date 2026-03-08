@@ -665,6 +665,54 @@ class NotificationService
         }
     }
 
+    // ========================================
+    // DNS MONITORING NOTIFICATIONS
+    // ========================================
+
+    /**
+     * Create a DNS change notification (in-app / bell icon)
+     */
+    public function notifyDnsChange(int $userId, string $domainName, int $domainId, string $summary): void
+    {
+        $notificationModel = new \App\Models\Notification();
+        $notificationModel->createNotification(
+            $userId,
+            'dns_change',
+            'DNS Records Changed',
+            "{$domainName} - {$summary}",
+            $domainId
+        );
+    }
+
+    /**
+     * Send DNS change alert to external channels
+     */
+    public function sendDnsChangeAlert(array $domain, array $notificationChannels, string $detailMessage): array
+    {
+        $results = [];
+
+        foreach ($notificationChannels as $channel) {
+            $config = json_decode($channel['channel_config'], true);
+            $success = $this->send(
+                $channel['channel_type'],
+                $config,
+                $detailMessage,
+                [
+                    'subject'   => "DNS Changes: {$domain['domain_name']}",
+                    'domain'    => $domain['domain_name'],
+                    'domain_id' => $domain['id'],
+                ]
+            );
+
+            $results[] = [
+                'channel' => $channel['channel_type'],
+                'success' => $success,
+            ];
+        }
+
+        return $results;
+    }
+
     /**
      * Delete old read notifications (cleanup)
      */

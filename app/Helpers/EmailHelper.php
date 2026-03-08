@@ -511,7 +511,10 @@ class EmailHelper
     public static function getEmailSubject(array $data): string
     {
         if (isset($data['domain'])) {
-            $daysLeft = $data['days_left'];
+            $daysLeft = $data['days_left'] ?? null;
+            if ($daysLeft === null) {
+                return "⚠️ Domain Expiration Alert: {$data['domain']}";
+            }
             if ($daysLeft <= 0) {
                 return "🚨 URGENT: Domain {$data['domain']} has EXPIRED";
             }

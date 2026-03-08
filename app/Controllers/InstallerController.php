@@ -57,6 +57,7 @@ class InstallerController extends Controller
             '024_add_status_notifications_v1.1.2.sql',
             '025_add_update_system_v1.1.3.sql',
             '026_update_app_version_v1.1.4.sql',
+            '027_add_dns_monitoring.sql',
         ];
         
         try {
@@ -200,6 +201,7 @@ class InstallerController extends Controller
                     '024_add_status_notifications_v1.1.2.sql',
                     '025_add_update_system_v1.1.3.sql',
                     '026_update_app_version_v1.1.4.sql',
+                    '027_add_dns_monitoring.sql',
                 ];
             }
             
@@ -423,6 +425,7 @@ class InstallerController extends Controller
                     '024_add_status_notifications_v1.1.2.sql',
                     '025_add_update_system_v1.1.3.sql',
                     '026_update_app_version_v1.1.4.sql',
+                    '027_add_dns_monitoring.sql',
                 ];
                 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");

@@ -238,6 +238,7 @@
                 <!-- Add Domain Button -->
                 <div class="mt-6 pt-6 border-t border-gray-200 dark:border-slate-700">
                     <form method="POST" action="/domains/store" class="flex items-center justify-between">
+                        {{ csrf_field()|raw }}
                         <input type="hidden" name="domain_name" value="{{ whoisData.domain }}">
                         <p class="text-sm text-gray-600 dark:text-slate-400">Want to monitor this domain?</p>
                         <button type="submit" class="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">

@@ -73,12 +73,12 @@ class DiscordChannel implements NotificationChannelInterface
                 ],
                 [
                     'name' => 'Days Left',
-                    'value' => $data['days_left'],
+                    'value' => (string) ($data['days_left'] ?? 'N/A'),
                     'inline' => true
                 ],
                 [
                     'name' => 'Expiration Date',
-                    'value' => $data['expiration_date'],
+                    'value' => $data['expiration_date'] ?? 'N/A',
                     'inline' => true
                 ]
             ];

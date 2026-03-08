@@ -140,15 +140,25 @@
                 </div>
 
                 <!-- Active Monitoring -->
-                <div class="bg-gray-50 dark:bg-slate-900 rounded-lg p-4 border border-gray-200 dark:border-slate-700">
-                    <label class="flex items-center cursor-pointer">
+                <div id="dns-monitoring" class="bg-gray-50 dark:bg-slate-900 rounded-lg p-4 border border-gray-200 dark:border-slate-700 space-y-4">
+                    <label class="flex items-start cursor-pointer">
                         <input type="checkbox" 
                                name="is_active" 
                                {{ domain.is_active ? 'checked' : '' }} 
-                               class="w-4 h-4 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
+                               class="w-4 h-4 mt-0.5 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
                         <div class="ml-3">
                             <span class="text-sm font-medium text-gray-900 dark:text-white">Enable Active Monitoring</span>
-                            <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">When enabled, this domain will be checked regularly and notifications will be sent</p>
+                            <p class="text-xs text-gray-600 dark:text-slate-400 mt-1">When enabled, this domain will be checked regularly and notifications will be sent</p>
+                        </div>
+                    </label>
+                    <label class="flex items-start cursor-pointer pt-2 border-t border-gray-200 dark:border-slate-700">
+                        <input type="checkbox" 
+                               name="dns_monitoring_enabled" 
+                               {{ domain.dns_monitoring_enabled|default(1) ? 'checked' : '' }} 
+                               class="w-4 h-4 mt-0.5 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">Enable DNS Monitoring</span>
+                            <p class="text-xs text-gray-600 dark:text-slate-400 mt-1">When enabled, DNS records will be checked for changes and you'll receive alerts</p>
                         </div>
                     </label>
                 </div>
@@ -177,7 +187,7 @@
             <i class="fas fa-eye text-blue-600 dark:text-blue-400 mr-2 text-sm"></i>
             <span class="text-sm font-medium text-gray-700 dark:text-slate-300">View Details</span>
         </a>
-        <form method="POST" action="/domains/{{ domain.id }}/refresh" class="m-0">
+        <form method="POST" action="/domains/{{ domain.id }}/refresh-whois" class="m-0">
             {{ csrf_field() }}
             <button type="submit" 
                     class="w-full flex items-center justify-center p-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:border-green-300 dark:hover:border-green-700 hover:bg-green-50 dark:hover:bg-green-500/10 transition-colors group">

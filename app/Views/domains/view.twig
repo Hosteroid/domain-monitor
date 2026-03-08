@@ -50,11 +50,11 @@
         {% endfor %}
     </div>
     <div class="flex gap-2 items-center">
-        <form method="POST" action="/domains/{{ domain.id }}/refresh" class="inline">
+        <form method="POST" action="/domains/{{ domain.id }}/refresh-whois" class="inline">
             {{ csrf_field() }}
             <button type="submit" class="inline-flex items-center justify-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium min-w-[80px] h-[32px]">
                 <i class="fas fa-sync-alt mr-1.5"></i>
-                Refresh
+                Refresh WHOIS
             </button>
         </form>
         <a href="/domains/{{ domain.id }}/edit?from=/domains/{{ domain.id }}" class="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors font-medium min-w-[80px] h-[32px]">

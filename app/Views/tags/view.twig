@@ -213,7 +213,7 @@
                                     <a href="/domains/{{ domain.id }}" class="text-blue-600 hover:text-blue-800" title="View">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                    <form method="POST" action="/domains/{{ domain.id }}/refresh" class="inline">
+                                    <form method="POST" action="/domains/{{ domain.id }}/refresh-whois" class="inline">
                                         {{ csrf_field() }}
                                         <button type="submit" class="text-green-600 hover:text-green-800" title="Refresh WHOIS">
                                             <i class="fas fa-sync-alt"></i>
@@ -267,10 +267,10 @@
                         <a href="/domains/{{ domain.id }}" class="flex-1 px-3 py-1.5 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded text-center text-sm hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors">
                             <i class="fas fa-eye mr-1"></i> View
                         </a>
-                        <form method="POST" action="/domains/{{ domain.id }}/refresh" class="flex-1">
+                        <form method="POST" action="/domains/{{ domain.id }}/refresh-whois" class="flex-1">
                             {{ csrf_field() }}
                             <button type="submit" class="w-full px-3 py-1.5 bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 rounded text-center text-sm hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors">
-                                <i class="fas fa-sync-alt mr-1"></i> Refresh
+                                <i class="fas fa-sync-alt mr-1"></i> Refresh WHOIS
                             </button>
                         </form>
                     </div>

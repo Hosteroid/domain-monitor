@@ -1,0 +1,269 @@
+{% extends "layout/base.twig" %}
+
+{% set title = 'Domain Details' %}
+{% set pageTitle = domain.domain_name|default('Domain Details') %}
+{% set pageDescription = 'Domain information and monitoring status' %}
+{% set pageIcon = 'fas fa-globe' %}
+
+{% set daysLeft = domain.daysLeft %}
+{% set domainStatus = domain.displayStatus %}
+{% set expiryColor = domain.expiryColor %}
+
+{% block content %}
+<!-- Top Action Bar -->
+<div class="mb-3 flex flex-wrap gap-2 justify-between items-center">
+    <div class="flex flex-wrap gap-2">
+        {% if domain %}
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold {{ domain.statusClass }}">
+            <i class="fas {{ domain.statusIcon }} mr-1.5"></i>
+            {{ domain.statusText }}
+        </span>
+        {% if domain.displayStatus != 'available' %}
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-{{ domain.expiryColor }}-100 dark:bg-{{ domain.expiryColor }}-500/10 text-{{ domain.expiryColor }}-800 dark:text-{{ domain.expiryColor }}-400 border border-{{ domain.expiryColor }}-200 dark:border-{{ domain.expiryColor }}-800">
+            <i class="fas fa-calendar-alt mr-1.5"></i>
+            {{ domain.daysLeft is not null ? domain.daysLeft ~ ' days left' : 'No expiry date' }}
+        </span>
+        {% endif %}
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-100 dark:bg-indigo-500/10 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+            <i class="fas fa-{{ domain.is_active ? 'check-circle' : 'pause-circle' }} mr-1.5"></i>
+            {{ domain.is_active ? 'Monitoring Active' : 'Monitoring Paused' }}
+        </span>
+        {# Tags Display (match view.twig) #}
+        {% if domain.tags is not empty %}
+            {% set tags = domain.tags|split(',') %}
+            {% set tagColors = domain.tag_colors is not empty ? domain.tag_colors|split('|') : [] %}
+            {% set tagColorMap = {} %}
+            {% for availableTag in availableTags %}
+                {% set tagColorMap = tagColorMap|merge({(availableTag.name): availableTag.color}) %}
+            {% endfor %}
+            {% for tag in tags %}
+                {% set tag = tag|trim %}
+                {% set colorClass = tagColorMap[tag] ?? (tagColors[loop.index0] ?? 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 border-gray-200 dark:border-slate-700') %}
+                <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold border {{ colorClass }}">
+                    <i class="fas fa-tag mr-1.5" style="font-size: 10px;"></i>
+                    {{ tag|capitalize }}
+                </span>
+            {% endfor %}
+        {% endif %}
+        {% else %}
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 border border-green-200 dark:border-green-800">
+            <i class="fas fa-check-circle mr-1.5"></i>
+            Active
+        </span>
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 border border-orange-200 dark:border-orange-800">
+            <i class="fas fa-calendar-alt mr-1.5"></i>
+            65 days left
+        </span>
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-100 dark:bg-indigo-500/10 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+            <i class="fas fa-check-circle mr-1.5"></i>
+            Monitoring Active
+        </span>
+        {% endif %}
+    </div>
+    <div class="flex gap-2 items-center">
+        {% if domain %}
+        <form method="POST" action="/domains/{{ domain.id }}/refresh-all" class="inline" onsubmit="prepareReturnTo(event); return handleRefreshBtn(this);">
+            {{ csrf_field()|raw }}
+            <input type="hidden" name="return_to" id="return_to_input">
+            <button type="submit" class="refresh-all-btn inline-flex items-center justify-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium min-w-[80px] h-[32px]">
+                <i class="fas fa-sync-alt mr-1.5"></i>
+                <span class="btn-label">Refresh All</span>
+            </button>
+        </form>
+        <a href="/domains/{{ domain.id }}/edit?from=/domains/{{ domain.id }}" class="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors font-medium min-w-[80px] h-[32px]">
+            <i class="fas fa-edit mr-1.5"></i>
+            Edit
+        </a>
+        <form method="POST" action="/domains/{{ domain.id }}/delete" onsubmit="return confirm('Delete this domain?')" class="inline">
+            {{ csrf_field()|raw }}
+            <button type="submit" class="inline-flex items-center justify-center px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium min-w-[80px] h-[32px]">
+                <i class="fas fa-trash mr-1.5"></i>
+                Delete
+            </button>
+        </form>
+        {% else %}
+        <button class="inline-flex items-center justify-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium min-w-[80px] h-[32px]" disabled>
+            <i class="fas fa-sync-alt mr-1.5"></i>
+            Refresh All
+        </button>
+        <a href="#" class="inline-flex items-center justify-center px-3 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors font-medium min-w-[80px] h-[32px]">
+            <i class="fas fa-edit mr-1.5"></i>
+            Edit
+        </a>
+        <button class="inline-flex items-center justify-center px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium min-w-[80px] h-[32px]">
+            <i class="fas fa-trash mr-1.5"></i>
+            Delete
+        </button>
+        {% endif %}
+        <a href="/domains" class="inline-flex items-center justify-center px-3 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium min-w-[80px] h-[32px]">
+            <i class="fas fa-arrow-left mr-1.5"></i>
+            Back
+        </a>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mb-3">
+    <div class="border-b border-gray-200 dark:border-slate-700">
+        <nav class="-mb-px flex">
+            <button onclick="switchTab('overview')" id="tab-overview" class="tab-button active flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-primary text-primary bg-blue-50 dark:bg-slate-700">
+                <i class="fas fa-chart-line mr-1.5" style="font-size: 10px;"></i>
+                Overview
+            </button>
+            <button onclick="switchTab('whois')" id="tab-whois" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
+                <i class="fas fa-file-alt mr-1.5" style="font-size: 10px;"></i>
+                WHOIS
+                {% if not domain.is_active %}
+                <i class="fas fa-pause-circle text-amber-500 dark:text-amber-400 ml-1" style="font-size: 10px;" title="Active monitoring disabled"></i>
+                {% endif %}
+            </button>
+            <button onclick="switchTab('ssl')" id="tab-ssl" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
+                <i class="fas fa-lock mr-1.5" style="font-size: 10px;"></i>
+                SSL
+                <span class="ml-1.5 px-1.5 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded">2</span>
+                <span class="ml-1 px-1.5 py-0.5 bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 text-xs font-semibold rounded">1</span>
+            </button>
+            <button onclick="switchTab('dns')" id="tab-dns" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
+                <i class="fas fa-network-wired mr-1.5" style="font-size: 10px;"></i>
+                DNS
+                {% if not (domain.dns_monitoring_enabled|default(1)) %}
+                <i class="fas fa-pause-circle text-amber-500 dark:text-amber-400 ml-1" style="font-size: 10px;" title="DNS monitoring disabled"></i>
+                {% else %}
+                {% if dnsRecordCount|default(0) > 0 %}
+                <span class="ml-1.5 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded">{{ dnsRecordCount }}</span>
+                {% endif %}
+                {% if dnsHasCloudflare|default(false) %}
+                <i class="fas fa-cloud text-orange-500 dark:text-orange-400 ml-1" style="font-size: 10px;" title="Behind Cloudflare"></i>
+                {% endif %}
+                {% endif %}
+            </button>
+            <button onclick="switchTab('billing')" id="tab-billing" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
+                <i class="fas fa-dollar-sign mr-1.5" style="font-size: 10px;"></i>
+                Billing
+            </button>
+            <button onclick="switchTab('notifications')" id="tab-notifications" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
+                <i class="fas fa-bell mr-1.5" style="font-size: 10px;"></i>
+                Notifications
+                {% if logs is defined and logs|length > 0 %}
+                <span class="ml-1.5 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded">{{ logs|length }}</span>
+                {% endif %}
+            </button>
+        </nav>
+    </div>
+</div>
+
+<!-- Tab Content -->
+<div class="tab-content-wrapper">
+    <div id="content-overview" class="tab-content">
+        {% include 'domains/tabs/overview.twig' %}
+    </div>
+
+    <div id="content-whois" class="tab-content hidden">
+        {% include 'domains/tabs/whois.twig' %}
+    </div>
+
+    <div id="content-ssl" class="tab-content hidden">
+        {% include 'domains/tabs/ssl.twig' %}
+    </div>
+
+    <div id="content-dns" class="tab-content hidden">
+        {% include 'domains/tabs/dns.twig' %}
+    </div>
+
+    <div id="content-billing" class="tab-content hidden">
+        {% include 'domains/tabs/billing.twig' %}
+    </div>
+
+    <div id="content-notifications" class="tab-content hidden">
+        {% include 'domains/tabs/notification.twig' %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const hash = (window.location.hash || '#overview').replace('#','');
+    switchTab(hash);
+});
+
+function updateTabHash(tabName) {
+    const url = new URL(window.location.href);
+    url.hash = '#' + tabName;
+    window.history.replaceState({}, '', url);
+}
+
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.add('hidden');
+    });
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('active', 'border-primary', 'text-primary', 'bg-blue-50', 'dark:bg-slate-700');
+        button.classList.add('border-transparent', 'text-gray-500', 'dark:text-slate-400');
+    });
+    document.getElementById('content-' + tabName).classList.remove('hidden');
+    const activeTab = document.getElementById('tab-' + tabName);
+    activeTab.classList.add('active', 'border-primary', 'text-primary', 'bg-blue-50', 'dark:bg-slate-700');
+    activeTab.classList.remove('border-transparent', 'text-gray-500', 'dark:text-slate-400');
+    updateTabHash(tabName);
+}
+
+function toggleRawWhois() {
+    const content = document.getElementById('raw-whois-content');
+    const icon = document.getElementById('raw-whois-icon');
+    content.classList.toggle('hidden');
+    icon.classList.toggle('rotate-180');
+}
+
+function toggleDnsHistory() {
+    const content = document.getElementById('dns-history-content');
+    const icon = document.getElementById('dns-history-icon');
+    content.classList.toggle('hidden');
+    icon.classList.toggle('rotate-180');
+}
+
+function toggleNotesEdit(editMode) {
+    const viewMode = document.getElementById('notes-view-mode');
+    const editModeEl = document.getElementById('notes-edit-mode');
+    const editBtn = document.getElementById('notes-edit-btn');
+    if (editMode) {
+        viewMode.classList.add('hidden');
+        editModeEl.classList.remove('hidden');
+        editBtn.classList.add('hidden');
+        document.getElementById('overview-notes-textarea').focus();
+    } else {
+        viewMode.classList.remove('hidden');
+        editModeEl.classList.add('hidden');
+        editBtn.classList.remove('hidden');
+        document.getElementById('overview-notes-textarea').value = {{ domain.notes|default('')|json_encode|raw }};
+    }
+}
+
+function prepareReturnTo(e) {
+    const form = e.target;
+    const input = form.querySelector('input[name="return_to"]') || document.getElementById('return_to_input');
+    if (!input) return;
+    const url = new URL(window.location.href);
+    if (!url.hash) {
+        const active = document.querySelector('.tab-button.active');
+        if (active && active.id) {
+            url.hash = '#' + active.id.replace('tab-','');
+        }
+    }
+    input.value = url.pathname + (url.hash ? url.hash : '');
+}
+
+function handleRefreshBtn(form) {
+    var btn = form.querySelector('.refresh-all-btn');
+    if (!btn || btn.disabled) return false;
+    btn.disabled = true;
+    btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+    btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+    var icon = btn.querySelector('i');
+    var label = btn.querySelector('.btn-label');
+    if (icon) icon.classList.add('fa-spin');
+    if (label) label.textContent = 'Refreshing...';
+    return true;
+}
+</script>
+{% endblock %}

@@ -848,10 +848,16 @@ class WhoisService
         
         // Check if domain is not found/available
         $whoisDataLower = strtolower($whoisData);
-        // More specific patterns to avoid false positives
+        // Exact line match (original patterns)
         if (preg_match('/^(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered|available)$/m', $whoisDataLower) ||
             preg_match('/^status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered|available)$/m', $whoisDataLower) ||
             preg_match('/^domain status:\s*(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered|available)$/m', $whoisDataLower)) {
+            $data['status'][] = 'AVAILABLE';
+            $data['registrar'] = 'Not Registered';
+            return $data;
+        }
+        // Broader patterns for formats that don't match exact line (e.g. .rs "%ERROR:103: Domain is not registered", .io "Domain not found.", .co "The queried object does not exist: DOMAIN NOT FOUND")
+        if (preg_match('/domain\s+is\s+not\s+registered|domain\s+not\s+found\.?(\s|$)|queried\s+object\s+does\s+not\s+exist|%error:\d+:\s*domain/i', $whoisDataLower)) {
             $data['status'][] = 'AVAILABLE';
             $data['registrar'] = 'Not Registered';
             return $data;
@@ -1196,7 +1202,10 @@ class WhoisService
         }
 
         // No expiration date and no clear status indicators
-        // This should only happen for newly added domains or error cases
+        // Fallback: registrar "Not Registered" means domain is available (e.g. parseWhoisData set it but status was lost in merge)
+        if (!empty($whoisData['registrar']) && $whoisData['registrar'] === 'Not Registered') {
+            return 'available';
+        }
         // Return error to avoid incorrectly marking registered domains as available
         return 'error';
     }

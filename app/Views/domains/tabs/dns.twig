@@ -1,0 +1,507 @@
+{# DNS TAB CONTENT #}
+
+{% set totalDnsRecords = dnsRecordCount|default(0) %}
+{% set dnsMonitoringEnabled = domain.dns_monitoring_enabled|default(1) %}
+
+{% if not dnsMonitoringEnabled %}
+<!-- DNS Monitoring Disabled - show only message, no records -->
+<div class="mb-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-4">
+    <div class="flex items-start">
+        <i class="fas fa-pause-circle text-amber-500 dark:text-amber-400 mt-0.5 mr-3" style="font-size: 18px;"></i>
+        <div>
+            <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">DNS monitoring is disabled</h3>
+            <p class="text-xs text-amber-700 dark:text-amber-400 mt-1">This domain is not checked by the DNS cron. Enable it in Edit to track DNS changes.</p>
+            <a href="/domains/{{ domain.id }}/edit#dns-monitoring" class="inline-flex items-center mt-2 text-xs font-medium text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100">
+                <i class="fas fa-edit mr-1"></i>Enable DNS monitoring in Edit
+            </a>
+        </div>
+    </div>
+</div>
+{% else %}
+{% if totalDnsRecords == 0 %}
+<!-- No DNS Data Yet -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-8 text-center">
+    <i class="fas fa-network-wired text-gray-300 dark:text-slate-600 mb-3" style="font-size: 36px;"></i>
+    <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">No DNS Records Yet</h3>
+    <p class="text-xs text-gray-500 dark:text-slate-400 mb-4">Click "Refresh DNS" to fetch the current DNS records for this domain.</p>
+    {% if domain %}
+    <form method="POST" action="/domains/{{ domain.id }}/refresh-dns" class="inline" onsubmit="return handleDnsRefresh(this)">
+        {{ csrf_field()|raw }}
+        <button type="submit" class="dns-refresh-btn inline-flex items-center px-4 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
+            <i class="fas fa-sync-alt mr-1.5" style="font-size: 10px;"></i>
+            <span class="btn-label">Refresh DNS</span>
+        </button>
+    </form>
+    {% endif %}
+</div>
+{% else %}
+
+<!-- Action Bar -->
+<div class="flex justify-between items-center mb-3">
+    <div class="flex items-center gap-3">
+        <p class="text-xs text-gray-600 dark:text-slate-400">
+            <i class="far fa-clock mr-1"></i>
+            Last checked: {{ domain.dns_last_checked ? domain.dns_last_checked|date('M d, Y H:i') : 'Never' }}
+        </p>
+        {% if dnsHasCloudflare|default(false) %}
+        <span class="inline-flex items-center px-2 py-1 bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 text-xs font-semibold rounded border border-orange-200 dark:border-orange-800">
+            <i class="fas fa-cloud mr-1" style="font-size: 10px;"></i>
+            Cloudflare Detected
+        </span>
+        {% endif %}
+    </div>
+    {% if domain and dnsMonitoringEnabled %}
+    <form method="POST" action="/domains/{{ domain.id }}/refresh-dns" class="inline" onsubmit="return handleDnsRefresh(this)">
+        {{ csrf_field()|raw }}
+        <button type="submit" class="dns-refresh-btn inline-flex items-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
+            <i class="fas fa-sync-alt mr-1.5" style="font-size: 10px;"></i>
+            <span class="btn-label">Refresh DNS</span>
+        </button>
+    </form>
+    {% endif %}
+</div>
+
+<!-- DNS Records by Type -->
+<div class="space-y-3">
+
+    {# ===== SOA Record (Start of Authority) — shown first ===== #}
+    {% if dnsRecords['SOA'] is defined and dnsRecords['SOA']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-gray-100 dark:bg-slate-700 border-b border-gray-200 dark:border-slate-600">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-info-circle text-gray-500 dark:text-slate-400 mr-2" style="font-size: 10px;"></i>
+                SOA Record (Start of Authority)
+            </h3>
+        </div>
+        {% for record in dnsRecords['SOA'] %}
+        {% set rawData = record.raw_data ? record.raw_data|from_json : null %}
+        <div class="p-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                    <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Primary NS</label>
+                    <p class="text-xs font-mono text-gray-900 dark:text-white mt-1">{{ record.value }}</p>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Admin</label>
+                    <p class="text-xs font-mono text-gray-900 dark:text-white mt-1">{{ rawData.rname|default('N/A') }}</p>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Serial</label>
+                    <p class="text-xs font-mono text-gray-900 dark:text-white mt-1">{{ rawData.serial|default('N/A') }}</p>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">TTL</label>
+                    <p class="text-xs font-mono text-gray-900 dark:text-white mt-1">{{ record.ttl }}s</p>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-100 dark:border-slate-700">
+                <div>
+                    <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Refresh</label>
+                    <p class="text-xs font-mono text-gray-900 dark:text-white mt-1">{{ rawData.refresh|default('N/A') }}s</p>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Retry</label>
+                    <p class="text-xs font-mono text-gray-900 dark:text-white mt-1">{{ rawData.retry|default('N/A') }}s</p>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Expire</label>
+                    <p class="text-xs font-mono text-gray-900 dark:text-white mt-1">{{ rawData.expire|default('N/A') }}s</p>
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Min TTL</label>
+                    <p class="text-xs font-mono text-gray-900 dark:text-white mt-1">{{ rawData['minimum-ttl']|default('N/A') }}s</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ===== A Records ===== #}
+    {% if dnsRecords['A'] is defined and dnsRecords['A']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-blue-50 dark:bg-blue-500/10 border-b border-blue-200 dark:border-blue-800">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-circle text-blue-600 dark:text-blue-400 mr-2" style="font-size: 8px;"></i>
+                A Records (IPv4)
+                <span class="ml-2 px-1.5 py-0.5 bg-blue-600 text-white text-xs font-semibold rounded">{{ dnsRecords['A']|length }}</span>
+            </h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Host</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">IP Address</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">PTR</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">ASN</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for record in dnsRecords['A'] %}
+                    {% set ipInfo = dnsIpDetails[record.value]|default(null) %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="px-4 py-2 text-xs font-medium text-gray-900 dark:text-white">
+                            {% if record.host == '@' %}
+                                <span class="text-blue-600 dark:text-blue-400">@ (root)</span>
+                            {% else %}
+                                {{ record.host }}
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs">
+                            <span class="font-mono text-gray-900 dark:text-white">{{ record.value }}</span>
+                            {% if record.is_cloudflare %}
+                                <i class="fas fa-cloud text-orange-500 dark:text-orange-400 ml-1.5" style="font-size: 10px;" title="Cloudflare"></i>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-600 dark:text-slate-400 max-w-[200px] truncate" title="{{ ipInfo.reverse|default('') }}">
+                            {{ ipInfo.reverse|default('-') }}
+                        </td>
+                        <td class="px-4 py-2.5">
+                            {% if ipInfo and ipInfo.as %}
+                            <div class="flex items-center gap-2">
+                                {% if ipInfo.countryCode %}
+                                <span class="fi fi-{{ ipInfo.countryCode|lower }}" style="font-size: 16px;"></span>
+                                {% endif %}
+                                <div class="text-xs">
+                                    <div class="font-semibold text-gray-900 dark:text-white">{{ ipInfo.as|split(' ')|first }}</div>
+                                    <div class="text-gray-600 dark:text-slate-400">{{ ipInfo.org|default(ipInfo.isp|default('')) }}</div>
+                                    {% if ipInfo.city or ipInfo.regionName %}
+                                    <div class="text-gray-500 dark:text-slate-500">{{ ipInfo.city|default('') }}{% if ipInfo.city and ipInfo.regionName %}, {% endif %}{{ ipInfo.regionName|default('') }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% else %}
+                                <span class="text-gray-400 dark:text-slate-500 text-xs">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ===== AAAA Records ===== #}
+    {% if dnsRecords['AAAA'] is defined and dnsRecords['AAAA']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-indigo-50 dark:bg-indigo-500/10 border-b border-indigo-200 dark:border-indigo-800">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-circle text-indigo-600 dark:text-indigo-400 mr-2" style="font-size: 8px;"></i>
+                AAAA Records (IPv6)
+                <span class="ml-2 px-1.5 py-0.5 bg-indigo-600 text-white text-xs font-semibold rounded">{{ dnsRecords['AAAA']|length }}</span>
+            </h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Host</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">IPv6 Address</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">PTR</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">ASN</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for record in dnsRecords['AAAA'] %}
+                    {% set ipInfo = dnsIpDetails[record.value]|default(null) %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="px-4 py-2 text-xs font-medium text-gray-900 dark:text-white">
+                            {% if record.host == '@' %}
+                                <span class="text-indigo-600 dark:text-indigo-400">@ (root)</span>
+                            {% else %}
+                                {{ record.host }}
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs">
+                            <span class="font-mono text-gray-900 dark:text-white">{{ record.value }}</span>
+                            {% if record.is_cloudflare %}
+                                <i class="fas fa-cloud text-orange-500 dark:text-orange-400 ml-1.5" style="font-size: 10px;" title="Cloudflare"></i>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-600 dark:text-slate-400 max-w-[200px] truncate" title="{{ ipInfo.reverse|default('') }}">
+                            {{ ipInfo.reverse|default('-') }}
+                        </td>
+                        <td class="px-4 py-2.5">
+                            {% if ipInfo and ipInfo.as %}
+                            <div class="flex items-center gap-2">
+                                {% if ipInfo.countryCode %}
+                                <span class="fi fi-{{ ipInfo.countryCode|lower }}" style="font-size: 16px;"></span>
+                                {% endif %}
+                                <div class="text-xs">
+                                    <div class="font-semibold text-gray-900 dark:text-white">{{ ipInfo.as|split(' ')|first }}</div>
+                                    <div class="text-gray-600 dark:text-slate-400">{{ ipInfo.org|default(ipInfo.isp|default('')) }}</div>
+                                    {% if ipInfo.city or ipInfo.regionName %}
+                                    <div class="text-gray-500 dark:text-slate-500">{{ ipInfo.city|default('') }}{% if ipInfo.city and ipInfo.regionName %}, {% endif %}{{ ipInfo.regionName|default('') }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% else %}
+                                <span class="text-gray-400 dark:text-slate-500 text-xs">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ===== CNAME Records ===== #}
+    {% if dnsRecords['CNAME'] is defined and dnsRecords['CNAME']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-amber-50 dark:bg-amber-500/10 border-b border-amber-200 dark:border-amber-800">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-link text-amber-600 dark:text-amber-400 mr-2" style="font-size: 10px;"></i>
+                CNAME Records (Aliases)
+                <span class="ml-2 px-1.5 py-0.5 bg-amber-600 text-white text-xs font-semibold rounded">{{ dnsRecords['CNAME']|length }}</span>
+            </h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Alias</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Target</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for record in dnsRecords['CNAME'] %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.host }}</td>
+                        <td class="px-4 py-2 text-xs font-mono text-blue-600 dark:text-blue-400">{{ record.value }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ===== MX Records ===== #}
+    {% if dnsRecords['MX'] is defined and dnsRecords['MX']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-green-50 dark:bg-green-500/10 border-b border-green-200 dark:border-green-800">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-envelope text-green-600 dark:text-green-400 mr-2" style="font-size: 10px;"></i>
+                MX Records (Mail Exchange)
+                <span class="ml-2 px-1.5 py-0.5 bg-green-600 text-white text-xs font-semibold rounded">{{ dnsRecords['MX']|length }}</span>
+            </h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Priority</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Mail Server</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for record in dnsRecords['MX'] %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="px-4 py-2">
+                            <span class="inline-flex items-center justify-center w-6 h-6 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 font-bold rounded-full text-xs">{{ record.priority }}</span>
+                        </td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.value }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ===== TXT Records ===== #}
+    {% if dnsRecords['TXT'] is defined and dnsRecords['TXT']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-purple-50 dark:bg-purple-500/10 border-b border-purple-200 dark:border-purple-800">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-file-alt text-purple-600 dark:text-purple-400 mr-2" style="font-size: 10px;"></i>
+                TXT Records
+                <span class="ml-2 px-1.5 py-0.5 bg-purple-600 text-white text-xs font-semibold rounded">{{ dnsRecords['TXT']|length }}</span>
+            </h3>
+        </div>
+        <div class="p-4 space-y-2">
+            {% for record in dnsRecords['TXT'] %}
+            <div class="bg-gray-50 dark:bg-slate-700 rounded p-2 border border-gray-200 dark:border-slate-600">
+                <div class="flex items-start">
+                    {% set val = record.value|lower %}
+                    {% if val starts with 'v=spf1' %}
+                        {% set txtType = 'SPF' %}
+                    {% elseif val starts with 'v=dkim1' %}
+                        {% set txtType = 'DKIM' %}
+                    {% elseif val starts with 'v=dmarc1' %}
+                        {% set txtType = 'DMARC' %}
+                    {% elseif 'google-site-verification' in val %}
+                        {% set txtType = 'Google' %}
+                    {% elseif 'ms=' in val %}
+                        {% set txtType = 'Microsoft' %}
+                    {% elseif 'facebook-domain-verification' in val %}
+                        {% set txtType = 'Facebook' %}
+                    {% else %}
+                        {% set txtType = 'TXT' %}
+                    {% endif %}
+                    <span class="inline-flex items-center px-1.5 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400 text-xs font-semibold rounded mr-2 flex-shrink-0">{{ txtType }}</span>
+                    <p class="flex-1 text-xs font-mono text-gray-900 dark:text-white break-all">{{ record.value }}</p>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# ===== NS Records ===== #}
+    {% if dnsRecords['NS'] is defined and dnsRecords['NS']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-teal-50 dark:bg-teal-500/10 border-b border-teal-200 dark:border-teal-800">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-server text-teal-600 dark:text-teal-400 mr-2" style="font-size: 10px;"></i>
+                NS Records (Name Servers)
+                <span class="ml-2 px-1.5 py-0.5 bg-teal-600 text-white text-xs font-semibold rounded">{{ dnsRecords['NS']|length }}</span>
+            </h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">#</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Nameserver</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">IPv4</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">IPv6</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for record in dnsRecords['NS'] %}
+                    {% set rawData = record.raw_data ? record.raw_data|from_json : null %}
+                    {% set nsIps = rawData ? rawData._ns_ips|default(null) : null %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="px-4 py-2">
+                            <div class="w-6 h-6 bg-teal-500 rounded flex items-center justify-center text-white font-bold text-xs">{{ loop.index }}</div>
+                        </td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.value }}</td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-600 dark:text-slate-400">
+                            {% if nsIps and nsIps.ipv4|default([])|length > 0 %}
+                                {{ nsIps.ipv4|join(', ') }}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-600 dark:text-slate-400">
+                            {% if nsIps and nsIps.ipv6|default([])|length > 0 %}
+                                {{ nsIps.ipv6|join(', ') }}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ===== SRV Records ===== #}
+    {% if dnsRecords['SRV'] is defined and dnsRecords['SRV']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-violet-50 dark:bg-violet-500/10 border-b border-violet-200 dark:border-violet-800">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-project-diagram text-violet-600 dark:text-violet-400 mr-2" style="font-size: 10px;"></i>
+                SRV Records (Services)
+                <span class="ml-2 px-1.5 py-0.5 bg-violet-600 text-white text-xs font-semibold rounded">{{ dnsRecords['SRV']|length }}</span>
+            </h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Service</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Target</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Port</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Priority</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Weight</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for record in dnsRecords['SRV'] %}
+                    {% set rawData = record.raw_data ? record.raw_data|from_json : {} %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.host }}</td>
+                        <td class="px-4 py-2 text-xs font-mono text-blue-600 dark:text-blue-400">{{ record.value }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-900 dark:text-white font-semibold">{{ rawData.port|default('-') }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.priority|default('-') }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ rawData.weight|default('-') }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ===== CAA Records ===== #}
+    {% if dnsRecords['CAA'] is defined and dnsRecords['CAA']|length > 0 %}
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 bg-orange-50 dark:bg-orange-500/10 border-b border-orange-200 dark:border-orange-800">
+            <h3 class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-certificate text-orange-600 dark:text-orange-400 mr-2" style="font-size: 10px;"></i>
+                CAA Records (Certificate Authority)
+                <span class="ml-2 px-1.5 py-0.5 bg-orange-600 text-white text-xs font-semibold rounded">{{ dnsRecords['CAA']|length }}</span>
+            </h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Tag</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Value (CA)</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Flags</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for record in dnsRecords['CAA'] %}
+                    {% set rawData = record.raw_data ? record.raw_data|from_json : {} %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="px-4 py-2">
+                            <span class="inline-flex items-center px-1.5 py-0.5 bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 text-xs font-semibold rounded">{{ rawData.tag|default('-') }}</span>
+                        </td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ rawData.value|default(record.value) }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ rawData.flags|default('0') }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endif %}
+{% endif %}
+
+<script>
+function handleDnsRefresh(form) {
+    var btn = form.querySelector('.dns-refresh-btn');
+    if (btn.disabled) return false;
+    btn.disabled = true;
+    btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+    btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+    var icon = btn.querySelector('i');
+    var label = btn.querySelector('.btn-label');
+    if (icon) icon.classList.add('fa-spin');
+    if (label) label.textContent = 'Scanning DNS...';
+    return true;
+}
+</script>

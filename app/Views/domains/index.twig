@@ -369,7 +369,7 @@
                                     <a href="/domains/{{ domain.id }}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" title="View">
                                         <i class="fas fa-eye"></i>
                                     </a>
-                                    <form method="POST" action="/domains/{{ domain.id }}/refresh" class="inline">
+                                    <form method="POST" action="/domains/{{ domain.id }}/refresh-whois" class="inline">
                                         {{ csrf_field() }}
                                         <button type="submit" class="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300" title="Refresh WHOIS">
                                             <i class="fas fa-sync-alt"></i>

@@ -1,0 +1,241 @@
+<!-- WHOIS TAB CONTENT -->
+
+{% if not domain.is_active %}
+<!-- Active Monitoring Disabled Banner -->
+<div class="mb-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-4">
+    <div class="flex items-start">
+        <i class="fas fa-pause-circle text-amber-500 dark:text-amber-400 mt-0.5 mr-3" style="font-size: 18px;"></i>
+        <div>
+            <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">Active monitoring is disabled</h3>
+            <p class="text-xs text-amber-700 dark:text-amber-400 mt-1">This domain is not checked by the cron. You will not receive status or expiration alerts.</p>
+            <a href="/domains/{{ domain.id }}/edit#dns-monitoring" class="inline-flex items-center mt-2 text-xs font-medium text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100">
+                <i class="fas fa-edit mr-1"></i>Enable active monitoring in Edit
+            </a>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 3-Column Layout: Registration, Registrant, Dates -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <!-- Registration Information -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex items-center justify-between">
+            <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                <i class="fas fa-building text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                Registration
+            </h3>
+            <form method="POST" action="/domains/{{ domain.id }}/refresh-whois" class="inline" onsubmit="prepareReturnTo(event)">
+                {{ csrf_field()|raw }}
+                <input type="hidden" name="return_to" value="">
+                <button type="submit" class="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors">
+                    <i class="fas fa-sync-alt mr-1" style="font-size: 9px;"></i>
+                    Refresh WHOIS
+                </button>
+            </form>
+        </div>
+        <div class="p-4">
+            <div class="space-y-2.5 text-xs">
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Registrar</label>
+                    <p class="text-gray-900 dark:text-white font-semibold">{{ domain.registrar ?? 'Unknown' }}</p>
+                </div>
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Registrar URL</label>
+                    {% if domain.registrar_url is defined and domain.registrar_url %}
+                        <a href="{{ domain.registrar_url }}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center">
+                            <i class="fas fa-external-link-alt mr-1" style="font-size: 9px;"></i>
+                            Visit Registrar
+                        </a>
+                    {% else %}
+                        <span class="text-gray-400 dark:text-slate-500">-</span>
+                    {% endif %}
+                </div>
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">IANA ID</label>
+                    <p class="text-gray-900 dark:text-white">{{ whoisData.iana_id ?? '-' }}</p>
+                </div>
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Abuse Contact</label>
+                    {% if domain.abuse_email %}
+                        <a href="mailto:{{ domain.abuse_email }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 block break-all">{{ domain.abuse_email }}</a>
+                    {% else %}
+                        <span class="text-gray-400 dark:text-slate-500">-</span>
+                    {% endif %}
+                </div>
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">WHOIS Server</label>
+                    <p class="text-gray-900 dark:text-white font-mono break-all">{{ whoisData.whois_server ?? '-' }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Registrant Information -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+            <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                <i class="fas fa-user text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                Registrant
+            </h3>
+        </div>
+        <div class="p-4">
+            <div class="space-y-2.5 text-xs">
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Name</label>
+                    <p class="text-gray-900 dark:text-white font-medium">{{ whoisData.owner ?? '-' }}</p>
+                </div>
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Organization</label>
+                    <p class="text-gray-900 dark:text-white">{{ whoisData.organization ?? '-' }}</p>
+                </div>
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Email</label>
+                    {% if whoisData.email is defined and whoisData.email %}
+                        <a href="mailto:{{ whoisData.email }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 break-all">{{ whoisData.email }}</a>
+                    {% else %}
+                        <span class="text-gray-400 dark:text-slate-500">-</span>
+                    {% endif %}
+                </div>
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Country</label>
+                    <p class="text-gray-900 dark:text-white">{{ whoisData.country ?? '-' }}</p>
+                </div>
+                <div>
+                    <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Privacy Protection</label>
+                    <span class="inline-flex items-center px-2 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded">
+                        <i class="fas fa-shield-alt mr-1" style="font-size: 9px;"></i>
+                        Enabled
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Important Dates -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+            <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                <i class="fas fa-calendar-alt text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                Important Dates
+            </h3>
+        </div>
+        <div class="p-4">
+            <div class="space-y-2">
+                <div class="flex items-center p-2 bg-green-50 dark:bg-green-500/10 rounded border border-green-200 dark:border-green-800">
+                    <div class="w-7 h-7 bg-green-500 rounded flex items-center justify-center mr-2 flex-shrink-0">
+                        <i class="fas fa-plus text-white text-xs"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-600 dark:text-slate-400 font-medium">Created</p>
+                        <p class="text-xs font-semibold text-gray-900 dark:text-white">{% if whoisData.creation_date is defined %}{{ whoisData.creation_date|date('M d, Y') }}{% else %}-{% endif %}</p>
+                    </div>
+                </div>
+                <div class="flex items-center p-2 bg-blue-50 dark:bg-blue-500/10 rounded border border-blue-200 dark:border-blue-800">
+                    <div class="w-7 h-7 bg-blue-500 rounded flex items-center justify-center mr-2 flex-shrink-0">
+                        <i class="fas fa-edit text-white text-xs"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-600 dark:text-slate-400 font-medium">Last Updated</p>
+                        <p class="text-xs font-semibold text-gray-900 dark:text-white">{% if domain.updated_date is defined and domain.updated_date %}{{ domain.updated_date|date('M d, Y') }}{% else %}-{% endif %}</p>
+                    </div>
+                </div>
+                <div class="flex items-center p-2 bg-orange-50 dark:bg-orange-500/10 rounded border border-orange-200 dark:border-orange-800">
+                    <div class="w-7 h-7 bg-orange-500 rounded flex items-center justify-center mr-2 flex-shrink-0">
+                        <i class="fas fa-calendar-times text-white text-xs"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-600 dark:text-slate-400 font-medium">Expires</p>
+                        <p class="text-xs font-semibold text-orange-700 dark:text-orange-400">
+                            {% if domain.expiration_date is defined and domain.expiration_date %}
+                                {{ domain.expiration_date|date('M d, Y') }}{% if domain.daysLeft is defined and domain.daysLeft is not null %} ({{ domain.daysLeft }} days){% endif %}
+                            {% else %}-{% endif %}
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded border border-indigo-200 dark:border-indigo-800">
+                    <div class="w-7 h-7 bg-indigo-500 rounded flex items-center justify-center mr-2 flex-shrink-0">
+                        <i class="fas fa-sync text-white text-xs"></i>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-600 dark:text-slate-400 font-medium">Last Checked</p>
+                        <p class="text-xs font-semibold text-gray-900 dark:text-white">{% if domain.last_checked is defined and domain.last_checked %}{{ domain.last_checked|date('M d, Y H:i') }}{% else %}-{% endif %}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Nameservers & Domain Status (2-col) -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
+    <!-- Nameservers -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+            <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                <i class="fas fa-server text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                Name Servers
+                {% if whoisData.nameservers is defined and whoisData.nameservers is not empty %}
+                    <span class="ml-1.5 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded">{{ whoisData.nameservers|length }}</span>
+                {% endif %}
+            </h3>
+        </div>
+        <div class="p-4">
+            <div class="space-y-1.5">
+                {% if whoisData.nameservers is defined and whoisData.nameservers is not empty %}
+                    {% for ns in whoisData.nameservers %}
+                    <div class="flex items-center p-2 bg-gray-50 dark:bg-slate-700 rounded hover:bg-gray-100 dark:hover:bg-slate-600 transition-colors">
+                        <div class="w-5 h-5 bg-primary rounded flex items-center justify-center text-white font-bold text-xs mr-2 flex-shrink-0">{{ loop.index }}</div>
+                        <span class="font-mono text-xs text-gray-900 dark:text-slate-200 break-all">{{ ns }}</span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="fas fa-server text-gray-300 dark:text-slate-600 text-lg mb-1"></i>
+                        <p class="text-xs text-gray-500 dark:text-slate-400">No nameservers</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Domain Status Codes -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+            <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+                <i class="fas fa-shield-alt text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                Domain Status Codes
+                {% if domain is defined and domain.parsedStatuses is defined and domain.parsedStatuses is not empty %}
+                    <span class="ml-1.5 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded">{{ domain.parsedStatuses|length }}</span>
+                {% endif %}
+            </h3>
+        </div>
+        <div class="p-4">
+            <div class="flex flex-wrap gap-1.5">
+                {% if domain is defined and domain.parsedStatuses is defined and domain.parsedStatuses is not empty %}
+                    {% for status in domain.parsedStatuses %}
+                    <span class="px-2 py-1 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 rounded text-xs font-medium" title="{{ status }}">{{ status|replace({'_':' '})|title }}</span>
+                    {% endfor %}
+                {% else %}
+                    <span class="px-2 py-1 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 rounded text-xs font-medium">No status codes</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Raw WHOIS (Collapsible) -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mt-3">
+    <button onclick="toggleRawWhois()" class="w-full px-4 py-2 bg-gray-50 dark:bg-slate-900 text-left hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+        <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 flex items-center justify-between">
+            <span class="flex items-center uppercase tracking-wider">
+                <i class="fas fa-code text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+                Raw WHOIS Data
+            </span>
+            <i class="fas fa-chevron-down text-gray-400 dark:text-slate-500 transition-transform text-xs" id="raw-whois-icon"></i>
+        </h3>
+    </button>
+    <div id="raw-whois-content" class="hidden p-4 bg-gray-900 max-h-64 overflow-y-auto">
+        <pre class="text-xs text-green-400 font-mono">{{ whoisData|json_encode(constant('JSON_PRETTY_PRINT')) }}</pre>
+    </div>
+</div>

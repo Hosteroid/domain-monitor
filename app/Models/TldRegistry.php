@@ -114,13 +114,14 @@ class TldRegistry extends Model
      */
     public function search(string $search): array
     {
-        $search = '%' . $search . '%';
+        $tldNorm = strtolower(trim(trim($search), '.'));
+        $suffix = '%.' . $tldNorm;
         $sql = "SELECT * FROM tld_registry 
-                WHERE (LOWER(tld) LIKE LOWER(?) OR LOWER(whois_server) LIKE LOWER(?) OR LOWER(registry_url) LIKE LOWER(?)) 
+                WHERE (LOWER(TRIM(BOTH '.' FROM tld)) = ? OR LOWER(tld) LIKE ?) 
                 ORDER BY tld ASC";
         
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([$search, $search, $search]);
+        $stmt->execute([$tldNorm, $suffix]);
         return $stmt->fetchAll();
     }
 
@@ -144,11 +145,12 @@ class TldRegistry extends Model
         $whereConditions = [];
         $params = [];
         
-        // Search filter
+        // Search filter: exact match OR TLDs ending with .{search} (e.g. "za" -> .za, .co.za, .net.za)
         if (!empty($search)) {
-            $searchParam = '%' . $search . '%';
-            $whereConditions[] = "(LOWER(tld) LIKE LOWER(?) OR LOWER(whois_server) LIKE LOWER(?) OR LOWER(registry_url) LIKE LOWER(?))";
-            $params = array_merge($params, [$searchParam, $searchParam, $searchParam]);
+            $tldNorm = strtolower(trim(trim($search), '.'));
+            $suffix = '%.' . $tldNorm;
+            $whereConditions[] = "(LOWER(TRIM(BOTH '.' FROM tld)) = ? OR LOWER(tld) LIKE ?)";
+            $params = array_merge($params, [$tldNorm, $suffix]);
         }
         
         // Status filter

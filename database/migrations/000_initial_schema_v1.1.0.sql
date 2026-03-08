@@ -141,6 +141,7 @@ CREATE TABLE IF NOT EXISTS domains (
     updated_date DATE,
     abuse_email VARCHAR(255),
     last_checked TIMESTAMP NULL,
+    dns_last_checked TIMESTAMP NULL,
     status ENUM('active', 'expiring_soon', 'expired', 'error', 'available', 'redemption_period', 'pending_delete') DEFAULT 'active',
     whois_data JSON,
     notes TEXT,
@@ -342,6 +343,32 @@ CREATE TABLE IF NOT EXISTS tld_import_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================
+-- DNS MONITORING
+-- =====================================================
+
+-- DNS records table for tracking DNS record changes
+CREATE TABLE IF NOT EXISTS dns_records (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    domain_id INT NOT NULL,
+    record_type VARCHAR(10) NOT NULL COMMENT 'A, AAAA, MX, TXT, NS, CNAME, SOA',
+    host VARCHAR(255) NOT NULL DEFAULT '@',
+    value TEXT NOT NULL,
+    ttl INT NULL,
+    priority INT NULL COMMENT 'MX priority',
+    is_cloudflare BOOLEAN DEFAULT FALSE,
+    raw_data JSON NULL COMMENT 'Full record data from dns_get_record()',
+    first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE,
+    INDEX idx_domain_id (domain_id),
+    INDEX idx_record_type (record_type),
+    INDEX idx_domain_type (domain_id, record_type),
+    INDEX idx_last_seen (last_seen_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
 -- SYSTEM SETTINGS
 -- =====================================================
 
@@ -396,6 +423,13 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 
 -- User isolation settings
 ('user_isolation_mode', 'shared', 'string', 'User data visibility mode: shared (all users see all data) or isolated (users see only their own data)'),
+
+-- Domain view settings
+('domain_view_template', 'detailed', 'string', 'Domain view template: detailed or default'),
+
+-- DNS monitoring settings
+('dns_check_interval_hours', '24', 'string', 'DNS record check interval in hours'),
+('last_dns_check_run', NULL, 'datetime', 'Last time DNS cron job ran'),
 
 -- Update system settings
 ('update_channel', 'stable', 'string', 'Update channel: stable (releases only) or latest (releases + hotfixes)'),

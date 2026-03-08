@@ -1,0 +1,379 @@
+<!-- SSL TAB CONTENT -->
+
+<!-- Preview Banner -->
+<div class="mb-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+    <div class="flex items-center">
+        <i class="fas fa-flask text-amber-600 dark:text-amber-400 mr-2" style="font-size: 12px;"></i>
+        <div>
+            <p class="text-xs font-semibold text-amber-900 dark:text-amber-300">Preview</p>
+            <p class="text-xs text-amber-800 dark:text-amber-400 mt-0.5">SSL certificate monitoring is coming soon. This is a design preview with sample data.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Filters & Actions Bar -->
+<div class="mb-3 flex flex-wrap gap-3 justify-between items-center">
+    <div class="flex-1 max-w-md">
+        <div class="relative">
+            <input type="text" id="ssl-search" placeholder="Search certificates..." class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-white rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm">
+            <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-xs"></i>
+        </div>
+    </div>
+    <div class="flex gap-2">
+        <select id="ssl-filter" class="px-3 py-2 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-white rounded-lg text-sm">
+            <option value="all">All Certificates</option>
+            <option value="valid">Valid Only</option>
+            <option value="expiring">Expiring Soon</option>
+            <option value="expired">Expired</option>
+            <option value="invalid">Invalid</option>
+        </select>
+        <button onclick="checkAllCertificates()" class="inline-flex items-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
+            <i class="fas fa-sync-alt mr-1.5" style="font-size: 10px;"></i>
+            Check All
+        </button>
+        <button class="inline-flex items-center px-3 py-2 bg-primary text-white text-xs rounded-lg hover:bg-primary-dark transition-colors font-medium">
+            <i class="fas fa-plus mr-1.5" style="font-size: 10px;"></i>
+            Add Subdomain
+        </button>
+    </div>
+</div>
+
+<!-- Bulk Actions Toolbar (Hidden by default) -->
+<div id="ssl-bulk-actions" class="hidden mb-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <span id="ssl-selected-count" class="text-xs font-medium text-blue-900 dark:text-blue-300"></span>
+            <button type="button" onclick="bulkCheckSSL()" class="inline-flex items-center px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
+                <i class="fas fa-sync-alt mr-1.5" style="font-size: 9px;"></i>
+                Check Selected
+            </button>
+            <button type="button" onclick="bulkDeleteSSL()" class="inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium">
+                <i class="fas fa-trash mr-1.5" style="font-size: 9px;"></i>
+                Delete Selected
+            </button>
+            <button type="button" onclick="clearSSLSelection()" class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+                <i class="fas fa-times mr-1.5" style="font-size: 9px;"></i>
+                Clear Selection
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- SSL Statistics -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Total</p>
+                <p class="text-lg font-semibold text-gray-900 dark:text-white mt-0.5">3</p>
+            </div>
+            <i class="fas fa-lock text-gray-400 dark:text-slate-500" style="font-size: 18px;"></i>
+        </div>
+    </div>
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Valid</p>
+                <p class="text-lg font-semibold text-green-600 dark:text-green-400 mt-0.5">2</p>
+            </div>
+            <i class="fas fa-check-circle text-green-500 dark:text-green-400" style="font-size: 18px;"></i>
+        </div>
+    </div>
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Expiring Soon</p>
+                <p class="text-lg font-semibold text-orange-600 dark:text-orange-400 mt-0.5">1</p>
+            </div>
+            <i class="fas fa-exclamation-triangle text-orange-500 dark:text-orange-400" style="font-size: 18px;"></i>
+        </div>
+    </div>
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Invalid</p>
+                <p class="text-lg font-semibold text-red-600 dark:text-red-400 mt-0.5">1</p>
+            </div>
+            <i class="fas fa-times-circle text-red-500 dark:text-red-400" style="font-size: 18px;"></i>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination Info -->
+<div class="mb-3 flex justify-between items-center">
+    <div class="text-xs text-gray-600 dark:text-slate-400">
+        Showing <span class="font-semibold text-gray-900 dark:text-white">1</span> to <span class="font-semibold text-gray-900 dark:text-white">3</span> of <span class="font-semibold text-gray-900 dark:text-white">3</span> certificate(s)
+    </div>
+    <div class="flex items-center gap-2">
+        <label class="text-xs text-gray-600 dark:text-slate-400">Show:</label>
+        <select class="px-2 py-1 border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-gray-900 dark:text-white rounded text-xs">
+            <option>10</option>
+            <option selected>25</option>
+            <option>50</option>
+        </select>
+    </div>
+</div>
+
+<!-- SSL Certificates List -->
+<div class="space-y-3">
+    <!-- Cert 1 (root) -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border-2 border-green-200 dark:border-green-800 overflow-hidden ssl-cert-item" data-cert-id="1" data-status="valid">
+        <div class="px-4 py-2 bg-green-50 dark:bg-green-500/10 border-b border-green-200 dark:border-green-800">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-lock text-green-600 dark:text-green-400 mr-2" style="font-size: 14px;"></i>
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-900 dark:text-white">example.com <span class="ml-2 px-1.5 py-0.5 bg-primary text-white text-xs font-semibold rounded">Root</span></h3>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Certificate monitoring active</p>
+                    </div>
+                </div>
+                <span class="inline-flex items-center px-2 py-1 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded border border-green-200 dark:border-green-800">
+                    <i class="fas fa-check-circle mr-1" style="font-size: 9px;"></i>
+                    Valid & Trusted
+                </span>
+            </div>
+        </div>
+        <div class="p-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Validity Period</label>
+                        <div class="mt-1.5 space-y-1.5">
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Issued:</span><span class="text-xs font-medium text-gray-900 dark:text-white">Oct 05, 2025</span></div>
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Expires:</span><span class="text-xs font-semibold text-green-700 dark:text-green-400">Jan 08, 2026</span></div>
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Valid for:</span><span class="text-xs font-bold text-green-600 dark:text-green-400">65 days</span></div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Certificate Authority</label>
+                        <div class="mt-1.5">
+                            <p class="text-xs text-gray-900 dark:text-white font-medium">Let's Encrypt Authority X3</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">✓ Trusted CA</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Covered Domains (SANs)</label>
+                        <div class="mt-1.5 space-y-1">
+                            <div class="flex items-center text-xs"><i class="fas fa-check text-green-500 dark:text-green-400 mr-1.5" style="font-size: 9px;"></i><span class="text-gray-900 dark:text-white font-mono">example.com</span></div>
+                            <div class="flex items-center text-xs"><i class="fas fa-check text-green-500 dark:text-green-400 mr-1.5" style="font-size: 9px;"></i><span class="text-gray-900 dark:text-white font-mono">www.example.com</span></div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Security Details</label>
+                        <div class="mt-1.5 space-y-1.5">
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Signature:</span><span class="text-xs font-medium text-gray-900 dark:text-white">SHA256-RSA</span></div>
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Key Size:</span><span class="text-xs font-medium text-gray-900 dark:text-white">2048 bits</span></div>
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Version:</span><span class="text-xs font-medium text-gray-900 dark:text-white">v3</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                <div class="text-xs text-gray-500 dark:text-slate-400"><i class="far fa-clock mr-1"></i>Last checked: Today 10:00</div>
+                <div class="flex gap-2">
+                    <button class="inline-flex items-center px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors font-medium"><i class="fas fa-sync-alt mr-1" style="font-size: 9px;"></i>Check Now</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cert 2 (mail subdomain) -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border-2 border-green-200 dark:border-green-800 overflow-hidden ssl-cert-item" data-cert-id="2" data-status="valid">
+        <div class="px-4 py-2 bg-green-50 dark:bg-green-500/10 border-b border-green-200 dark:border-green-800">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" class="ssl-checkbox rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary" value="2" onchange="updateSSLBulkActions()">
+                    <i class="fas fa-lock text-green-600 dark:text-green-400 mr-2" style="font-size: 14px;"></i>
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-900 dark:text-white">mail.example.com</h3>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Certificate monitoring active</p>
+                    </div>
+                </div>
+                <span class="inline-flex items-center px-2 py-1 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded border border-green-200 dark:border-green-800">
+                    <i class="fas fa-check-circle mr-1" style="font-size: 9px;"></i>
+                    Valid & Trusted
+                </span>
+            </div>
+        </div>
+        <div class="p-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Validity Period</label>
+                        <div class="mt-1.5 space-y-1.5">
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Issued:</span><span class="text-xs font-medium text-gray-900 dark:text-white">Aug 01, 2025</span></div>
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Expires:</span><span class="text-xs font-semibold text-green-700 dark:text-green-400">Jul 28, 2026</span></div>
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Valid for:</span><span class="text-xs font-bold text-green-600 dark:text-green-400">270 days</span></div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Certificate Authority</label>
+                        <div class="mt-1.5">
+                            <p class="text-xs text-gray-900 dark:text-white font-medium">DigiCert Inc.</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">✓ Trusted CA</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Covered Domains (SANs)</label>
+                        <div class="mt-1.5 space-y-1">
+                            <div class="flex items-center text-xs"><i class="fas fa-check text-green-500 dark:text-green-400 mr-1.5" style="font-size: 9px;"></i><span class="text-gray-900 dark:text-white font-mono">mail.example.com</span></div>
+                            <div class="flex items-center text-xs"><i class="fas fa-check text-green-500 dark:text-green-400 mr-1.5" style="font-size: 9px;"></i><span class="text-gray-900 dark:text-white font-mono">smtp.example.com</span></div>
+                            <div class="flex items-center text-xs"><i class="fas fa-check text-green-500 dark:text-green-400 mr-1.5" style="font-size: 9px;"></i><span class="text-gray-900 dark:text-white font-mono">imap.example.com</span></div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Security Details</label>
+                        <div class="mt-1.5 space-y-1.5">
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Signature:</span><span class="text-xs font-medium text-gray-900 dark:text-white">SHA256-RSA</span></div>
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Key Size:</span><span class="text-xs font-medium text-gray-900 dark:text-white">2048 bits</span></div>
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Version:</span><span class="text-xs font-medium text-gray-900 dark:text-white">v3</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                <div class="text-xs text-gray-500 dark:text-slate-400"><i class="far fa-clock mr-1"></i>Last checked: Today 10:00</div>
+                <div class="flex gap-2">
+                    <button class="inline-flex items-center px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors font-medium"><i class="fas fa-sync-alt mr-1" style="font-size: 9px;"></i>Check Now</button>
+                    <button class="inline-flex items-center px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors font-medium"><i class="fas fa-trash mr-1" style="font-size: 9px;"></i>Remove</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cert 3 (api - expired) -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border-2 border-red-200 dark:border-red-800 overflow-hidden ssl-cert-item" data-cert-id="3" data-status="expired">
+        <div class="px-4 py-2 bg-red-50 dark:bg-red-500/10 border-b border-red-200 dark:border-red-800">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" class="ssl-checkbox rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary" value="3" onchange="updateSSLBulkActions()">
+                    <i class="fas fa-lock text-red-600 dark:text-red-400 mr-2" style="font-size: 14px;"></i>
+                    <div>
+                        <h3 class="text-xs font-semibold text-gray-900 dark:text-white">api.example.com</h3>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Certificate monitoring active</p>
+                    </div>
+                </div>
+                <span class="inline-flex items-center px-2 py-1 bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 text-xs font-semibold rounded border border-red-200 dark:border-red-800">
+                    <i class="fas fa-times-circle mr-1" style="font-size: 9px;"></i>
+                    EXPIRED
+                </span>
+            </div>
+        </div>
+        <div class="p-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Validity Period</label>
+                        <div class="mt-1.5 space-y-1.5">
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Issued:</span><span class="text-xs font-medium text-gray-900 dark:text-white">Sep 26, 2024</span></div>
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Expires:</span><span class="text-xs font-semibold text-red-700 dark:text-red-400">Sep 30, 2025</span></div>
+                            <div class="flex justify-between items-center"><span class="text-xs text-gray-600 dark:text-slate-400">Valid for:</span><span class="text-xs font-bold text-red-600 dark:text-red-400">30 days (expired)</span></div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Certificate Authority</label>
+                        <div class="mt-1.5">
+                            <p class="text-xs text-gray-900 dark:text-white font-medium">Self-Signed</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">⚠️ Not Trusted</p>
+                        </div>
+                    </div>
+                    <div class="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-800 rounded p-2">
+                        <p class="text-xs font-semibold text-red-900 dark:text-red-300 mb-0.5">Error Details</p>
+                        <p class="text-xs text-red-700 dark:text-red-400">Certificate has expired</p>
+                    </div>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Covered Domains (SANs)</label>
+                        <div class="mt-1.5 space-y-1">
+                            <div class="flex items-center text-xs"><i class="fas fa-check text-green-500 dark:text-green-400 mr-1.5" style="font-size: 9px;"></i><span class="text-gray-900 dark:text-white font-mono">api.example.com</span></div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Security Details</label>
+                        <div class="mt-1.5 space-y-1.5">
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Signature:</span><span class="text-xs font-medium text-gray-900 dark:text-white">SHA256-RSA</span></div>
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Key Size:</span><span class="text-xs font-medium text-gray-900 dark:text-white">2048 bits</span></div>
+                            <div class="flex justify-between"><span class="text-xs text-gray-600 dark:text-slate-400">Version:</span><span class="text-xs font-medium text-gray-900 dark:text-white">v3</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+                <div class="text-xs text-gray-500 dark:text-slate-400"><i class="far fa-clock mr-1"></i>Last checked: Today 11:00</div>
+                <div class="flex gap-2">
+                    <button class="inline-flex items-center px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors font-medium"><i class="fas fa-sync-alt mr-1" style="font-size: 9px;"></i>Check Now</button>
+                    <button class="inline-flex items-center px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors font-medium"><i class="fas fa-trash mr-1" style="font-size: 9px;"></i>Remove</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination Controls -->
+<div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div class="text-sm text-gray-600 dark:text-slate-400">Page <span class="font-semibold text-gray-900 dark:text-white">1</span> of <span class="font-semibold text-gray-900 dark:text-white">1</span></div>
+    <div class="flex items-center gap-1">
+        <button disabled class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed"><i class="fas fa-angle-double-left"></i></button>
+        <button disabled class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed"><i class="fas fa-angle-left"></i> Previous</button>
+        <span class="px-3 py-2 text-sm bg-primary text-white rounded-lg font-semibold">1</span>
+        <button disabled class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed">Next <i class="fas fa-angle-right"></i></button>
+        <button disabled class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-100 dark:bg-slate-700 text-gray-400 dark:text-slate-500 cursor-not-allowed"><i class="fas fa-angle-double-right"></i></button>
+    </div>
+    </div>
+
+<script>
+function updateSSLBulkActions() {
+    const checkboxes = document.querySelectorAll('.ssl-checkbox:checked');
+    const bulkActions = document.getElementById('ssl-bulk-actions');
+    const selectedCount = document.getElementById('ssl-selected-count');
+    if (checkboxes.length > 0) {
+        bulkActions.classList.remove('hidden');
+        selectedCount.textContent = `${checkboxes.length} certificate(s) selected`;
+    } else {
+        bulkActions.classList.add('hidden');
+    }
+}
+function clearSSLSelection() {
+    document.querySelectorAll('.ssl-checkbox').forEach(cb => cb.checked = false);
+    updateSSLBulkActions();
+}
+function getSelectedSSLIds() {
+    return Array.from(document.querySelectorAll('.ssl-checkbox:checked')).map(cb => cb.value);
+}
+function bulkCheckSSL() {
+    const ids = getSelectedSSLIds();
+    console.log('Checking SSL certificates:', ids);
+}
+function bulkDeleteSSL() {
+    const ids = getSelectedSSLIds();
+    if (confirm(`Delete ${ids.length} certificate(s)? This action cannot be undone.`)) {
+        console.log('Deleting SSL certificates:', ids);
+    }
+}
+function checkAllCertificates() {
+    console.log('Checking all certificates...');
+}
+document.getElementById('ssl-search')?.addEventListener('input', function(e) {
+    const searchTerm = e.target.value.toLowerCase();
+    document.querySelectorAll('.ssl-cert-item').forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = text.includes(searchTerm) ? '' : 'none';
+    });
+});
+document.getElementById('ssl-filter')?.addEventListener('change', function(e) {
+    const filter = e.target.value;
+    document.querySelectorAll('.ssl-cert-item').forEach(item => {
+        if (filter === 'all') {
+            item.style.display = '';
+        } else {
+            const status = item.dataset.status;
+            item.style.display = status === filter ? '' : 'none';
+        }
+    });
+});
+</script>

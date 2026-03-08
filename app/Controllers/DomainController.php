@@ -608,6 +608,7 @@ class DomainController extends Controller
 
         $groupId = !empty($_POST['notification_group_id']) ? (int)$_POST['notification_group_id'] : null;
         $isActive = isset($_POST['is_active']) ? 1 : 0;
+        $dnsMonitoringEnabled = isset($_POST['dns_monitoring_enabled']) ? 1 : 0;
         $tagsInput = trim($_POST['tags'] ?? '');
         $manualExpirationDate = !empty($_POST['manual_expiration_date']) ? $_POST['manual_expiration_date'] : null;
         
@@ -642,6 +643,7 @@ class DomainController extends Controller
         $this->domainModel->update($id, [
             'notification_group_id' => $groupId,
             'is_active' => $isActive,
+            'dns_monitoring_enabled' => $dnsMonitoringEnabled,
             'expiration_date' => $manualExpirationDate
         ]);
 
@@ -661,6 +663,24 @@ class DomainController extends Controller
                 $subject = "⏸️ Monitoring Paused: {$domain['domain_name']}";
             }
             
+            $notificationService->sendToGroup($groupId, $subject, $message);
+        }
+
+        // Send notification if DNS monitoring changed and has notification group
+        $dnsMonitoringChanged = (($domain['dns_monitoring_enabled'] ?? 1) != $dnsMonitoringEnabled);
+        if ($dnsMonitoringChanged && $groupId) {
+            $notificationService = new \App\Services\NotificationService();
+
+            if ($dnsMonitoringEnabled) {
+                $message = "🟢 DNS monitoring has been ENABLED for {$domain['domain_name']}\n\n" .
+                          "DNS records will be checked for changes and you'll receive alerts when they change.";
+                $subject = "✅ DNS Monitoring Enabled: {$domain['domain_name']}";
+            } else {
+                $message = "🔴 DNS monitoring has been DISABLED for {$domain['domain_name']}\n\n" .
+                          "DNS records will no longer be checked. You will not receive DNS change alerts.";
+                $subject = "⏸️ DNS Monitoring Disabled: {$domain['domain_name']}";
+            }
+
             $notificationService->sendToGroup($groupId, $subject, $message);
         }
         
@@ -697,50 +717,26 @@ class DomainController extends Controller
         $this->redirect('/domains/' . $id);
     }
 
-    public function refresh($params = [])
+    /**
+     * Perform WHOIS lookup and persist results.
+     * @return string|null Status message on success, null on failure.
+     */
+    private function performWhoisRefresh(int $id, array $domain): ?string
     {
-        $id = $params['id'] ?? 0;
-        $domain = $this->checkDomainAccess($id);
-
-        if (!$domain) {
-            $_SESSION['error'] = 'Domain not found';
-            $this->redirect('/domains');
-            return;
-        }
-
-        // Log domain refresh start
         $logger = new \App\Services\Logger();
-        $logger->info('Domain refresh started', [
-            'domain_id' => $id,
-            'domain_name' => $domain['domain_name'],
-            'user_id' => \Core\Auth::id(),
-            'ip_address' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
-        ]);
 
-        // Get fresh WHOIS information
         $whoisData = $this->whoisService->getDomainInfo($domain['domain_name']);
 
         if (!$whoisData) {
-            $logger->error('Domain refresh failed - WHOIS data not retrieved', [
+            $logger->error('WHOIS refresh failed', [
                 'domain_id' => $id,
                 'domain_name' => $domain['domain_name'],
                 'user_id' => \Core\Auth::id()
             ]);
-            
-            $_SESSION['error'] = 'Could not retrieve WHOIS information';
-            // Check if we came from view page
-            $referer = $_SERVER['HTTP_REFERER'] ?? '';
-            if (strpos($referer, '/domains/' . $id) !== false) {
-                $this->redirect('/domains/' . $id);
-            } else {
-                $this->redirect('/domains');
-            }
-            return;
+            return null;
         }
 
-        // Use WHOIS expiration date if available, otherwise preserve manual expiration date
         $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
-        
         $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
 
         $this->domainModel->update($id, [
@@ -754,8 +750,7 @@ class DomainController extends Controller
             'whois_data' => json_encode($whoisData)
         ]);
 
-        // Log successful domain refresh
-        $logger->info('Domain refresh completed successfully', [
+        $logger->info('WHOIS refresh completed', [
             'domain_id' => $id,
             'domain_name' => $domain['domain_name'],
             'new_status' => $status,
@@ -764,17 +759,127 @@ class DomainController extends Controller
             'user_id' => \Core\Auth::id()
         ]);
 
-        $_SESSION['success'] = 'Domain information refreshed';
-        
-        // Check if we came from view page or list page
+        return 'WHOIS updated';
+    }
+
+    /**
+     * Perform DNS lookup and persist results.
+     * @return string Status message (always returns, even on zero records).
+     */
+    private function performDnsRefresh(int $id, array $domain): string
+    {
+        $logger = new \App\Services\Logger('dns');
+
+        $dnsService = new \App\Services\DnsService();
+        $dnsModel = new \App\Models\DnsRecord();
+
+        // Feed previously known hosts so manual refresh doesn't lose crt.sh-discovered subdomains
+        $existingHosts = $dnsModel->getDistinctHosts($id);
+        $records = $dnsService->lookup($domain['domain_name'], $existingHosts);
+        $totalRecords = array_sum(array_map('count', $records));
+
+        if ($totalRecords === 0) {
+            $logger->warning('DNS refresh returned no records', [
+                'domain_name' => $domain['domain_name'],
+            ]);
+            return 'DNS: no records found';
+        }
+
+        // Enrich A/AAAA records with IP details (PTR, ASN, geo) and store in raw_data
+        $ips = [];
+        foreach (['A', 'AAAA'] as $type) {
+            if (!empty($records[$type])) {
+                foreach ($records[$type] as $r) {
+                    if (!empty($r['value'])) {
+                        $ips[] = $r['value'];
+                    }
+                }
+            }
+        }
+        if (!empty($ips)) {
+            $ipDetails = $dnsService->lookupIpDetails($ips);
+            foreach (['A', 'AAAA'] as $type) {
+                if (!empty($records[$type])) {
+                    foreach ($records[$type] as &$rec) {
+                        if (!empty($rec['value']) && isset($ipDetails[$rec['value']])) {
+                            $rec['raw']['_ip_info'] = $ipDetails[$rec['value']];
+                        }
+                    }
+                    unset($rec);
+                }
+            }
+        }
+
+        $stats = $dnsModel->saveSnapshot($id, $records);
+        $this->domainModel->update($id, ['dns_last_checked' => date('Y-m-d H:i:s')]);
+
+        $logger->info('DNS refresh completed', [
+            'domain_name' => $domain['domain_name'],
+            'total'       => $totalRecords,
+            'added'       => $stats['added'],
+            'updated'     => $stats['updated'],
+            'removed'     => $stats['removed'],
+        ]);
+
+        return "DNS updated ({$totalRecords} records)";
+    }
+
+    /**
+     * Redirect back to the originating page (domain view or list).
+     */
+    private function redirectBackToDomain(int $id, string $hash = ''): void
+    {
         $referer = $_SERVER['HTTP_REFERER'] ?? '';
         if (strpos($referer, '/domains/' . $id) !== false) {
-            // Came from view page, go back to view page
-            $this->redirect('/domains/' . $id);
+            $this->redirect('/domains/' . $id . $hash);
         } else {
-            // Came from list page, stay on list page
             $this->redirect('/domains');
         }
+    }
+
+    public function refreshWhois($params = [])
+    {
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $result = $this->performWhoisRefresh($id, $domain);
+
+        if ($result === null) {
+            $_SESSION['error'] = 'Could not retrieve WHOIS information';
+        } else {
+            $_SESSION['success'] = 'WHOIS information refreshed';
+        }
+
+        $this->redirectBackToDomain($id);
+    }
+
+    public function refreshAll($params = [])
+    {
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $messages = [];
+        $messages[] = $this->performWhoisRefresh($id, $domain) ?? 'WHOIS failed';
+        if (!empty($domain['dns_monitoring_enabled'])) {
+            $messages[] = $this->performDnsRefresh($id, $domain);
+        } else {
+            $messages[] = 'DNS skipped (monitoring disabled)';
+        }
+
+        $_SESSION['success'] = 'Domain refreshed: ' . implode(', ', $messages);
+        $this->redirectBackToDomain($id);
     }
 
     public function delete($params = [])
@@ -842,11 +947,39 @@ class DomainController extends Controller
             $availableTags = $tagModel->getAllWithUsage();
         }
 
-        $this->view('domains/view', [
+        // Get DNS records for the DNS tab
+        $dnsModel = new \App\Models\DnsRecord();
+        $dnsRecords = $dnsModel->getByDomainGrouped($id);
+        $dnsRecordCount = $dnsModel->countByDomain($id);
+        $dnsHasCloudflare = $dnsModel->hasCloudflare($id);
+
+        // Extract cached IP details (PTR, ASN, geo) from stored raw_data
+        $dnsIpDetails = [];
+        foreach (['A', 'AAAA'] as $type) {
+            if (!empty($dnsRecords[$type])) {
+                foreach ($dnsRecords[$type] as $r) {
+                    if (!empty($r['raw_data']) && !empty($r['value'])) {
+                        $raw = json_decode($r['raw_data'], true);
+                        if (!empty($raw['_ip_info'])) {
+                            $dnsIpDetails[$r['value']] = $raw['_ip_info'];
+                        }
+                    }
+                }
+            }
+        }
+
+        $viewTemplate = $settingModel->getValue('domain_view_template', 'detailed');
+        $templateName = $viewTemplate === 'detailed' ? 'domains/view-detailed' : 'domains/view';
+
+        $this->view($templateName, [
             'domain' => $formattedDomain,
             'whoisData' => $whoisData,
             'logs' => $logs,
             'availableTags' => $availableTags,
+            'dnsRecords' => $dnsRecords,
+            'dnsRecordCount' => $dnsRecordCount,
+            'dnsHasCloudflare' => $dnsHasCloudflare,
+            'dnsIpDetails' => $dnsIpDetails,
             'title' => $domain['domain_name']
         ]);
     }
@@ -1279,9 +1412,14 @@ class DomainController extends Controller
 
         // Validate notes length
         $lengthError = \App\Helpers\InputValidator::validateLength($notes, 5000, 'Notes');
+
+        $settingModel = new \App\Models\Setting();
+        $viewTemplate = $settingModel->getValue('domain_view_template', 'detailed');
+        $redirect = '/domains/' . $id . ($viewTemplate === 'detailed' ? '#overview' : '');
+
         if ($lengthError) {
             $_SESSION['error'] = $lengthError;
-            $this->redirect('/domains/' . $id);
+            $this->redirect($redirect);
             return;
         }
 
@@ -1290,7 +1428,7 @@ class DomainController extends Controller
         ]);
 
         $_SESSION['success'] = 'Notes updated successfully';
-        $this->redirect('/domains/' . $id);
+        $this->redirect($redirect);
     }
 
     public function bulkAddTags()
@@ -1613,6 +1751,32 @@ class DomainController extends Controller
 
         $_SESSION['success'] = "$transferred domain(s) transferred to {$targetUser['username']}";
         $this->redirect('/domains');
+    }
+
+    // ========================================
+    // DNS MONITORING
+    // ========================================
+
+    public function refreshDns($params = [])
+    {
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $result = $this->performDnsRefresh($id, $domain);
+
+        if (strpos($result, 'no records') !== false) {
+            $_SESSION['warning'] = 'No DNS records found for this domain';
+        } else {
+            $_SESSION['success'] = $result;
+        }
+
+        $this->redirectBackToDomain($id, '#dns');
     }
 
     /**

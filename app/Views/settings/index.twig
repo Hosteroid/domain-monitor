@@ -8,6 +8,7 @@
 {% set currentNotificationDays = settings.notification_days_before|default('30,15,7,3,1') %}
 {% set currentCheckInterval = settings.check_interval_hours|default('24') %}
 {% set lastCheckRun = settings.last_check_run|default(null) %}
+{% set lastDnsCheckRun = settings.last_dns_check_run|default(null) %}
 {% set currentVer = appSettings.app_version|default('0') %}
 {% set updateChannel = updateSettings.update_channel|default('stable') %}
 
@@ -145,6 +146,28 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Domain View Template -->
+            <div class="border-t border-gray-200 dark:border-slate-700 pt-4 mt-6">
+                <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-4">Domain View</h4>
+                <div>
+                    <label for="domain_view_template" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Domain Detail Page Template
+                    </label>
+                    <select id="domain_view_template" name="domain_view_template"
+                            class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+                        <option value="legacy" {{ settings.domain_view_template == 'legacy' ? 'selected' : '' }}>
+                            Legacy &mdash; Classic single-page layout
+                        </option>
+                        <option value="detailed" {{ settings.domain_view_template == 'detailed' or settings.domain_view_template is not defined ? 'selected' : '' }}>
+                            Detailed &mdash; Tabbed layout with extended information
+                        </option>
+                    </select>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                        Choose which template to use when viewing domain details at <code class="bg-gray-100 dark:bg-slate-600 px-1 rounded">/domains/{id}</code>
+                    </p>
                 </div>
             </div>
 
@@ -464,25 +487,7 @@
                                 </option>
                             {% endfor %}
                         </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
-                            Last Check Run
-                        </label>
-                        <div class="px-3 py-2 bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg">
-                            {% if lastCheckRun %}
-                                <div class="flex items-center text-sm">
-                                    <i class="fas fa-check-circle text-green-500 dark:text-green-400 mr-2"></i>
-                                    <span class="text-gray-700 dark:text-slate-300">{{ lastCheckRun|date('M d, Y H:i') }}</span>
-                                </div>
-                            {% else %}
-                                <div class="flex items-center text-sm">
-                                    <i class="fas fa-minus-circle text-gray-400 dark:text-slate-500 mr-2"></i>
-                                    <span class="text-gray-500 dark:text-slate-400">Never run</span>
-                                </div>
-                            {% endif %}
-                        </div>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Last cronjob run times are shown in the System tab</p>
                     </div>
                 </div>
             </div>
@@ -772,27 +777,99 @@
         </div>
 
         <div class="p-6 space-y-6">
-            <!-- Cron Command -->
+            <!-- Cron Commands -->
             <div>
                 <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
                     <i class="fas fa-terminal text-blue-500 dark:text-blue-400 mr-2"></i>
-                    Cron Job Command
+                    Cron Job Commands
                 </h4>
-                <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm">
-                    <code>php cron/check_domains.php</code>
+                <div class="space-y-2">
+                    <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm">
+                        <p class="text-xs text-gray-400 dark:text-slate-500 mb-1">Domain / WHOIS check</p>
+                        <code>php cron/check_domains.php</code>
+                    </div>
+                    <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm">
+                        <p class="text-xs text-gray-400 dark:text-slate-500 mb-1">DNS record check</p>
+                        <code>php cron/check_dns.php</code>
+                    </div>
                 </div>
             </div>
 
-            <!-- Crontab Entry -->
+            <!-- Crontab Entries -->
             <div>
                 <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
                     <i class="fas fa-calendar-alt text-green-500 dark:text-green-400 mr-2"></i>
-                    Recommended Crontab Entry
+                    Recommended Crontab Entries
                 </h4>
-                <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm break-all">
-                    <code>0 */{{ currentCheckInterval }} * * * php {{ cronPath }}</code>
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mb-1">Domain check (every {{ currentCheckInterval }}h)</p>
+                        <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm break-all">
+                            <code>0 */{{ currentCheckInterval }} * * * php {{ cronPath }}</code>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mb-1">DNS check (every 6 hours)</p>
+                        <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm break-all">
+                            <code>0 0,6,12,18 * * php {{ cronPath|replace({'check_domains.php': 'check_dns.php'}) }}</code>
+                        </div>
+                    </div>
                 </div>
-                <p class="text-xs text-gray-500 dark:text-slate-400 mt-2">Update the path to match your server installation</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400 mt-2">Update the paths to match your server installation</p>
+            </div>
+
+            <!-- Last Cronjob Run -->
+            <div>
+                <h4 class="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+                    <i class="fas fa-history text-purple-500 dark:text-purple-400 mr-2"></i>
+                    Last Cronjob Run
+                </h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">Domain / WHOIS</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">check_domains.php</p>
+                        </div>
+                        {% if lastCheckRun %}
+                        <div class="flex items-center text-sm" title="{{ domainCronStale|default(false) ? 'Cron has not run within expected interval' : '' }}">
+                            {% if domainCronStale|default(false) %}
+                            <i class="fas fa-exclamation-triangle text-amber-500 dark:text-amber-400 mr-2"></i>
+                            <span class="text-amber-700 dark:text-amber-300">{{ lastCheckRun|date('M d, Y H:i') }}</span>
+                            {% else %}
+                            <i class="fas fa-check-circle text-green-500 dark:text-green-400 mr-2"></i>
+                            <span class="text-gray-700 dark:text-slate-300">{{ lastCheckRun|date('M d, Y H:i') }}</span>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <div class="flex items-center text-sm">
+                            <i class="fas fa-minus-circle text-gray-400 dark:text-slate-500 mr-2"></i>
+                            <span class="text-gray-500 dark:text-slate-400">Never run</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">DNS</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">check_dns.php</p>
+                        </div>
+                        {% if lastDnsCheckRun %}
+                        <div class="flex items-center text-sm" title="{{ dnsCronStale|default(false) ? 'Cron has not run within expected interval (24h)' : '' }}">
+                            {% if dnsCronStale|default(false) %}
+                            <i class="fas fa-exclamation-triangle text-amber-500 dark:text-amber-400 mr-2"></i>
+                            <span class="text-amber-700 dark:text-amber-300">{{ lastDnsCheckRun|date('M d, Y H:i') }}</span>
+                            {% else %}
+                            <i class="fas fa-check-circle text-green-500 dark:text-green-400 mr-2"></i>
+                            <span class="text-gray-700 dark:text-slate-300">{{ lastDnsCheckRun|date('M d, Y H:i') }}</span>
+                            {% endif %}
+                        </div>
+                        {% else %}
+                        <div class="flex items-center text-sm">
+                            <i class="fas fa-minus-circle text-gray-400 dark:text-slate-500 mr-2"></i>
+                            <span class="text-gray-500 dark:text-slate-400">Never run</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
             </div>
 
             <!-- Log Files -->
@@ -804,17 +881,24 @@
                 <div class="space-y-2">
                     <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
                         <div>
-                            <p class="text-sm font-medium text-gray-900 dark:text-white">Cron Log</p>
-                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Domain check execution logs</p>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">Domain Cron Log</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">WHOIS / expiration check logs</p>
                         </div>
                         <code class="text-xs bg-gray-900 text-gray-100 px-2 py-1 rounded">logs/cron.log</code>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">DNS Cron Log</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">DNS record check logs</p>
+                        </div>
+                        <code class="text-xs bg-gray-900 text-gray-100 px-2 py-1 rounded">logs/dns_cron.log</code>
                     </div>
                     <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
                         <div>
                             <p class="text-sm font-medium text-gray-900 dark:text-white">TLD Import Log</p>
                             <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">TLD registry import logs</p>
                         </div>
-                        <code class="text-xs bg-gray-900 text-gray-100 px-2 py-1 rounded">logs/tld_import_*.log</code>
+                        <code class="text-xs bg-gray-900 text-gray-100 px-2 py-1 rounded">logs/tld_import.log</code>
                     </div>
                 </div>
             </div>

@@ -1,0 +1,131 @@
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+    <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex flex-wrap items-center justify-between gap-2">
+        <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
+            <i class="fas fa-history text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
+            Notification History
+            <span id="notification-count" class="ml-1.5 text-gray-600 dark:text-slate-400">({{ logs|length }})</span>
+        </h3>
+        {% if logs is not empty %}
+        <div class="flex flex-wrap items-center gap-2" id="notification-filters">
+            <select id="filter-channel" class="notification-filter text-xs border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 focus:ring-1 focus:ring-primary focus:border-primary">
+                <option value="">All channels</option>
+                <option value="email">Email</option>
+                <option value="telegram">Telegram</option>
+                <option value="discord">Discord</option>
+                <option value="slack">Slack</option>
+                <option value="mattermost">Mattermost</option>
+                <option value="webhook">Webhook</option>
+                <option value="pushover">Pushover</option>
+            </select>
+            <select id="filter-status" class="notification-filter text-xs border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 focus:ring-1 focus:ring-primary focus:border-primary">
+                <option value="">All statuses</option>
+                <option value="sent">Sent</option>
+                <option value="failed">Failed</option>
+            </select>
+            <select id="filter-type" class="notification-filter text-xs border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 focus:ring-1 focus:ring-primary focus:border-primary">
+                <option value="">All types</option>
+                <option value="expiration">Expiration</option>
+                <option value="status">Status change</option>
+                <option value="dns">DNS change</option>
+            </select>
+            <input type="text" id="filter-search" placeholder="Search message..." class="notification-filter text-xs border border-gray-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-300 w-32 focus:ring-1 focus:ring-primary focus:border-primary" />
+            <button type="button" id="filter-reset" class="text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 px-2 py-1" title="Reset filters">Clear</button>
+        </div>
+        {% endif %}
+    </div>
+    <div class="overflow-hidden">
+        {% if logs is empty %}
+        <div class="p-8 text-center">
+            <i class="fas fa-bell-slash text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>
+            <p class="text-xs text-gray-500 dark:text-slate-400">No notifications sent yet</p>
+        </div>
+        {% else %}
+        <div id="notification-table-wrap" class="max-h-96 overflow-y-auto">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700 text-xs">
+                <thead class="bg-gray-50 dark:bg-slate-900 sticky top-0">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Channel</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Status</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Date</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Message</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white dark:bg-slate-800 divide-y divide-gray-200 dark:divide-slate-700" id="notification-log-tbody">
+                    {% for log in logs %}
+                    {% set nt = log.notification_type|default('') %}
+                    {% set logType = (nt == 'expired' or (nt|slice(0, 13)) == 'expiring_in_') ? 'expiration' : (((nt|slice(0, 7)) == 'domain_') ? 'status' : ((nt == 'dns_change') ? 'dns' : 'other')) %}
+                    <tr class="notification-log-row hover:bg-gray-50 dark:hover:bg-slate-700" data-channel="{{ log.channel_type }}" data-status="{{ log.status }}" data-type="{{ logType }}" data-message="{{ log.message|e('html_attr') }}">
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            <span class="px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400">
+                                {{ log.channel_type|capitalize }}
+                            </span>
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap">
+                            {% set logStatusClass = log.status == 'sent' ? 'bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400' : 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400' %}
+                            <span class="px-2 py-0.5 rounded text-xs font-medium {{ logStatusClass }}">
+                                {{ log.status|capitalize }}
+                            </span>
+                        </td>
+                        <td class="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-slate-400">{{ log.sent_at|date('M j, H:i') }}</td>
+                        <td class="px-3 py-2 text-gray-700 dark:text-slate-300 max-w-xs truncate" title="{{ log.message }}">
+                            {{ log.message }}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="notification-empty-filter" class="hidden p-8 text-center">
+            <i class="fas fa-filter text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>
+            <p class="text-xs text-gray-500 dark:text-slate-400">No notifications match the current filters</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% if logs is not empty %}
+<script>
+(function() {
+    var rows = document.querySelectorAll('.notification-log-row');
+    var countEl = document.getElementById('notification-count');
+    var emptyFilterEl = document.getElementById('notification-empty-filter');
+
+    function applyFilters() {
+        var channel = document.getElementById('filter-channel').value;
+        var status = document.getElementById('filter-status').value;
+        var type = document.getElementById('filter-type').value;
+        var search = (document.getElementById('filter-search').value || '').toLowerCase();
+
+        var visible = 0;
+        rows.forEach(function(row) {
+            var match = true;
+            if (channel && row.dataset.channel !== channel) match = false;
+            if (status && row.dataset.status !== status) match = false;
+            if (type && row.dataset.type !== type) match = false;
+            if (search && row.dataset.message.toLowerCase().indexOf(search) === -1) match = false;
+
+            row.style.display = match ? '' : 'none';
+            if (match) visible++;
+        });
+
+        countEl.textContent = '(' + visible + (visible !== rows.length ? ' of ' + rows.length + ')' : ')');
+        emptyFilterEl.classList.toggle('hidden', visible > 0);
+        document.getElementById('notification-table-wrap').classList.toggle('hidden', visible === 0);
+    }
+
+    function resetFilters() {
+        document.getElementById('filter-channel').value = '';
+        document.getElementById('filter-status').value = '';
+        document.getElementById('filter-type').value = '';
+        document.getElementById('filter-search').value = '';
+        applyFilters();
+    }
+
+    document.querySelectorAll('.notification-filter').forEach(function(el) {
+        el.addEventListener('change', applyFilters);
+        el.addEventListener('input', function() { if (el.id === 'filter-search') applyFilters(); });
+    });
+    document.getElementById('filter-reset').addEventListener('click', resetFilters);
+})();
+</script>
+{% endif %}

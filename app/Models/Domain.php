@@ -260,6 +260,24 @@ class Domain extends Model
     }
 
     /**
+     * Get effective status for sorting (active + daysLeft within threshold = expiring_soon)
+     */
+    private static function getEffectiveStatusForSort(array $domain, int $expiringThreshold): string
+    {
+        $status = $domain['status'] ?? '';
+        if ($status === 'inactive') {
+            return 'inactive';
+        }
+        if ($status === 'active' && !empty($domain['expiration_date'])) {
+            $daysLeft = (int) floor((strtotime($domain['expiration_date']) - time()) / 86400);
+            if ($daysLeft <= $expiringThreshold && $daysLeft >= 0) {
+                return 'expiring_soon';
+            }
+        }
+        return $status ?: 'error';
+    }
+
+    /**
      * Get filtered, sorted, and paginated domains
      */
     public function getFilteredPaginated(array $filters, string $sortBy, string $sortOrder, int $page, int $perPage, int $expiringThreshold = 30, ?int $userId = null): array
@@ -332,10 +350,33 @@ class Domain extends Model
         $totalDomains = count($domains);
 
         // Apply sorting
-        usort($domains, function($a, $b) use ($sortBy, $sortOrder) {
+        usort($domains, function($a, $b) use ($sortBy, $sortOrder, $expiringThreshold) {
             $aVal = $a[$sortBy] ?? '';
             $bVal = $b[$sortBy] ?? '';
-            
+
+            // When sorting by status: use effective status (active + daysLeft<=threshold = expiring_soon) and logical priority order
+            if ($sortBy === 'status') {
+                $aVal = self::getEffectiveStatusForSort($a, $expiringThreshold);
+                $bVal = self::getEffectiveStatusForSort($b, $expiringThreshold);
+                $priority = [
+                    'expired' => 1,
+                    'redemption_period' => 2,
+                    'pending_delete' => 3,
+                    'expiring_soon' => 4,
+                    'active' => 5,
+                    'available' => 6,
+                    'error' => 7,
+                    'inactive' => 8,
+                ];
+                $aOrder = $priority[$aVal] ?? 99;
+                $bOrder = $priority[$bVal] ?? 99;
+                $comparison = $aOrder <=> $bOrder;
+                if ($comparison === 0) {
+                    $comparison = strcasecmp($a['domain_name'] ?? '', $b['domain_name'] ?? '');
+                }
+                return $sortOrder === 'desc' ? -$comparison : $comparison;
+            }
+
             $comparison = strcasecmp($aVal, $bVal);
             return $sortOrder === 'desc' ? -$comparison : $comparison;
         });
