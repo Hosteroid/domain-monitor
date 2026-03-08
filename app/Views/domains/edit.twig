@@ -152,13 +152,23 @@
                         </div>
                     </label>
                     <label class="flex items-start cursor-pointer pt-2 border-t border-gray-200 dark:border-slate-700">
-                        <input type="checkbox" 
-                               name="dns_monitoring_enabled" 
-                               {{ domain.dns_monitoring_enabled|default(1) ? 'checked' : '' }} 
+                        <input type="checkbox"
+                               name="dns_monitoring_enabled"
+                               {{ domain.dns_monitoring_enabled|default(1) ? 'checked' : '' }}
                                class="w-4 h-4 mt-0.5 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
                         <div class="ml-3">
                             <span class="text-sm font-medium text-gray-900 dark:text-white">Enable DNS Monitoring</span>
                             <p class="text-xs text-gray-600 dark:text-slate-400 mt-1">When enabled, DNS records will be checked for changes and you'll receive alerts</p>
+                        </div>
+                    </label>
+                    <label id="ssl-monitoring" class="flex items-start cursor-pointer pt-2 border-t border-gray-200 dark:border-slate-700">
+                        <input type="checkbox"
+                               name="ssl_monitoring_enabled"
+                               {{ domain.ssl_monitoring_enabled|default(0) ? 'checked' : '' }}
+                               class="w-4 h-4 mt-0.5 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">Enable SSL Monitoring</span>
+                            <p class="text-xs text-gray-600 dark:text-slate-400 mt-1">When enabled, the root certificate and any monitored SSL endpoints will be checked automatically</p>
                         </div>
                     </label>
                 </div>

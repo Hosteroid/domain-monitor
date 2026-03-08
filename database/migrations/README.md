@@ -35,6 +35,11 @@ If upgrading from v1.0.0, these incremental migrations will be applied:
 - `021_add_avatar_field.sql` - User avatar field
 - `022_add_pushover_channel_type.sql` - Pushover notification channel support
 - `023_update_app_version_to_1.1.1.sql` - Update version to 1.1.1
+- `024_add_status_notifications_v1.1.2.sql` - Status notification triggers
+- `025_add_update_system_v1.1.3.sql` - In-app update system
+- `026_update_app_version_v1.1.4.sql` - Update version to 1.1.4
+- `027_add_dns_monitoring.sql` - DNS monitoring tables and settings
+- `028_add_ssl_monitoring.sql` - SSL certificate monitoring table, per-domain toggles, timestamps, and cron settings
 
 **Upgrade via:** Web updater at `/install/update`
 

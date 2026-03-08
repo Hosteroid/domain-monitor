@@ -191,9 +191,15 @@
                             <i class="fas fa-lock text-indigo-500 dark:text-indigo-400 mr-2" style="font-size: 10px;"></i>
                             <span class="text-xs text-gray-700 dark:text-slate-300">SSL</span>
                         </div>
-                        <span class="inline-flex items-center px-2 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-slate-400 text-xs font-semibold rounded">
-                            <i class="fas fa-minus-circle mr-1" style="font-size: 9px;"></i>Coming Soon
+                        {% if domain.ssl_monitoring_enabled|default(0) %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded">
+                            <i class="fas fa-check-circle mr-1" style="font-size: 9px;"></i>Active
                         </span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 text-xs font-semibold rounded">
+                            <i class="fas fa-pause-circle mr-1" style="font-size: 9px;"></i>Disabled
+                        </span>
+                        {% endif %}
                     </div>
                     <div class="flex items-center justify-between">
                         <div class="flex items-center">

@@ -86,6 +86,12 @@ $router->post('/domains/{id}/update', [DomainController::class, 'update']);
 $router->post('/domains/{id}/update-notes', [DomainController::class, 'updateNotes']);
 $router->post('/domains/{id}/refresh-whois', [DomainController::class, 'refreshWhois']);
 $router->post('/domains/{id}/refresh-dns', [DomainController::class, 'refreshDns']);
+$router->post('/domains/{id}/ssl/add', [DomainController::class, 'addSslHost']);
+$router->post('/domains/{id}/ssl/refresh-all', [DomainController::class, 'refreshAllSsl']);
+$router->post('/domains/{id}/ssl/bulk-refresh', [DomainController::class, 'bulkRefreshSsl']);
+$router->post('/domains/{id}/ssl/bulk-delete', [DomainController::class, 'bulkDeleteSsl']);
+$router->post('/domains/{id}/ssl/{certificateId}/refresh', [DomainController::class, 'refreshSsl']);
+$router->post('/domains/{id}/ssl/{certificateId}/delete', [DomainController::class, 'deleteSsl']);
 $router->post('/domains/{id}/refresh-all', [DomainController::class, 'refreshAll']);
 $router->post('/domains/{id}/delete', [DomainController::class, 'delete']);
 

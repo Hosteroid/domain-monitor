@@ -142,10 +142,14 @@ CREATE TABLE IF NOT EXISTS domains (
     abuse_email VARCHAR(255),
     last_checked TIMESTAMP NULL,
     dns_last_checked TIMESTAMP NULL,
+    ssl_last_checked TIMESTAMP NULL,
+    crtsh_last_fetched DATETIME NULL DEFAULT NULL,
     status ENUM('active', 'expiring_soon', 'expired', 'error', 'available', 'redemption_period', 'pending_delete') DEFAULT 'active',
     whois_data JSON,
     notes TEXT,
     is_active BOOLEAN DEFAULT TRUE,
+    dns_monitoring_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    ssl_monitoring_enabled TINYINT(1) NOT NULL DEFAULT 0,
     user_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -368,6 +372,38 @@ CREATE TABLE IF NOT EXISTS dns_records (
     INDEX idx_last_seen (last_seen_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- SSL certificates table for tracking monitored TLS endpoints
+CREATE TABLE IF NOT EXISTS ssl_certificates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    domain_id INT NOT NULL,
+    hostname VARCHAR(255) NOT NULL,
+    port INT NOT NULL DEFAULT 443,
+    status ENUM('valid', 'expiring', 'expired', 'invalid') NOT NULL DEFAULT 'invalid',
+    is_trusted TINYINT(1) NOT NULL DEFAULT 0,
+    is_self_signed TINYINT(1) NOT NULL DEFAULT 0,
+    valid_from DATETIME NULL,
+    valid_to DATETIME NULL,
+    days_remaining INT NULL,
+    issuer_name VARCHAR(255) NULL,
+    subject_name VARCHAR(255) NULL,
+    serial_number VARCHAR(255) NULL,
+    signature_algorithm VARCHAR(100) NULL,
+    key_bits INT NULL,
+    key_type VARCHAR(20) NULL,
+    certificate_version VARCHAR(20) NULL,
+    san_list JSON NULL,
+    last_checked DATETIME NULL,
+    last_error TEXT NULL,
+    raw_data JSON NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_domain_host_port (domain_id, hostname, port),
+    INDEX idx_ssl_domain_id (domain_id),
+    INDEX idx_ssl_status (status),
+    INDEX idx_ssl_valid_to (valid_to)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- =====================================================
 -- SYSTEM SETTINGS
 -- =====================================================
@@ -389,7 +425,7 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('app_name', 'Domain Monitor', 'string', 'Application name'),
 ('app_url', 'http://localhost:8000', 'string', 'Application URL'),
 ('app_timezone', 'UTC', 'string', 'Application timezone'),
-('app_version', '1.1.4', 'string', 'Application version number'),
+('app_version', '1.1.5', 'string', 'Application version number'),
 
 -- Email settings
 ('mail_host', 'smtp.mailtrap.io', 'string', 'SMTP server host'),
@@ -430,6 +466,10 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 -- DNS monitoring settings
 ('dns_check_interval_hours', '24', 'string', 'DNS record check interval in hours'),
 ('last_dns_check_run', NULL, 'datetime', 'Last time DNS cron job ran'),
+
+-- SSL monitoring settings
+('ssl_check_interval_hours', '12', 'string', 'SSL certificate check interval in hours'),
+('last_ssl_check_run', NULL, 'datetime', 'Last time SSL cron job ran'),
 
 -- Update system settings
 ('update_channel', 'stable', 'string', 'Update channel: stable (releases only) or latest (releases + hotfixes)'),

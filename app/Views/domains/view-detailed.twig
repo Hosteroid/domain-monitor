@@ -120,8 +120,19 @@
             <button onclick="switchTab('ssl')" id="tab-ssl" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
                 <i class="fas fa-lock mr-1.5" style="font-size: 10px;"></i>
                 SSL
-                <span class="ml-1.5 px-1.5 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded">2</span>
-                <span class="ml-1 px-1.5 py-0.5 bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 text-xs font-semibold rounded">1</span>
+                {% if not (domain.ssl_monitoring_enabled|default(0)) %}
+                <i class="fas fa-pause-circle text-amber-500 dark:text-amber-400 ml-1" style="font-size: 10px;" title="SSL monitoring disabled"></i>
+                {% else %}
+                {% if sslStats.total|default(0) > 0 %}
+                <span class="ml-1.5 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded">{{ sslStats.total }}</span>
+                {% endif %}
+                {% if sslStats.expiring|default(0) > 0 %}
+                <span class="ml-1 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 text-xs font-semibold rounded">{{ sslStats.expiring }}</span>
+                {% endif %}
+                {% if sslStats.issues|default(0) > 0 %}
+                <span class="ml-1 px-1.5 py-0.5 bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 text-xs font-semibold rounded">{{ sslStats.issues }}</span>
+                {% endif %}
+                {% endif %}
             </button>
             <button onclick="switchTab('dns')" id="tab-dns" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
                 <i class="fas fa-network-wired mr-1.5" style="font-size: 10px;"></i>

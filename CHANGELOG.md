@@ -5,6 +5,42 @@ All notable changes to Domain Monitor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-03-08
+
+### Added
+- **Twig Templating** - All PHP views migrated to Twig; `twig/twig` added as dependency
+- **Twig-Only Rendering** - Removed legacy PHP view fallbacks; ErrorHandler renders via Twig with safe escaped HTML fallback on failure
+- **DNS Monitoring** - Track DNS record changes with DnsService (lookup, crt.sh discovery, Cloudflare detection, IP enrichment), DnsRecord model for snapshots and diffs, per-domain `dns_monitoring_enabled` toggle, manual and scheduled refresh via `cron/check_dns.php`
+- **SSL Certificate Monitoring** - Track TLS certificates with SslService and SslCertificate model; validity, expiry, issuer, SAN list; per-domain `ssl_monitoring_enabled`; add/refresh/delete endpoints for root and custom hostnames/ports; `cron/check_ssl.php` for scheduled checks
+- **Domain View Tabs** - New tabbed domain view: Overview, DNS, Billing, Notifications, SSL, WHOIS
+- **Domain View Template Setting** - Choose `detailed` (tabbed) or `legacy` view per installation
+- **Cron Staleness Warnings** - Settings shows warnings when domain/DNS/SSL cron runs are overdue
+- **Timezone on Installer Routes** - App timezone now applied even on `/install` and `/install/update` when installed, so upgrade notifications use correct timezone
+
+### Changed
+- **2FA Flows** - Twig templates for setup, verify, backup-codes; TwoFactorService silences deprecated QR code warnings
+- **Settings Page** - Timezone lists, notification preset selection, cron path display, cached update state, rollback availability
+- **Avatar and 2FA Data in Controllers** - ProfileController and UserController pass avatar and two-factor info to Twig views
+- **EmailHelper** - Safer subject handling
+- **TldRegistry** - Search improvements
+- **Domain Sorting** - Uses effective status (e.g. `expiring_soon`) for ordering
+- **Discord Channel** - Null-safe field handling
+
+### Technical
+- **Core** - `Core\TwigService` for Twig rendering; Controller and Router always use Twig
+- **Models** - `DnsRecord`, `SslCertificate`
+- **Services** - `DnsService` (DNS lookup, crt.sh, Cloudflare detection), `SslService` (certificate fetch and parsing)
+- **DomainController** - `performWhoisRefresh`/`performDnsRefresh`, `refreshWhois`, `refreshDns`, `refreshAll`; SSL endpoints: `addSslHost`, `refreshAllSsl`, `bulkRefreshSsl`, `bulkDeleteSsl`, `refreshSsl`, `deleteSsl`
+- **NotificationService** - Notifications when DNS or SSL monitoring is toggled
+- **domains table** - `dns_last_checked`, `dns_monitoring_enabled`, `crtsh_last_fetched`, `ssl_last_checked`, `ssl_monitoring_enabled`
+- **settings** - `domain_view_template`, `dns_check_interval_hours`, `last_dns_check_run`, `ssl_check_interval_hours`, `last_ssl_check_run`
+
+### Migrations
+- `027_add_dns_monitoring.sql` - dns_records table, domain columns, DNS cron settings
+- `028_add_ssl_monitoring.sql` - ssl_certificates table, domain columns, SSL cron settings, app version 1.1.5
+
+---
+
 ## [1.1.4] - 2026-03-02
 
 ### Added
@@ -471,8 +507,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - [x] Export functionality (CSV, JSON) (completed - v1.1.3, TLD Registry - v1.1.4)
 - [x] Import domains from CSV/JSON (completed - v1.1.3, TLD Registry - v1.1.4)
 - [ ] Domain transfer tracking
-- [ ] DNS record monitoring
-- [ ] SSL certificate monitoring
+- [x] DNS record monitoring (completed - v1.1.5)
+- [x] SSL certificate monitoring (completed - v1.1.5)
 - [ ] Downtime monitoring
 - [x] 2FA for login (completed - v1.1.0)
 - [ ] Mobile app
@@ -490,6 +526,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## Version History
+
+### 1.1.5 (2026-03-08)
+- **Twig Templating** - All PHP views migrated to Twig; Twig-only rendering with safe error fallback
+- **DNS Monitoring** - DnsService, DnsRecord model, crt.sh discovery, Cloudflare detection, per-domain toggle, `cron/check_dns.php`
+- **SSL Certificate Monitoring** - SslService, SslCertificate model, add/refresh/delete endpoints, `cron/check_ssl.php`
+- **Domain View Tabs** - Overview, DNS, Billing, Notifications, SSL, WHOIS; `domain_view_template` setting (detailed/legacy)
+- **Cron Staleness Warnings** - Settings shows overdue warnings for domain/DNS/SSL cron runs
+- **Timezone on Installer** - App timezone applied on `/install` and `/install/update` when installed
+- **2FA/Settings** - Twig templates for 2FA, timezone lists, notification presets, cron path in Settings
+- Migrations: `027_add_dns_monitoring.sql`, `028_add_ssl_monitoring.sql`
 
 ### 1.1.4 (2026-03-02)
 - **TLD Registry Import & Export** - CSV/JSON export/import for TLD entries with WHOIS, RDAP, registry URL data

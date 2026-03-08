@@ -5,19 +5,25 @@ namespace App\Controllers;
 use Core\Controller;
 use App\Models\Domain;
 use App\Models\NotificationGroup;
+use App\Models\SslCertificate;
 use App\Services\WhoisService;
+use App\Services\SslService;
 
 class DomainController extends Controller
 {
     private Domain $domainModel;
     private NotificationGroup $groupModel;
     private WhoisService $whoisService;
+    private SslCertificate $sslCertificateModel;
+    private SslService $sslService;
 
     public function __construct()
     {
         $this->domainModel = new Domain();
         $this->groupModel = new NotificationGroup();
         $this->whoisService = new WhoisService();
+        $this->sslCertificateModel = new SslCertificate();
+        $this->sslService = new SslService();
     }
 
     /**
@@ -609,6 +615,7 @@ class DomainController extends Controller
         $groupId = !empty($_POST['notification_group_id']) ? (int)$_POST['notification_group_id'] : null;
         $isActive = isset($_POST['is_active']) ? 1 : 0;
         $dnsMonitoringEnabled = isset($_POST['dns_monitoring_enabled']) ? 1 : 0;
+        $sslMonitoringEnabled = isset($_POST['ssl_monitoring_enabled']) ? 1 : 0;
         $tagsInput = trim($_POST['tags'] ?? '');
         $manualExpirationDate = !empty($_POST['manual_expiration_date']) ? $_POST['manual_expiration_date'] : null;
         
@@ -644,6 +651,7 @@ class DomainController extends Controller
             'notification_group_id' => $groupId,
             'is_active' => $isActive,
             'dns_monitoring_enabled' => $dnsMonitoringEnabled,
+            'ssl_monitoring_enabled' => $sslMonitoringEnabled,
             'expiration_date' => $manualExpirationDate
         ]);
 
@@ -663,6 +671,24 @@ class DomainController extends Controller
                 $subject = "⏸️ Monitoring Paused: {$domain['domain_name']}";
             }
             
+            $notificationService->sendToGroup($groupId, $subject, $message);
+        }
+
+        // Send notification if SSL monitoring changed and has notification group
+        $sslMonitoringChanged = (($domain['ssl_monitoring_enabled'] ?? 0) != $sslMonitoringEnabled);
+        if ($sslMonitoringChanged && $groupId) {
+            $notificationService = new \App\Services\NotificationService();
+
+            if ($sslMonitoringEnabled) {
+                $message = "🟢 SSL monitoring has been ENABLED for {$domain['domain_name']}\n\n" .
+                          "The root certificate and monitored SSL endpoints will now be checked automatically.";
+                $subject = "✅ SSL Monitoring Enabled: {$domain['domain_name']}";
+            } else {
+                $message = "🔴 SSL monitoring has been DISABLED for {$domain['domain_name']}\n\n" .
+                          "SSL certificates will no longer be checked until monitoring is re-enabled.";
+                $subject = "⏸️ SSL Monitoring Disabled: {$domain['domain_name']}";
+            }
+
             $notificationService->sendToGroup($groupId, $subject, $message);
         }
 
@@ -825,13 +851,314 @@ class DomainController extends Controller
     }
 
     /**
+     * Fetch and persist the latest SSL certificate snapshot for a host.
+     *
+     * @return array{id:int,hostname:string,port:int,display_target:string,status:string,error:?string}
+     */
+    private function performSslRefreshForHost(int $domainId, string $hostname, int $port = 443): array
+    {
+        $snapshot = $this->sslService->fetchCertificateSnapshot($hostname, $port);
+        $id = $this->sslCertificateModel->saveSnapshot($domainId, $hostname, $snapshot, $port);
+        $this->domainModel->update($domainId, ['ssl_last_checked' => $snapshot['last_checked']]);
+
+        return [
+            'id' => $id,
+            'hostname' => $hostname,
+            'port' => $port,
+            'display_target' => $this->sslService->formatTargetLabel($hostname, $port),
+            'status' => $snapshot['status'],
+            'error' => $snapshot['last_error'],
+        ];
+    }
+
+    /**
+     * Get the SSL endpoints that should be checked for a domain.
+     * Falls back to the root domain on 443 until a root target is explicitly tracked.
+     *
+     * @return array<int,array{hostname:string,port:int}>
+     */
+    private function getSslMonitorTargets(int $domainId, string $rootDomain): array
+    {
+        $rootDomain = strtolower($rootDomain);
+        $targets = $this->sslCertificateModel->getDistinctTargets($domainId);
+        $hasTrackedRootTarget = false;
+
+        foreach ($targets as $target) {
+            if ($target['hostname'] === $rootDomain) {
+                $hasTrackedRootTarget = true;
+                break;
+            }
+        }
+
+        if (!$hasTrackedRootTarget) {
+            $targets[] = [
+                'hostname' => $rootDomain,
+                'port' => 443,
+            ];
+        }
+
+        usort($targets, static function (array $a, array $b): int {
+            $hostnameCompare = strcasecmp($a['hostname'], $b['hostname']);
+            if ($hostnameCompare !== 0) {
+                return $hostnameCompare;
+            }
+
+            return $a['port'] <=> $b['port'];
+        });
+
+        return $targets;
+    }
+
+    /**
+     * Count tracked root-domain SSL endpoints for delete safeguards.
+     */
+    private function countStoredRootSslTargets(int $domainId, string $rootDomain): int
+    {
+        $rootDomain = strtolower($rootDomain);
+        $targets = $this->sslCertificateModel->getDistinctTargets($domainId);
+
+        return count(array_filter($targets, static fn(array $target): bool => $target['hostname'] === $rootDomain));
+    }
+
+    /**
+     * Determine whether the certificate row represents the default root SSL target.
+     */
+    private function isDefaultRootSslTarget(array $certificate, string $rootDomain): bool
+    {
+        return strtolower($certificate['hostname']) === strtolower($rootDomain)
+            && (int)($certificate['port'] ?? 443) === 443;
+    }
+
+    /**
+     * Get formatted SSL certificates for rendering.
+     */
+    private function getFormattedSslCertificates(int $domainId, string $rootDomain): array
+    {
+        $rawCertificates = $this->sslCertificateModel->getByDomain($domainId);
+        $rootDomain = strtolower($rootDomain);
+        $rootTargetCount = count(array_filter(
+            $rawCertificates,
+            static fn(array $certificate): bool => strtolower($certificate['hostname']) === $rootDomain
+        ));
+
+        $certificates = array_map(
+            fn(array $certificate) => $this->formatSslCertificate($certificate, $rootDomain, $rootTargetCount),
+            $rawCertificates
+        );
+
+        usort($certificates, function (array $a, array $b): int {
+            if ($a['is_root'] !== $b['is_root']) {
+                return $a['is_root'] ? -1 : 1;
+            }
+
+            $hostnameCompare = strcasecmp($a['hostname'], $b['hostname']);
+            if ($hostnameCompare !== 0) {
+                return $hostnameCompare;
+            }
+
+            return $a['port'] <=> $b['port'];
+        });
+
+        return $certificates;
+    }
+
+    /**
+     * Prepare a single SSL certificate row for the view.
+     */
+    private function formatSslCertificate(array $certificate, string $rootDomain, int $rootTargetCount): array
+    {
+        $certificate['hostname'] = strtolower($certificate['hostname']);
+        $certificate['port'] = (int)($certificate['port'] ?? 443);
+        $certificate['is_root'] = $this->isDefaultRootSslTarget($certificate, $rootDomain);
+        $certificate['display_target'] = $this->sslService->formatTargetLabel($certificate['hostname'], $certificate['port']);
+        $certificate['can_delete'] = !$certificate['is_root'] || $rootTargetCount > 1;
+        $certificate['san_list'] = !empty($certificate['san_list'])
+            ? (json_decode($certificate['san_list'], true) ?: [])
+            : [];
+        $certificate['raw_data'] = !empty($certificate['raw_data'])
+            ? (json_decode($certificate['raw_data'], true) ?: [])
+            : [];
+        $certificate['issuer_organization'] = $this->extractCertificateDnValue(
+            is_array($certificate['raw_data']['issuer'] ?? null) ? $certificate['raw_data']['issuer'] : [],
+            'O'
+        );
+        $certificate['subject_organization'] = $this->extractCertificateDnValue(
+            is_array($certificate['raw_data']['subject'] ?? null) ? $certificate['raw_data']['subject'] : [],
+            'O'
+        );
+        $certificate['days_remaining'] = $certificate['days_remaining'] !== null
+            ? (int)$certificate['days_remaining']
+            : null;
+        $certificate['is_trusted'] = !empty($certificate['is_trusted']);
+        $certificate['is_self_signed'] = !empty($certificate['is_self_signed']);
+
+        return array_merge($certificate, $this->getSslStatusMeta($certificate['status'] ?? 'invalid'));
+    }
+
+    /**
+     * Extract a human-readable distinguished name field from parsed certificate data.
+     */
+    private function extractCertificateDnValue(array $parts, string $field): ?string
+    {
+        if (!array_key_exists($field, $parts)) {
+            return null;
+        }
+
+        $value = $parts[$field];
+        if (is_array($value)) {
+            $values = array_values(array_filter(array_map(static function ($item): ?string {
+                if (!is_scalar($item)) {
+                    return null;
+                }
+
+                $item = trim((string)$item);
+                return $item !== '' ? $item : null;
+            }, $value)));
+
+            return !empty($values) ? implode(', ', $values) : null;
+        }
+
+        if (!is_scalar($value)) {
+            return null;
+        }
+
+        $value = trim((string)$value);
+        return $value !== '' ? $value : null;
+    }
+
+    /**
+     * Get CSS classes and labels for an SSL status.
+     */
+    private function getSslStatusMeta(string $status): array
+    {
+        return match ($status) {
+            'valid' => [
+                'status_label' => 'Valid & Trusted',
+                'status_icon' => 'fa-check-circle',
+                'status_badge_class' => 'bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800',
+                'card_border_class' => 'border-green-200 dark:border-green-800',
+                'header_class' => 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-800',
+                'accent_class' => 'text-green-600 dark:text-green-400',
+            ],
+            'expiring' => [
+                'status_label' => 'Expiring Soon',
+                'status_icon' => 'fa-exclamation-triangle',
+                'status_badge_class' => 'bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800',
+                'card_border_class' => 'border-amber-200 dark:border-amber-800',
+                'header_class' => 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-800',
+                'accent_class' => 'text-amber-600 dark:text-amber-400',
+            ],
+            'expired' => [
+                'status_label' => 'Expired',
+                'status_icon' => 'fa-times-circle',
+                'status_badge_class' => 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800',
+                'card_border_class' => 'border-red-200 dark:border-red-800',
+                'header_class' => 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-800',
+                'accent_class' => 'text-red-600 dark:text-red-400',
+            ],
+            default => [
+                'status_label' => 'Invalid / Untrusted',
+                'status_icon' => 'fa-ban',
+                'status_badge_class' => 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800',
+                'card_border_class' => 'border-red-200 dark:border-red-800',
+                'header_class' => 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-800',
+                'accent_class' => 'text-red-600 dark:text-red-400',
+            ],
+        };
+    }
+
+    /**
+     * Build SSL summary counts for the tab.
+     */
+    private function buildSslStats(array $certificates): array
+    {
+        $stats = [
+            'total' => count($certificates),
+            'valid' => 0,
+            'expiring' => 0,
+            'expired' => 0,
+            'invalid' => 0,
+        ];
+
+        foreach ($certificates as $certificate) {
+            $status = $certificate['status'] ?? 'invalid';
+            if (isset($stats[$status])) {
+                $stats[$status]++;
+            } else {
+                $stats['invalid']++;
+            }
+        }
+
+        $stats['issues'] = $stats['expired'] + $stats['invalid'];
+        return $stats;
+    }
+
+    /**
+     * Ensure SSL monitoring is enabled before allowing SSL checks.
+     */
+    private function ensureSslMonitoringEnabled(array $domain, int $id): bool
+    {
+        if (!empty($domain['ssl_monitoring_enabled'])) {
+            return true;
+        }
+
+        $_SESSION['warning'] = 'SSL monitoring is disabled for this domain';
+        $this->redirectBackToDomain($id, '#ssl');
+        return false;
+    }
+
+    /**
+     * Parse certificate ids from a comma-separated POST value.
+     */
+    private function parseSslCertificateIds(?string $rawIds): array
+    {
+        if ($rawIds === null || trim($rawIds) === '') {
+            return [];
+        }
+
+        $ids = array_map('intval', explode(',', $rawIds));
+        $ids = array_filter($ids, static fn(int $id): bool => $id > 0);
+        return array_values(array_unique($ids));
+    }
+
+    /**
+     * Build a safe internal return path for the current domain page.
+     */
+    private function getSafeDomainReturnPath(int $id, string $fallbackHash = ''): string
+    {
+        $fallback = '/domains/' . $id . $fallbackHash;
+        $returnTo = trim((string)($_POST['return_to'] ?? ''));
+
+        if ($returnTo === '') {
+            return $fallback;
+        }
+
+        $parts = parse_url($returnTo);
+        if ($parts === false) {
+            return $fallback;
+        }
+
+        $path = $parts['path'] ?? '';
+        if ($path !== '/domains/' . $id) {
+            return $fallback;
+        }
+
+        $fragment = '';
+        if (!empty($parts['fragment']) && preg_match('/^[a-z0-9_-]+$/i', $parts['fragment'])) {
+            $fragment = '#' . $parts['fragment'];
+        }
+
+        return $path . $fragment;
+    }
+
+    /**
      * Redirect back to the originating page (domain view or list).
      */
     private function redirectBackToDomain(int $id, string $hash = ''): void
     {
         $referer = $_SERVER['HTTP_REFERER'] ?? '';
         if (strpos($referer, '/domains/' . $id) !== false) {
-            $this->redirect('/domains/' . $id . $hash);
+            $this->redirect($this->getSafeDomainReturnPath($id, $hash));
         } else {
             $this->redirect('/domains');
         }
@@ -839,6 +1166,13 @@ class DomainController extends Controller
 
     public function refreshWhois($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
         $id = (int)($params['id'] ?? 0);
         $domain = $this->checkDomainAccess($id);
 
@@ -861,6 +1195,13 @@ class DomainController extends Controller
 
     public function refreshAll($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
         $id = (int)($params['id'] ?? 0);
         $domain = $this->checkDomainAccess($id);
 
@@ -876,6 +1217,17 @@ class DomainController extends Controller
             $messages[] = $this->performDnsRefresh($id, $domain);
         } else {
             $messages[] = 'DNS skipped (monitoring disabled)';
+        }
+        if (!empty($domain['ssl_monitoring_enabled'])) {
+            $targets = $this->getSslMonitorTargets($id, $domain['domain_name']);
+            $refreshed = 0;
+            foreach ($targets as $target) {
+                $this->performSslRefreshForHost($id, $target['hostname'], $target['port']);
+                $refreshed++;
+            }
+            $messages[] = 'SSL updated (' . $refreshed . ' endpoint' . ($refreshed === 1 ? '' : 's') . ')';
+        } else {
+            $messages[] = 'SSL skipped (monitoring disabled)';
         }
 
         $_SESSION['success'] = 'Domain refreshed: ' . implode(', ', $messages);
@@ -952,6 +1304,8 @@ class DomainController extends Controller
         $dnsRecords = $dnsModel->getByDomainGrouped($id);
         $dnsRecordCount = $dnsModel->countByDomain($id);
         $dnsHasCloudflare = $dnsModel->hasCloudflare($id);
+        $sslCertificates = $this->getFormattedSslCertificates($id, $domain['domain_name']);
+        $sslStats = $this->buildSslStats($sslCertificates);
 
         // Extract cached IP details (PTR, ASN, geo) from stored raw_data
         $dnsIpDetails = [];
@@ -980,6 +1334,8 @@ class DomainController extends Controller
             'dnsRecordCount' => $dnsRecordCount,
             'dnsHasCloudflare' => $dnsHasCloudflare,
             'dnsIpDetails' => $dnsIpDetails,
+            'sslCertificates' => $sslCertificates,
+            'sslStats' => $sslStats,
             'title' => $domain['domain_name']
         ]);
     }
@@ -1759,6 +2115,13 @@ class DomainController extends Controller
 
     public function refreshDns($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
         $id = (int)($params['id'] ?? 0);
         $domain = $this->checkDomainAccess($id);
 
@@ -1777,6 +2140,318 @@ class DomainController extends Controller
         }
 
         $this->redirectBackToDomain($id, '#dns');
+    }
+
+    /**
+     * Add a monitored SSL hostname and fetch its certificate immediately.
+     */
+    public function addSslHost($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        if (!$this->ensureSslMonitoringEnabled($domain, $id)) {
+            return;
+        }
+
+        $input = \App\Helpers\InputValidator::sanitizeText($_POST['hostname'] ?? '');
+        $target = $this->sslService->parseMonitorTarget($input, $domain['domain_name']);
+
+        if ($target === null) {
+            $_SESSION['error'] = 'Enter a valid subdomain, full hostname, or host:port under this domain';
+            $this->redirectBackToDomain($id, '#ssl');
+            return;
+        }
+
+        $alreadyTracked = $this->sslCertificateModel->findByDomainAndHost(
+            $id,
+            $target['hostname'],
+            $target['port']
+        ) !== null;
+        $result = $this->performSslRefreshForHost($id, $target['hostname'], $target['port']);
+
+        if (in_array($result['status'], ['invalid', 'expired'], true)) {
+            $_SESSION['warning'] = ($alreadyTracked ? 'SSL certificate refreshed' : 'SSL certificate added')
+                . ' for ' . $result['display_target'] . ', but an issue was detected'
+                . ($result['error'] ? ': ' . $result['error'] : '.');
+        } else {
+            $_SESSION['success'] = ($alreadyTracked ? 'SSL certificate refreshed for ' : 'SSL certificate added for ')
+                . $result['display_target'];
+        }
+
+        $this->redirectBackToDomain($id, '#ssl');
+    }
+
+    /**
+     * Refresh all monitored SSL hosts for the domain.
+     * Ensures the root hostname is always checked.
+     */
+    public function refreshAllSsl($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        if (!$this->ensureSslMonitoringEnabled($domain, $id)) {
+            return;
+        }
+
+        $targets = $this->getSslMonitorTargets($id, $domain['domain_name']);
+
+        $results = [];
+        foreach ($targets as $target) {
+            $results[] = $this->performSslRefreshForHost($id, $target['hostname'], $target['port']);
+        }
+
+        $issues = array_filter($results, static function (array $result): bool {
+            return in_array($result['status'], ['invalid', 'expired'], true);
+        });
+
+        if (!empty($issues)) {
+            $_SESSION['warning'] = 'SSL check completed for ' . count($results) . ' endpoint(s); ' . count($issues) . ' issue(s) detected.';
+        } else {
+            $_SESSION['success'] = 'SSL certificates refreshed for ' . count($results) . ' endpoint(s).';
+        }
+
+        $this->redirectBackToDomain($id, '#ssl');
+    }
+
+    /**
+     * Refresh a single monitored SSL host.
+     */
+    public function refreshSsl($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $certificateId = (int)($params['certificateId'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        if (!$this->ensureSslMonitoringEnabled($domain, $id)) {
+            return;
+        }
+
+        $certificate = $this->sslCertificateModel->findByDomainAndId($id, $certificateId);
+        if (!$certificate) {
+            $_SESSION['error'] = 'SSL certificate not found';
+            $this->redirectBackToDomain($id, '#ssl');
+            return;
+        }
+
+        $result = $this->performSslRefreshForHost($id, $certificate['hostname'], (int)($certificate['port'] ?? 443));
+
+        if (in_array($result['status'], ['invalid', 'expired'], true)) {
+            $_SESSION['warning'] = 'SSL certificate checked for ' . $result['display_target']
+                . ($result['error'] ? ': ' . $result['error'] : '.');
+        } else {
+            $_SESSION['success'] = 'SSL certificate refreshed for ' . $result['display_target'];
+        }
+
+        $this->redirectBackToDomain($id, '#ssl');
+    }
+
+    /**
+     * Refresh selected monitored SSL hosts.
+     */
+    public function bulkRefreshSsl($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        if (!$this->ensureSslMonitoringEnabled($domain, $id)) {
+            return;
+        }
+
+        $ids = $this->parseSslCertificateIds($_POST['certificate_ids'] ?? '');
+        if (empty($ids)) {
+            $_SESSION['warning'] = 'Select at least one SSL certificate to check';
+            $this->redirectBackToDomain($id, '#ssl');
+            return;
+        }
+
+        $results = [];
+        foreach ($ids as $certificateId) {
+            $certificate = $this->sslCertificateModel->findByDomainAndId($id, $certificateId);
+            if ($certificate) {
+                $results[] = $this->performSslRefreshForHost(
+                    $id,
+                    $certificate['hostname'],
+                    (int)($certificate['port'] ?? 443)
+                );
+            }
+        }
+
+        if (empty($results)) {
+            $_SESSION['error'] = 'No valid SSL certificates were selected';
+            $this->redirectBackToDomain($id, '#ssl');
+            return;
+        }
+
+        $issues = array_filter($results, static function (array $result): bool {
+            return in_array($result['status'], ['invalid', 'expired'], true);
+        });
+
+        if (!empty($issues)) {
+            $_SESSION['warning'] = 'Checked ' . count($results) . ' SSL certificate(s); ' . count($issues) . ' issue(s) detected.';
+        } else {
+            $_SESSION['success'] = 'Checked ' . count($results) . ' SSL certificate(s).';
+        }
+
+        $this->redirectBackToDomain($id, '#ssl');
+    }
+
+    /**
+     * Delete a monitored SSL host.
+     */
+    public function deleteSsl($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $certificateId = (int)($params['certificateId'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $certificate = $this->sslCertificateModel->findByDomainAndId($id, $certificateId);
+        if (!$certificate) {
+            $_SESSION['error'] = 'SSL certificate not found';
+            $this->redirectBackToDomain($id, '#ssl');
+            return;
+        }
+
+        if ($this->isDefaultRootSslTarget($certificate, $domain['domain_name'])
+            && $this->countStoredRootSslTargets($id, $domain['domain_name']) <= 1) {
+            $_SESSION['error'] = 'Add another root SSL endpoint first if you want to replace the default port 443 check';
+            $this->redirectBackToDomain($id, '#ssl');
+            return;
+        }
+
+        $this->sslCertificateModel->deleteByDomainAndId($id, $certificateId);
+        $_SESSION['success'] = 'SSL certificate removed for '
+            . $this->sslService->formatTargetLabel($certificate['hostname'], (int)($certificate['port'] ?? 443));
+        $this->redirectBackToDomain($id, '#ssl');
+    }
+
+    /**
+     * Delete selected monitored SSL hosts.
+     */
+    public function bulkDeleteSsl($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $ids = $this->parseSslCertificateIds($_POST['certificate_ids'] ?? '');
+        if (empty($ids)) {
+            $_SESSION['warning'] = 'Select at least one SSL certificate to remove';
+            $this->redirectBackToDomain($id, '#ssl');
+            return;
+        }
+
+        $storedRootTargetCount = $this->countStoredRootSslTargets($id, $domain['domain_name']);
+        $selectedCertificates = [];
+        foreach ($ids as $certificateId) {
+            $certificate = $this->sslCertificateModel->findByDomainAndId($id, $certificateId);
+            if ($certificate) {
+                $selectedCertificates[] = $certificate;
+            }
+        }
+
+        $selectedRootTargetCount = count(array_filter(
+            $selectedCertificates,
+            fn(array $certificate): bool => strtolower($certificate['hostname']) === strtolower($domain['domain_name'])
+        ));
+
+        $deletableIds = [];
+        foreach ($selectedCertificates as $certificate) {
+            if ($this->isDefaultRootSslTarget($certificate, $domain['domain_name'])
+                && ($storedRootTargetCount - $selectedRootTargetCount) < 1) {
+                continue;
+            }
+
+            $deletableIds[] = (int)$certificate['id'];
+        }
+
+        if (empty($deletableIds)) {
+            $_SESSION['warning'] = 'No removable SSL certificates were selected. Add another root endpoint first if you want to replace port 443.';
+            $this->redirectBackToDomain($id, '#ssl');
+            return;
+        }
+
+        $deleted = $this->sslCertificateModel->deleteByDomainAndIds($id, $deletableIds);
+        $_SESSION['success'] = 'Removed ' . $deleted . ' SSL certificate(s).';
+        $this->redirectBackToDomain($id, '#ssl');
     }
 
     /**

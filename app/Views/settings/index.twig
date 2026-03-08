@@ -9,6 +9,8 @@
 {% set currentCheckInterval = settings.check_interval_hours|default('24') %}
 {% set lastCheckRun = settings.last_check_run|default(null) %}
 {% set lastDnsCheckRun = settings.last_dns_check_run|default(null) %}
+{% set currentSslCheckInterval = settings.ssl_check_interval_hours|default('12') %}
+{% set lastSslCheckRun = settings.last_ssl_check_run|default(null) %}
 {% set currentVer = appSettings.app_version|default('0') %}
 {% set updateChannel = updateSettings.update_channel|default('stable') %}
 
@@ -792,6 +794,10 @@
                         <p class="text-xs text-gray-400 dark:text-slate-500 mb-1">DNS record check</p>
                         <code>php cron/check_dns.php</code>
                     </div>
+                    <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm">
+                        <p class="text-xs text-gray-400 dark:text-slate-500 mb-1">SSL certificate check</p>
+                        <code>php cron/check_ssl.php</code>
+                    </div>
                 </div>
             </div>
 
@@ -814,6 +820,12 @@
                             <code>0 0,6,12,18 * * php {{ cronPath|replace({'check_domains.php': 'check_dns.php'}) }}</code>
                         </div>
                     </div>
+                    <div>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mb-1">SSL check (every {{ currentSslCheckInterval }}h)</p>
+                        <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm break-all">
+                            <code>0 */{{ currentSslCheckInterval }} * * * php {{ cronPath|replace({'check_domains.php': 'check_ssl.php'}) }}</code>
+                        </div>
+                    </div>
                 </div>
                 <p class="text-xs text-gray-500 dark:text-slate-400 mt-2">Update the paths to match your server installation</p>
             </div>
@@ -824,7 +836,7 @@
                     <i class="fas fa-history text-purple-500 dark:text-purple-400 mr-2"></i>
                     Last Cronjob Run
                 </h4>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
                         <div>
                             <p class="text-sm font-medium text-gray-900 dark:text-white">Domain / WHOIS</p>
@@ -869,6 +881,23 @@
                         </div>
                         {% endif %}
                     </div>
+                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">SSL</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">check_ssl.php</p>
+                        </div>
+                        {% if lastSslCheckRun %}
+                        <div class="flex items-center text-sm">
+                            <i class="fas fa-check-circle text-green-500 dark:text-green-400 mr-2"></i>
+                            <span class="text-gray-700 dark:text-slate-300">{{ lastSslCheckRun|date('M d, Y H:i') }}</span>
+                        </div>
+                        {% else %}
+                        <div class="flex items-center text-sm">
+                            <i class="fas fa-minus-circle text-gray-400 dark:text-slate-500 mr-2"></i>
+                            <span class="text-gray-500 dark:text-slate-400">Never run</span>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
 
@@ -892,6 +921,13 @@
                             <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">DNS record check logs</p>
                         </div>
                         <code class="text-xs bg-gray-900 text-gray-100 px-2 py-1 rounded">logs/dns_cron.log</code>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">SSL Cron Log</p>
+                            <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">SSL certificate monitoring logs</p>
+                        </div>
+                        <code class="text-xs bg-gray-900 text-gray-100 px-2 py-1 rounded">logs/ssl_cron.log</code>
                     </div>
                     <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-slate-700 rounded-lg border border-gray-200 dark:border-slate-600">
                         <div>

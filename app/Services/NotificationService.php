@@ -714,6 +714,151 @@ class NotificationService
     }
 
     /**
+     * Create an SSL monitoring notification (in-app / bell icon).
+     */
+    public function notifySslStatusChange(
+        int $userId,
+        string $domainName,
+        string $hostname,
+        int $domainId,
+        string $newStatus,
+        ?string $oldStatus = null
+    ): void {
+        $notificationModel = new \App\Models\Notification();
+        $notificationModel->createNotification(
+            $userId,
+            'ssl_status_change',
+            $this->getSslNotificationTitle($newStatus),
+            $this->formatSslStatusSummary($domainName, $hostname, $newStatus, $oldStatus),
+            $domainId
+        );
+    }
+
+    /**
+     * Send SSL status alert to external channels.
+     */
+    public function sendSslStatusAlert(
+        array $domain,
+        array $notificationChannels,
+        string $hostname,
+        string $newStatus,
+        ?string $oldStatus = null,
+        ?string $validTo = null,
+        ?string $error = null
+    ): array {
+        $message = $this->formatSslStatusMessage($domain, $hostname, $newStatus, $oldStatus, $validTo, $error);
+        $results = [];
+
+        foreach ($notificationChannels as $channel) {
+            $config = json_decode($channel['channel_config'], true);
+            $success = $this->send(
+                $channel['channel_type'],
+                $config,
+                $message,
+                [
+                    'subject' => $this->getSslNotificationTitle($newStatus) . ': ' . $hostname,
+                    'domain' => $domain['domain_name'],
+                    'domain_id' => $domain['id'],
+                    'hostname' => $hostname,
+                    'new_status' => $newStatus,
+                    'old_status' => $oldStatus,
+                    'valid_to' => $validTo,
+                    'error' => $error,
+                ]
+            );
+
+            $results[] = [
+                'channel' => $channel['channel_type'],
+                'success' => $success,
+            ];
+        }
+
+        return $results;
+    }
+
+    /**
+     * Get SSL status label for human-readable messages.
+     */
+    public static function getSslStatusLabel(string $status): string
+    {
+        return match ($status) {
+            'valid' => 'Valid',
+            'expiring' => 'Expiring Soon',
+            'expired' => 'Expired',
+            'invalid' => 'Invalid',
+            default => ucfirst(str_replace('_', ' ', $status)),
+        };
+    }
+
+    private function getSslNotificationTitle(string $status): string
+    {
+        return match ($status) {
+            'valid' => 'SSL Certificate Recovered',
+            'expiring' => 'SSL Certificate Expiring Soon',
+            'expired' => 'SSL Certificate Expired',
+            'invalid' => 'SSL Certificate Check Failed',
+            default => 'SSL Status Changed',
+        };
+    }
+
+    private function formatSslStatusSummary(
+        string $domainName,
+        string $hostname,
+        string $newStatus,
+        ?string $oldStatus = null
+    ): string {
+        $hostText = $hostname === $domainName ? $domainName : "{$hostname} ({$domainName})";
+        $newLabel = self::getSslStatusLabel($newStatus);
+
+        if ($oldStatus !== null) {
+            $oldLabel = self::getSslStatusLabel($oldStatus);
+            return "{$hostText} - SSL status changed from {$oldLabel} to {$newLabel}";
+        }
+
+        return "{$hostText} - SSL status is {$newLabel}";
+    }
+
+    private function formatSslStatusMessage(
+        array $domain,
+        string $hostname,
+        string $newStatus,
+        ?string $oldStatus = null,
+        ?string $validTo = null,
+        ?string $error = null
+    ): string {
+        $domainName = $domain['domain_name'];
+        $validToText = $validTo ? date('F j, Y H:i', strtotime($validTo)) : 'Unknown';
+        $oldLabel = $oldStatus !== null ? self::getSslStatusLabel($oldStatus) : null;
+
+        return match ($newStatus) {
+            'valid' => "✅ SSL RECOVERED: {$hostname} is now using a valid certificate.\n\n" .
+                       ($oldLabel ? "Previous status: {$oldLabel}\n" : '') .
+                       "Domain: {$domainName}\n" .
+                       "Valid until: {$validToText}",
+
+            'expiring' => "⚠️ SSL EXPIRING SOON: {$hostname} is approaching certificate expiration.\n\n" .
+                          ($oldLabel ? "Previous status: {$oldLabel}\n" : '') .
+                          "Domain: {$domainName}\n" .
+                          "Valid until: {$validToText}",
+
+            'expired' => "🚨 SSL EXPIRED: {$hostname} has an expired certificate.\n\n" .
+                         ($oldLabel ? "Previous status: {$oldLabel}\n" : '') .
+                         "Domain: {$domainName}\n" .
+                         "Expired on: {$validToText}",
+
+            'invalid' => "❌ SSL INVALID: {$hostname} failed certificate validation.\n\n" .
+                         ($oldLabel ? "Previous status: {$oldLabel}\n" : '') .
+                         "Domain: {$domainName}\n" .
+                         ($error ? "Error: {$error}\n" : ''),
+
+            default => "ℹ️ SSL STATUS CHANGE: {$hostname} changed SSL status.\n\n" .
+                       ($oldLabel ? "Previous status: {$oldLabel}\n" : '') .
+                       "Current status: " . self::getSslStatusLabel($newStatus) . "\n" .
+                       "Domain: {$domainName}"
+        };
+    }
+
+    /**
      * Delete old read notifications (cleanup)
      */
     public function cleanOldNotifications(int $daysOld = 30): void

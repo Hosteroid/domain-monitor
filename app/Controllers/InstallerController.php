@@ -58,6 +58,7 @@ class InstallerController extends Controller
             '025_add_update_system_v1.1.3.sql',
             '026_update_app_version_v1.1.4.sql',
             '027_add_dns_monitoring.sql',
+            '028_add_ssl_monitoring.sql',
         ];
         
         try {
@@ -202,6 +203,7 @@ class InstallerController extends Controller
                     '025_add_update_system_v1.1.3.sql',
                     '026_update_app_version_v1.1.4.sql',
                     '027_add_dns_monitoring.sql',
+                    '028_add_ssl_monitoring.sql',
                 ];
             }
             
@@ -426,6 +428,7 @@ class InstallerController extends Controller
                     '025_add_update_system_v1.1.3.sql',
                     '026_update_app_version_v1.1.4.sql',
                     '027_add_dns_monitoring.sql',
+                    '028_add_ssl_monitoring.sql',
                 ];
                 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");
@@ -661,7 +664,9 @@ class InstallerController extends Controller
                     
                     // Fallback: detect "to" version from which migrations were run
                     if ($toVersion === $fromVersion) {
-                        if (in_array('026_update_app_version_v1.1.4.sql', $executed)) {
+                        if (in_array('028_add_ssl_monitoring.sql', $executed)) {
+                            $toVersion = '1.1.5';
+                        } elseif (in_array('026_update_app_version_v1.1.4.sql', $executed)) {
                             $toVersion = '1.1.4';
                         } elseif (in_array('025_add_update_system_v1.1.3.sql', $executed)) {
                             $toVersion = '1.1.3';
