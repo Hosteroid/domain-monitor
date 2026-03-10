@@ -43,7 +43,7 @@
                 <div>
                     <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Registrar URL</label>
                     {% if domain.registrar_url is defined and domain.registrar_url %}
-                        <a href="{{ domain.registrar_url }}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center">
+                        <a href="{{ domain.registrar_url|safe_url }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center">
                             <i class="fas fa-external-link-alt mr-1" style="font-size: 9px;"></i>
                             Visit Registrar
                         </a>
@@ -58,7 +58,7 @@
                 <div>
                     <label class="text-gray-500 dark:text-slate-400 font-medium block mb-0.5">Abuse Contact</label>
                     {% if domain.abuse_email %}
-                        <a href="mailto:{{ domain.abuse_email }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 block break-all">{{ domain.abuse_email }}</a>
+                        <a href="{{ domain.abuse_email|safe_mailto }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 block break-all">{{ domain.abuse_email }}</a>
                     {% else %}
                         <span class="text-gray-400 dark:text-slate-500">-</span>
                     {% endif %}

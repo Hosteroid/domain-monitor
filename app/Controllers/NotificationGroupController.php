@@ -687,6 +687,13 @@ class NotificationGroupController extends Controller
             return;
         }
 
+        $channel = $this->channelModel->find($id);
+        if (!$channel || (int)$channel['notification_group_id'] !== (int)$groupId) {
+            $_SESSION['error'] = 'Channel not found';
+            $this->redirect("/groups/$groupId/edit");
+            return;
+        }
+
         try {
             $this->channelModel->delete($id);
             $_SESSION['success'] = 'Channel deleted successfully';
@@ -711,6 +718,13 @@ class NotificationGroupController extends Controller
         if (!$group) {
             $_SESSION['error'] = 'Group not found';
             $this->redirect('/groups');
+            return;
+        }
+
+        $channel = $this->channelModel->find($id);
+        if (!$channel || (int)$channel['notification_group_id'] !== (int)$groupId) {
+            $_SESSION['error'] = 'Channel not found';
+            $this->redirect("/groups/$groupId/edit");
             return;
         }
 

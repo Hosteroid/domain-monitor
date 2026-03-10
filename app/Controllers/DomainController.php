@@ -579,8 +579,11 @@ class DomainController extends Controller
             $availableTags = $tagModel->getAllWithUsage();
         }
 
-        // Get referrer for cancel button
+        // Get referrer for cancel button (validated to prevent open redirect / XSS)
         $referrer = $_GET['from'] ?? '/domains/' . $domain['id'];
+        if (!preg_match('#^/[a-zA-Z0-9]#', $referrer)) {
+            $referrer = '/domains/' . $domain['id'];
+        }
         
         $this->view('domains/edit', [
             'domain' => $domain,
@@ -1619,9 +1622,19 @@ class DomainController extends Controller
             return;
         }
 
+        $userId = \Core\Auth::id();
+        $settingModel = new \App\Models\Setting();
+        $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+
         $deleted = 0;
         foreach ($domainIds as $id) {
-            if ($this->domainModel->delete($id)) {
+            if ($isolationMode === 'isolated') {
+                $domain = $this->domainModel->findWithIsolation($id, $userId);
+            } else {
+                $domain = $this->domainModel->find($id);
+            }
+
+            if ($domain && $this->domainModel->delete($id)) {
                 $deleted++;
             }
         }
@@ -1658,24 +1671,28 @@ class DomainController extends Controller
             return;
         }
 
+        $settingModel = new \App\Models\Setting();
+        $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+
         // Validate notification group in isolation mode
-        if ($groupId) {
-            $settingModel = new \App\Models\Setting();
-            $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
-            
-            if ($isolationMode === 'isolated') {
-                $group = $this->groupModel->find($groupId);
-                if (!$group || $group['user_id'] != $userId) {
-                    $_SESSION['error'] = 'You can only assign domains to your own notification groups';
-                    $this->redirect('/domains');
-                    return;
-                }
+        if ($groupId && $isolationMode === 'isolated') {
+            $group = $this->groupModel->find($groupId);
+            if (!$group || $group['user_id'] != $userId) {
+                $_SESSION['error'] = 'You can only assign domains to your own notification groups';
+                $this->redirect('/domains');
+                return;
             }
         }
 
         $updated = 0;
         foreach ($domainIds as $id) {
-            if ($this->domainModel->update($id, ['notification_group_id' => $groupId])) {
+            if ($isolationMode === 'isolated') {
+                $domain = $this->domainModel->findWithIsolation($id, $userId);
+            } else {
+                $domain = $this->domainModel->find($id);
+            }
+
+            if ($domain && $this->domainModel->update($id, ['notification_group_id' => $groupId])) {
                 $updated++;
             }
         }

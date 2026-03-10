@@ -291,7 +291,7 @@
                                         <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ tld.tld }}</div>
                                         {% if tld.registry_url %}
                                         <div class="text-sm text-gray-500 dark:text-slate-400">
-                                            <a href="{{ tld.registry_url }}" target="_blank" class="text-primary hover:text-primary-dark">
+                                            <a href="{{ tld.registry_url|safe_url }}" target="_blank" rel="noopener noreferrer" class="text-primary hover:text-primary-dark">
                                                 <i class="fas fa-external-link-alt mr-1"></i>
                                                 Registry
                                             </a>
@@ -375,7 +375,7 @@
                             <div>
                                 <h3 class="font-semibold text-gray-900 dark:text-white">{{ tld.tld }}</h3>
                                 {% if tld.registry_url %}
-                                <a href="{{ tld.registry_url }}" target="_blank" class="text-xs text-primary hover:text-primary-dark">
+                                <a href="{{ tld.registry_url|safe_url }}" target="_blank" rel="noopener noreferrer" class="text-xs text-primary hover:text-primary-dark">
                                     <i class="fas fa-external-link-alt mr-1"></i>
                                     Registry
                                 </a>

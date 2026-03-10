@@ -72,6 +72,7 @@
             {% endif %}
 
             <form method="POST" action="/install/update" class="space-y-3">
+                {{ csrf_field() }}
                 <button type="submit" class="w-full bg-primary hover:bg-primary-dark text-white py-2.5 rounded-lg font-medium transition-colors">
                     <i class="fas fa-download mr-2"></i>
                     Run Update Now

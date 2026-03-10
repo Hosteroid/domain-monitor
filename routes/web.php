@@ -47,11 +47,11 @@ $router->get('/2fa/verify', [TwoFactorController::class, 'showVerify']);
 $router->post('/2fa/verify', [TwoFactorController::class, 'verify']);
 $router->post('/2fa/send-email-code', [TwoFactorController::class, 'sendEmailCode']);
 
-// Debug route (public - remove in production!)
-$router->get('/debug/whois', [DebugController::class, 'whois']);
-
 // Protected routes - require authentication
 Auth::require();
+
+// Debug route (admin-only)
+$router->get('/debug/whois', [DebugController::class, 'whois']);
 
 // Dashboard
 $router->get('/', [DashboardController::class, 'index']);

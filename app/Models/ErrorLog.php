@@ -247,7 +247,9 @@ class ErrorLog extends Model
         }
 
         $whereClause = !empty($where) ? 'WHERE ' . implode(' AND ', $where) : '';
-        $sortColumn = $filters['sort'];
+
+        $allowedSort = ['error_id', 'error_type', 'error_message', 'is_resolved', 'occurred_at', 'last_occurred_at', 'occurrences'];
+        $sortColumn = in_array($filters['sort'], $allowedSort, true) ? $filters['sort'] : 'last_occurred_at';
         $sortOrder = strtoupper($filters['order']) === 'DESC' ? 'DESC' : 'ASC';
 
         $query = "

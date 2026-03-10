@@ -76,7 +76,7 @@
                         <p class="text-xs text-gray-600 dark:text-slate-400 mb-1.5">💡 Available Tags:</p>
                         <div class="flex flex-wrap gap-1.5">
                             {% for tag in availableTags %}
-                                <button type="button" onclick="addTag('{{ tag.name }}')" 
+                                <button type="button" onclick="addTag('{{ tag.name|e('js') }}')" 
                                         class="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium border {{ tag.color }} hover:opacity-80 transition-colors">
                                     <i class="fas fa-plus mr-1" style="font-size: 8px;"></i>
                                     {{ tag.name }}

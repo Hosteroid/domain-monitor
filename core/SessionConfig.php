@@ -69,6 +69,15 @@ class SessionConfig
      */
     public static function start(): void
     {
+        session_set_cookie_params([
+            'lifetime' => 0,
+            'path' => '/',
+            'domain' => '',
+            'secure' => !empty($_SERVER['HTTPS']),
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+
         session_start();
         
         // Validate session exists in database (for database-backed sessions)

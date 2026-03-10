@@ -315,6 +315,9 @@ class InstallerController extends Controller
             return;
         }
 
+        // CSRF Protection
+        $this->verifyCsrf('/install');
+
         // Block re-installation if already installed
         if ($this->isInstalled()) {
             $_SESSION['error'] = 'System is already installed. Use the update function instead.';
@@ -364,11 +367,11 @@ class InstallerController extends Controller
                 $file = __DIR__ . '/../../database/migrations/000_initial_schema_v1.1.0.sql';
                 $sql = file_get_contents($file);
                 
-                // Replace admin credentials
+                // Replace admin credentials (use PDO::quote to prevent SQL injection)
                 $passwordHash = password_hash($adminPassword, PASSWORD_BCRYPT);
-                $sql = str_replace('{{ADMIN_PASSWORD_HASH}}', $passwordHash, $sql);
-                $sql = str_replace('{{ADMIN_USERNAME}}', $adminUsername, $sql);
-                $sql = str_replace('{{ADMIN_EMAIL}}', $adminEmail, $sql);
+                $sql = str_replace("'{{ADMIN_PASSWORD_HASH}}'", $pdo->quote($passwordHash), $sql);
+                $sql = str_replace("'{{ADMIN_USERNAME}}'", $pdo->quote($adminUsername), $sql);
+                $sql = str_replace("'{{ADMIN_EMAIL}}'", $pdo->quote($adminEmail), $sql);
                 
                 // Execute the entire consolidated schema at once
                 // This is safe because MySQL can handle multiple statements with CREATE TABLE IF NOT EXISTS
@@ -584,6 +587,9 @@ class InstallerController extends Controller
             $this->redirect('/install/update');
             return;
         }
+
+        // CSRF Protection
+        $this->verifyCsrf('/install/update');
         
         try {
             $pdo = \Core\Database::getConnection();

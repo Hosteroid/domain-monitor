@@ -239,6 +239,26 @@ class TwigService
             return \App\Helpers\ViewHelper::formatBytes($bytes, $precision);
         }));
 
+        $this->twig->addFilter(new TwigFilter('safe_url', function (?string $url): string {
+            if ($url === null || $url === '') {
+                return '#';
+            }
+            if (preg_match('#^https?://#i', $url)) {
+                return $url;
+            }
+            return '#';
+        }));
+
+        $this->twig->addFilter(new TwigFilter('safe_mailto', function (?string $email): string {
+            if ($email === null || $email === '') {
+                return '#';
+            }
+            if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                return 'mailto:' . $email;
+            }
+            return '#';
+        }));
+
         $this->twig->addFilter(new TwigFilter('from_json', function ($value) {
             if ($value === null || $value === '') {
                 return [];

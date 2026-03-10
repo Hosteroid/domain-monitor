@@ -275,6 +275,9 @@ class TwoFactorController extends Controller
         $this->twoFactorService->recordAttempt($userId, $ipAddress, $verified);
 
         if ($verified) {
+            // Regenerate session ID to prevent session fixation
+            session_regenerate_id(true);
+
             // Clear 2FA requirement and complete login
             $pendingRemember = !empty($_SESSION['pending_remember']);
             unset($_SESSION['2fa_required']);
@@ -342,6 +345,8 @@ class TwoFactorController extends Controller
             $this->redirect('/2fa/verify');
             return;
         }
+
+        $this->verifyCsrf('/2fa/verify');
 
         try {
             // Check if user is in 2FA verification state

@@ -21,7 +21,7 @@
                     {% if domain.registrar_url is not empty %}
                     <div class="flex justify-between">
                         <span class="text-gray-500 dark:text-slate-400">Registrar URL:</span>
-                        <a href="{{ domain.registrar_url }}" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center">
+                        <a href="{{ domain.registrar_url|safe_url }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center">
                             <i class="fas fa-external-link-alt mr-1" style="font-size: 9px;"></i>
                             Visit
                         </a>
