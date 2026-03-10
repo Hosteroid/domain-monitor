@@ -276,7 +276,9 @@ class TwoFactorController extends Controller
 
         if ($verified) {
             // Clear 2FA requirement and complete login
+            $pendingRemember = !empty($_SESSION['pending_remember']);
             unset($_SESSION['2fa_required']);
+            unset($_SESSION['pending_remember']);
             
             // Determine which method was used
             $method = 'unknown';
@@ -295,6 +297,12 @@ class TwoFactorController extends Controller
                 'user_id' => $userId,
                 'method' => $method
             ]);
+
+            // Handle remember me (carried over from login form)
+            if ($pendingRemember) {
+                $authController = new \App\Controllers\AuthController();
+                $authController->createRememberTokenPublic($userId);
+            }
 
             // Update last login timestamp
             $this->userModel->updateLastLogin($userId);

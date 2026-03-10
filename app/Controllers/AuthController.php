@@ -156,6 +156,7 @@ class AuthController extends Controller
             $_SESSION['email'] = $user['email'];
             $_SESSION['role'] = $user['role'];
             $_SESSION['2fa_required'] = true;
+            $_SESSION['pending_remember'] = $remember;
             
             // Clear any existing session messages before redirecting to 2FA
             unset($_SESSION['error']);
@@ -704,6 +705,14 @@ class AuthController extends Controller
             $_SESSION['error'] = 'Failed to reset password. Please try again.';
             $this->redirect('/reset-password?token=' . urlencode($token));
         }
+    }
+
+    /**
+     * Public wrapper for creating remember token (used by TwoFactorController after 2FA)
+     */
+    public function createRememberTokenPublic(int $userId): void
+    {
+        $this->createRememberToken($userId);
     }
 
     /**
