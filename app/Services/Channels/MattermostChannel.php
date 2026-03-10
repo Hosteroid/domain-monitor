@@ -31,34 +31,30 @@ class MattermostChannel implements NotificationChannelInterface
             // Add attachments for richer formatting if domain data is available
             if (isset($data['domain'])) {
                 $color = $this->getColorByDaysLeft($data['days_left'] ?? null);
-                
+                $title = $data['subject'] ?? '🔔 Domain Monitor Alert';
+
+                $fields = [
+                    ['short' => true, 'title' => 'Domain', 'value' => $data['domain']]
+                ];
+
+                // Only add expiration fields for domain expiration alerts
+                if (array_key_exists('days_left', $data) || array_key_exists('expiration_date', $data)) {
+                    $fields[] = ['short' => true, 'title' => 'Days Left', 'value' => (string) ($data['days_left'] ?? 'N/A')];
+                    $fields[] = ['short' => true, 'title' => 'Expiration Date', 'value' => $data['expiration_date'] ?? 'N/A'];
+                    $fields[] = ['short' => true, 'title' => 'Registrar', 'value' => $data['registrar'] ?? 'N/A'];
+                } elseif (isset($data['hostname']) && $data['hostname'] !== $data['domain']) {
+                    $fields[] = ['short' => true, 'title' => 'Hostname', 'value' => $data['hostname']];
+                }
+                if (isset($data['new_status'])) {
+                    $fields[] = ['short' => true, 'title' => 'Status', 'value' => $data['new_status']];
+                }
+
                 $payload['attachments'] = [
                     [
                         'color' => $color,
-                        'title' => '🔔 Domain Expiration Alert',
+                        'title' => $title,
                         'text' => $message,
-                        'fields' => [
-                            [
-                                'short' => true,
-                                'title' => 'Domain',
-                                'value' => $data['domain']
-                            ],
-                            [
-                                'short' => true,
-                                'title' => 'Days Left',
-                                'value' => $data['days_left'] ?? 'N/A'
-                            ],
-                            [
-                                'short' => true,
-                                'title' => 'Expiration Date',
-                                'value' => $data['expiration_date'] ?? 'N/A'
-                            ],
-                            [
-                                'short' => true,
-                                'title' => 'Registrar',
-                                'value' => $data['registrar'] ?? 'N/A'
-                            ]
-                        ],
+                        'fields' => $fields,
                         'footer' => 'Domain Monitor',
                         'ts' => time()
                     ]

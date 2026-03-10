@@ -86,124 +86,173 @@ class DnsService
     }
 
     // ========================================================================
-    // MAIN LOOKUP
+    // DNS SCAN METHODS
     // ========================================================================
 
     /**
-     * Comprehensive DNS lookup for a domain.
-     * Scans root + common subdomains + targets extracted from NS/MX/CNAME.
-     * Resolves NS/MX targets to A/AAAA IPs.
-     *
-     * @param string $domain       The domain to scan
-     * @param array  $extraSubdomains Additional subdomain candidates (e.g. from crt.sh or previous scans)
+     * Re-check only records that already exist in the database.
+     * Queries root domain for all types + known subdomain hosts.
+     * No wordlist brute force, no crt.sh. Used by the cron and Refresh button.
      */
-    public function lookup(string $domain, array $extraSubdomains = []): array
+    public function refreshExisting(string $domain, array $existingHosts = []): array
     {
-        $this->logger->info("DNS lookup started", ['domain' => $domain]);
+        $this->logger->info("DNS refresh started", ['domain' => $domain, 'known_hosts' => count($existingHosts)]);
 
-        $records = [
-            'A' => [], 'AAAA' => [], 'MX' => [], 'TXT' => [],
-            'NS' => [], 'CNAME' => [], 'SOA' => [], 'SRV' => [], 'CAA' => [],
-        ];
-        $seen = []; // "TYPE:host:value" dedup keys
+        [$records, $seen] = $this->queryRootDomain($domain);
 
-        // Phase 1: Root domain — query each type individually
-        foreach (self::ROOT_RECORD_TYPES as $dnsConst => $typeName) {
-            $this->queryAndCollect($domain, $dnsConst, $typeName, $domain, $records, $seen);
-        }
-
-        // Phase 1b: DNS_ALL fallback to catch anything we missed
-        $this->queryAllFallback($domain, $domain, $records, $seen);
-
-        // Phase 1c: gethostbynamel fallback for A records
-        if (empty($records['A'])) {
-            $ips = @gethostbynamel($domain);
-            if (is_array($ips)) {
-                foreach ($ips as $ip) {
-                    $this->addIfNew('A', [
-                        'host' => '@', 'value' => $ip, 'ttl' => 0,
-                        'is_cloudflare' => $this->isCloudflareIp($ip),
-                        'raw' => ['host' => $domain, 'type' => 'A', 'ip' => $ip, 'ttl' => 0],
-                    ], $records, $seen);
-                }
-            }
-        }
-
-        // Phase 2: Build subdomain candidates from wordlist + extras + targets found in NS/MX/CNAME/SRV
-        $candidates = array_merge(self::SUBDOMAIN_WORDLIST, $extraSubdomains);
-        foreach (['NS', 'MX', 'CNAME', 'SRV'] as $type) {
-            foreach ($records[$type] as $rec) {
-                $target = rtrim($rec['value'] ?? '', '.');
-                if ($target && str_ends_with(strtolower($target), '.' . strtolower($domain))) {
-                    $sub = str_replace('.' . $domain, '', strtolower($target));
-                    if ($sub && !in_array($sub, $candidates)) {
-                        $candidates[] = $sub;
-                    }
-                }
-            }
-        }
-        $candidates = array_unique($candidates);
-
-        // Phase 3: Probe subdomains — fast checkdnsrr existence test first
-        $discovered = [];
-        foreach ($candidates as $sub) {
-            $fqdn = "{$sub}.{$domain}";
-            if ($this->subdomainExists($fqdn)) {
-                $discovered[] = $sub;
-            }
-        }
-
-        // Phase 4: Deep scan discovered subdomains (A, AAAA, CNAME, TXT)
-        foreach ($discovered as $sub) {
+        // Query known subdomain hosts directly (no existence probe needed)
+        foreach ($existingHosts as $sub) {
             $fqdn = "{$sub}.{$domain}";
             $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
-            // TXT only for known useful subdomains
             if (in_array($sub, ['_dmarc', '_mta-sts', '_domainkey']) || str_starts_with($sub, '_')) {
                 $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
             }
         }
 
-        // Phase 4b: Special TXT subdomains (always query even if not "discovered")
         foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
             $fqdn = "{$sub}.{$domain}";
             $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
         }
 
-        // Phase 5: Resolve MX targets that are under this domain — add their A/AAAA records
-        foreach ($records['MX'] as $mxRec) {
-            $target = rtrim($mxRec['value'] ?? '', '.');
-            if ($target && str_ends_with(strtolower($target), '.' . strtolower($domain))) {
-                $this->queryAndCollect($target, DNS_A, 'A', $domain, $records, $seen);
-                $this->queryAndCollect($target, DNS_AAAA, 'AAAA', $domain, $records, $seen);
-            }
-        }
-
-        // Phase 6: Resolve NS server IPs — store in raw data for display
-        foreach ($records['NS'] as &$nsRec) {
-            $nsHost = rtrim($nsRec['value'] ?? '', '.');
-            if ($nsHost) {
-                $nsIps = $this->resolveHostIps($nsHost);
-                $nsRec['raw']['_ns_ips'] = $nsIps;
-            }
-        }
-        unset($nsRec);
-
-        // Sort A/AAAA: root first, then alphabetical
-        foreach (['A', 'AAAA'] as $type) {
-            usort($records[$type], function ($a, $b) {
-                if ($a['host'] === '@') return -1;
-                if ($b['host'] === '@') return 1;
-                return strcmp($a['host'], $b['host']);
-            });
-        }
+        $this->resolveMxTargets($domain, $records, $seen);
+        $this->resolveNsIps($records);
+        $this->sortRecords($records);
 
         $totalRecords = array_sum(array_map('count', $records));
-        $this->logger->info("DNS lookup completed", [
+        $this->logger->info("DNS refresh completed", [
             'domain'        => $domain,
             'total_records' => $totalRecords,
+        ]);
+
+        return $records;
+    }
+
+    /**
+     * Standard DNS lookup: root domain + resolve targets + special TXT.
+     * No subdomain brute force, no crt.sh. Like running nslookup/dig.
+     * Used by Discover > Quick Scan.
+     */
+    public function quickScan(string $domain): array
+    {
+        $this->logger->info("DNS quick scan started", ['domain' => $domain]);
+
+        [$records, $seen] = $this->queryRootDomain($domain);
+
+        // Add subdomains found as NS/MX/CNAME/SRV targets
+        $targetSubs = $this->extractTargetSubdomains($domain, $records);
+        foreach ($targetSubs as $sub) {
+            $fqdn = "{$sub}.{$domain}";
+            $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
+            $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
+            $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
+        }
+
+        foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
+            $fqdn = "{$sub}.{$domain}";
+            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+        }
+
+        $this->resolveMxTargets($domain, $records, $seen);
+        $this->resolveNsIps($records);
+        $this->sortRecords($records);
+
+        $totalRecords = array_sum(array_map('count', $records));
+        $this->logger->info("DNS quick scan completed", [
+            'domain'        => $domain,
+            'total_records' => $totalRecords,
+        ]);
+
+        return $records;
+    }
+
+    /**
+     * Full discovery: root + wordlist brute force + crt.sh extras + wildcard detection.
+     * Used by Discover > Deep Scan and the discover_dns.php script.
+     *
+     * @param string        $domain          The domain to scan
+     * @param array         $extraSubdomains Additional candidates (e.g. from crt.sh or previous scans)
+     * @param callable|null $onProgress      Optional callback for progress messages: fn(string $msg)
+     */
+    public function lookup(string $domain, array $extraSubdomains = [], ?callable $onProgress = null): array
+    {
+        $log = $onProgress ?? function (string $msg) {};
+
+        $this->logger->info("DNS deep lookup started", ['domain' => $domain]);
+
+        $log("Querying root domain...");
+        [$records, $seen] = $this->queryRootDomain($domain);
+        $rootCount = array_sum(array_map('count', $records));
+        $log("Root query done: {$rootCount} record(s)");
+
+        // Build subdomain candidates from wordlist + extras + targets found in NS/MX/CNAME/SRV
+        $candidates = array_merge(self::SUBDOMAIN_WORDLIST, $extraSubdomains);
+        $targetSubs = $this->extractTargetSubdomains($domain, $records);
+        $candidates = array_unique(array_merge($candidates, $targetSubs));
+
+        // Wildcard detection: probe a random nonsense subdomain
+        $wildcardDetected = false;
+        $probeHost = '_dm-wc-' . bin2hex(random_bytes(4)) . '.' . $domain;
+        $log("Wildcard detection: probing random subdomain...");
+        if ($this->subdomainExists($probeHost)) {
+            $wildcardDetected = true;
+            $this->logger->info("Wildcard DNS detected, skipping brute force", ['domain' => $domain]);
+            $log("⚠ Wildcard DNS detected — brute force skipped, using only crt.sh/known hosts");
+            // Only use crt.sh/extra candidates + DB hosts (real subdomains), not wordlist
+            $candidates = array_values(array_unique($extraSubdomains));
+        } else {
+            $log("No wildcard detected");
+        }
+
+        // Probe subdomains — fast checkdnsrr existence test
+        $total = count($candidates);
+        $log("Probing {$total} subdomain candidate(s)...");
+        $discovered = [];
+        $probed = 0;
+        foreach ($candidates as $sub) {
+            $fqdn = "{$sub}.{$domain}";
+            if ($this->subdomainExists($fqdn)) {
+                $discovered[] = $sub;
+            }
+            $probed++;
+            if ($probed % 25 === 0 || $probed === $total) {
+                $log("Probed {$probed}/{$total} — found " . count($discovered) . " so far");
+            }
+        }
+        $log("Subdomain probe complete: " . count($discovered) . " found out of {$total}");
+
+        // Deep scan discovered subdomains (A, AAAA, CNAME, TXT)
+        if (!empty($discovered)) {
+            $log("Querying " . count($discovered) . " discovered subdomain(s)...");
+        }
+        foreach ($discovered as $sub) {
+            $fqdn = "{$sub}.{$domain}";
+            $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
+            $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
+            $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
+            if (in_array($sub, ['_dmarc', '_mta-sts', '_domainkey']) || str_starts_with($sub, '_')) {
+                $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+            }
+        }
+
+        $log("Querying special TXT subdomains...");
+        foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
+            $fqdn = "{$sub}.{$domain}";
+            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+        }
+
+        $log("Resolving MX/NS targets...");
+        $this->resolveMxTargets($domain, $records, $seen);
+        $this->resolveNsIps($records);
+        $this->sortRecords($records);
+
+        $totalRecords = array_sum(array_map('count', $records));
+        $this->logger->info("DNS deep lookup completed", [
+            'domain'             => $domain,
+            'total_records'      => $totalRecords,
             'subdomains_discovered' => count($discovered),
+            'wildcard_detected'  => $wildcardDetected,
         ]);
 
         return $records;
@@ -315,69 +364,571 @@ class DnsService
     }
 
     // ========================================================================
+    // SHARED SCAN HELPERS
+    // ========================================================================
+
+    /**
+     * Query root domain for all record types + DNS_ALL fallback + gethostbynamel fallback.
+     *
+     * @return array{0: array, 1: array} [$records, $seen]
+     */
+    private function queryRootDomain(string $domain): array
+    {
+        $records = [
+            'A' => [], 'AAAA' => [], 'MX' => [], 'TXT' => [],
+            'NS' => [], 'CNAME' => [], 'SOA' => [], 'SRV' => [], 'CAA' => [],
+        ];
+        $seen = [];
+
+        foreach (self::ROOT_RECORD_TYPES as $dnsConst => $typeName) {
+            $this->queryAndCollect($domain, $dnsConst, $typeName, $domain, $records, $seen);
+        }
+
+        $this->queryAllFallback($domain, $domain, $records, $seen);
+
+        if (empty($records['A'])) {
+            $ips = @gethostbynamel($domain);
+            if (is_array($ips)) {
+                foreach ($ips as $ip) {
+                    $this->addIfNew('A', [
+                        'host' => '@', 'value' => $ip, 'ttl' => 0,
+                        'is_cloudflare' => $this->isCloudflareIp($ip),
+                        'raw' => ['host' => $domain, 'type' => 'A', 'ip' => $ip, 'ttl' => 0],
+                    ], $records, $seen);
+                }
+            }
+        }
+
+        return [$records, $seen];
+    }
+
+    /**
+     * Extract subdomain labels found as NS/MX/CNAME/SRV targets under the given domain.
+     */
+    private function extractTargetSubdomains(string $domain, array $records): array
+    {
+        $subs = [];
+        foreach (['NS', 'MX', 'CNAME', 'SRV'] as $type) {
+            foreach ($records[$type] as $rec) {
+                $target = rtrim($rec['value'] ?? '', '.');
+                if ($target && str_ends_with(strtolower($target), '.' . strtolower($domain))) {
+                    $sub = str_replace('.' . $domain, '', strtolower($target));
+                    if ($sub && !in_array($sub, $subs)) {
+                        $subs[] = $sub;
+                    }
+                }
+            }
+        }
+        return $subs;
+    }
+
+    /**
+     * Resolve MX targets that are under the domain — add their A/AAAA records.
+     */
+    private function resolveMxTargets(string $domain, array &$records, array &$seen): void
+    {
+        foreach ($records['MX'] as $mxRec) {
+            $target = rtrim($mxRec['value'] ?? '', '.');
+            if ($target && str_ends_with(strtolower($target), '.' . strtolower($domain))) {
+                $this->queryAndCollect($target, DNS_A, 'A', $domain, $records, $seen);
+                $this->queryAndCollect($target, DNS_AAAA, 'AAAA', $domain, $records, $seen);
+            }
+        }
+    }
+
+    /**
+     * Resolve NS server hostnames to their A/AAAA IPs (stored in raw data for display).
+     */
+    private function resolveNsIps(array &$records): void
+    {
+        foreach ($records['NS'] as &$nsRec) {
+            $nsHost = rtrim($nsRec['value'] ?? '', '.');
+            if ($nsHost) {
+                $nsIps = $this->resolveHostIps($nsHost);
+                $nsRec['raw']['_ns_ips'] = $nsIps;
+            }
+        }
+        unset($nsRec);
+    }
+
+    /**
+     * Sort A/AAAA records: root (@) first, then alphabetical by host.
+     */
+    private function sortRecords(array &$records): void
+    {
+        foreach (['A', 'AAAA'] as $type) {
+            usort($records[$type], function ($a, $b) {
+                if ($a['host'] === '@') return -1;
+                if ($b['host'] === '@') return 1;
+                return strcmp($a['host'], $b['host']);
+            });
+        }
+    }
+
+    // ========================================================================
+    // BIND ZONE FILE PARSER
+    // ========================================================================
+
+    /**
+     * Parse BIND zone file content into grouped records matching our internal format.
+     *
+     * Handles standard BIND syntax:
+     *   @  IN  A  1.2.3.4
+     *   www  IN  CNAME  example.com.
+     *   mail  IN  MX  10  mx.example.com.
+     *   @ 3600 IN TXT "v=spf1 ..."
+     *
+     * @return array Grouped records ['A' => [...], 'MX' => [...], ...]
+     */
+    public function parseBindZone(string $content, string $domain): array
+    {
+        $records = [
+            'A' => [], 'AAAA' => [], 'MX' => [], 'TXT' => [],
+            'NS' => [], 'CNAME' => [], 'SOA' => [], 'SRV' => [], 'CAA' => [],
+        ];
+        $seen = [];
+        $supportedTypes = array_keys($records);
+
+        $lines = preg_split('/\r?\n/', $content);
+        $lastHost = '@';
+        $defaultTtl = 3600;
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+
+            if ($line === '' || $line[0] === ';') {
+                continue;
+            }
+
+            // $TTL directive
+            if (preg_match('/^\$TTL\s+(\d+)/i', $line, $m)) {
+                $defaultTtl = (int)$m[1];
+                continue;
+            }
+
+            // Skip other directives ($ORIGIN, $INCLUDE, etc.)
+            if ($line[0] === '$') {
+                continue;
+            }
+
+            // Strip inline comments (not inside quotes)
+            $line = preg_replace('/\s;[^"]*$/', '', $line);
+
+            // Standard BIND format: [name] [ttl] [class] type rdata
+            $tokens = preg_split('/\s+/', $line);
+            if (count($tokens) < 3) {
+                continue;
+            }
+
+            $host = null;
+            $ttl  = $defaultTtl;
+            $type = null;
+            $rdataStart = 0;
+
+            $idx = 0;
+
+            // First token: hostname, or continuation (starts with a type or digit)
+            if (!ctype_digit($tokens[0]) && !in_array(strtoupper($tokens[0]), $supportedTypes)
+                && strtoupper($tokens[0]) !== 'IN') {
+                $host = $tokens[0];
+                $idx = 1;
+            }
+
+            // Optional TTL (numeric)
+            if (isset($tokens[$idx]) && ctype_digit($tokens[$idx])) {
+                $ttl = (int)$tokens[$idx];
+                $idx++;
+            }
+
+            // Optional class (IN)
+            if (isset($tokens[$idx]) && strtoupper($tokens[$idx]) === 'IN') {
+                $idx++;
+            }
+
+            // Record type
+            if (!isset($tokens[$idx])) {
+                continue;
+            }
+            $type = strtoupper($tokens[$idx]);
+            $idx++;
+
+            if (!in_array($type, $supportedTypes)) {
+                continue;
+            }
+
+            $rdataStart = $idx;
+            $rdata = array_slice($tokens, $rdataStart);
+            if (empty($rdata)) {
+                continue;
+            }
+
+            // Resolve host
+            if ($host === null) {
+                $host = $lastHost;
+            } elseif ($host === '@') {
+                $lastHost = '@';
+            } else {
+                $host = rtrim($host, '.');
+                // Strip the domain suffix to get just the subdomain label
+                $lowerHost = strtolower($host);
+                $lowerDomain = strtolower($domain);
+                if ($lowerHost === $lowerDomain) {
+                    $host = '@';
+                } elseif (str_ends_with($lowerHost, '.' . $lowerDomain)) {
+                    $host = substr($host, 0, -(strlen($domain) + 1));
+                }
+                $lastHost = $host;
+            }
+
+            // Build record
+            $value = implode(' ', $rdata);
+            $priority = null;
+            $parsed = null;
+
+            switch ($type) {
+                case 'A':
+                    $parsed = [
+                        'host' => $host, 'value' => $rdata[0], 'ttl' => $ttl,
+                        'is_cloudflare' => $this->isCloudflareIp($rdata[0]),
+                        'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'A', 'ip' => $rdata[0], 'ttl' => $ttl],
+                    ];
+                    break;
+                case 'AAAA':
+                    $parsed = [
+                        'host' => $host, 'value' => $rdata[0], 'ttl' => $ttl,
+                        'is_cloudflare' => false,
+                        'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'AAAA', 'ipv6' => $rdata[0], 'ttl' => $ttl],
+                    ];
+                    break;
+                case 'CNAME':
+                    $parsed = [
+                        'host' => $host, 'value' => rtrim($rdata[0], '.'), 'ttl' => $ttl,
+                        'is_cloudflare' => false,
+                        'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'CNAME', 'target' => rtrim($rdata[0], '.'), 'ttl' => $ttl],
+                    ];
+                    break;
+                case 'MX':
+                    $priority = (int)($rdata[0] ?? 0);
+                    $target = rtrim($rdata[1] ?? '', '.');
+                    $parsed = [
+                        'host' => $host, 'value' => $target, 'ttl' => $ttl,
+                        'priority' => $priority, 'is_cloudflare' => false,
+                        'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'MX', 'pri' => $priority, 'target' => $target, 'ttl' => $ttl],
+                    ];
+                    break;
+                case 'NS':
+                    $parsed = [
+                        'host' => $host, 'value' => rtrim($rdata[0], '.'), 'ttl' => $ttl,
+                        'is_cloudflare' => false,
+                        'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'NS', 'target' => rtrim($rdata[0], '.'), 'ttl' => $ttl],
+                    ];
+                    break;
+                case 'TXT':
+                    $txtValue = implode(' ', $rdata);
+                    $txtValue = trim($txtValue, '"');
+                    $parsed = [
+                        'host' => $host, 'value' => $txtValue, 'ttl' => $ttl,
+                        'is_cloudflare' => false,
+                        'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'TXT', 'txt' => $txtValue, 'ttl' => $ttl],
+                    ];
+                    break;
+                case 'SRV':
+                    if (count($rdata) >= 4) {
+                        $priority = (int)$rdata[0];
+                        $weight = (int)$rdata[1];
+                        $port = (int)$rdata[2];
+                        $target = rtrim($rdata[3], '.');
+                        $parsed = [
+                            'host' => $host, 'value' => $target, 'ttl' => $ttl,
+                            'priority' => $priority, 'is_cloudflare' => false,
+                            'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'SRV', 'pri' => $priority, 'weight' => $weight, 'port' => $port, 'target' => $target, 'ttl' => $ttl],
+                        ];
+                    }
+                    break;
+                case 'CAA':
+                    if (count($rdata) >= 3) {
+                        $flags = (int)$rdata[0];
+                        $tag = $rdata[1];
+                        $caaValue = trim(implode(' ', array_slice($rdata, 2)), '"');
+                        $parsed = [
+                            'host' => $host, 'value' => "{$flags} {$tag} \"{$caaValue}\"", 'ttl' => $ttl,
+                            'is_cloudflare' => false,
+                            'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'CAA', 'flags' => $flags, 'tag' => $tag, 'value' => $caaValue, 'ttl' => $ttl],
+                        ];
+                    }
+                    break;
+                case 'SOA':
+                    if (count($rdata) >= 7) {
+                        $parsed = [
+                            'host' => $host, 'value' => implode(' ', $rdata), 'ttl' => $ttl,
+                            'is_cloudflare' => false,
+                            'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'SOA', 'mname' => rtrim($rdata[0], '.'), 'rname' => rtrim($rdata[1], '.'), 'serial' => (int)$rdata[2], 'refresh' => (int)$rdata[3], 'retry' => (int)$rdata[4], 'expire' => (int)$rdata[5], 'minimum-ttl' => (int)$rdata[6], 'ttl' => $ttl],
+                        ];
+                    }
+                    break;
+            }
+
+            if ($parsed) {
+                $this->addIfNew($type, $parsed, $records, $seen);
+            }
+        }
+
+        $this->sortRecords($records);
+        return $records;
+    }
+
+    // ========================================================================
     // CERTIFICATE TRANSPARENCY (crt.sh)
     // ========================================================================
 
     /**
      * Discover subdomains via crt.sh Certificate Transparency logs.
-     * Returns an array of subdomain labels (e.g. ['www', 'mail', 'api']).
-     * Slow/unreliable — use only in cron, not on manual refresh.
+     *
+     * Spawns check_dns.php --crtsh as a subprocess with a hard timeout to
+     * protect against crt.sh hangs. The subprocess handles HTTP retries and
+     * streams debug output to stderr, relayed via the $onStderrLine callback.
+     *
+     * @param  string        $domain          The domain to scan
+     * @param  int           $maxSubdomains   Cap on returned subdomains (0 = no limit)
+     * @param  int           $timeoutSeconds  Hard kill timeout for the subprocess
+     * @param  callable|null $onStderrLine    fn(string $line) for real-time stderr relay
+     * @return array{0: string[], 1: bool}    [subdomains, serverResponded]
      */
-    public function crtshSubdomains(string $domain): array
-    {
-        $url = 'https://crt.sh/?q=' . urlencode("%.$domain") . '&output=json';
+    public function fetchCrtshSubdomains(
+        string $domain,
+        int $maxSubdomains = 100,
+        int $timeoutSeconds = 1800,
+        ?callable $onStderrLine = null
+    ): array {
+        $phpBin     = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+        $scriptPath = dirname(__DIR__, 2) . '/cron/check_dns.php';
+        $cmd        = [$phpBin, $scriptPath, '--crtsh', $domain];
 
+        if ($maxSubdomains > 0) {
+            $cmd[] = (string) $maxSubdomains;
+        }
+
+        $projectRoot = dirname(__DIR__, 2);
+        $proc = proc_open($cmd, [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ], $pipes, $projectRoot);
+
+        if (!is_resource($proc)) {
+            $this->logger->error('Failed to spawn crt.sh subprocess', ['domain' => $domain]);
+            return [[], false];
+        }
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        $start        = time();
+        $stdout       = '';
+        $stderrBuffer = '';
+
+        while (true) {
+            $status = proc_get_status($proc);
+
+            if (!$status['running']) {
+                break;
+            }
+
+            $elapsed = time() - $start;
+
+            if ($elapsed >= $timeoutSeconds) {
+                $stdout .= self::drainStream($pipes[1]);
+                $stderrBuffer .= self::drainStream($pipes[2]);
+                $this->flushCrtshStderrLines($stderrBuffer, $onStderrLine);
+                proc_terminate($proc, 9);
+                proc_close($proc);
+                $this->logger->warning("crt.sh subprocess killed after {$elapsed}s", ['domain' => $domain]);
+                return [[], false];
+            }
+
+            $readable = [$pipes[1], $pipes[2]];
+            $w = $e = null;
+            if (@stream_select($readable, $w, $e, 0, 200000) > 0) {
+                foreach ($readable as $stream) {
+                    $chunk = stream_get_contents($stream);
+                    if ($stream === $pipes[1]) {
+                        $stdout .= $chunk;
+                    } else {
+                        $stderrBuffer .= $chunk;
+                        $this->flushCrtshStderrLines($stderrBuffer, $onStderrLine);
+                    }
+                }
+            }
+            usleep(100000);
+        }
+
+        $stdout .= stream_get_contents($pipes[1]);
+        $stderrBuffer .= stream_get_contents($pipes[2]);
+        $this->flushCrtshStderrLines($stderrBuffer, $onStderrLine);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        proc_close($proc);
+
+        $decoded = json_decode($stdout, true);
+        $ok   = is_array($decoded) && !empty($decoded['ok']);
+        $subs = is_array($decoded) && isset($decoded['subs']) ? $decoded['subs'] : [];
+
+        $this->logger->info('crt.sh discovery completed', [
+            'domain'           => $domain,
+            'subdomains_found' => count($subs),
+            'server_ok'        => $ok,
+        ]);
+
+        return [$subs, $ok];
+    }
+
+    /**
+     * Fetch a crt.sh URL with optional debug output to stderr.
+     *
+     * Called from the crt.sh subprocess where stderr is relayed to the parent
+     * in real-time. Pass $debug = true in subprocess context.
+     *
+     * @return array{status: int, body_length: int, data: array, time: float}
+     */
+    public function fetchCrtshUrl(string $url, int $timeout = 900, bool $debug = false): array
+    {
         $ctx = stream_context_create([
             'http' => [
-                'timeout'       => 30,
+                'timeout' => $timeout,
                 'ignore_errors' => true,
-                'header'        => "User-Agent: DomainMonitor/1.0\r\n",
-            ],
-            'ssl' => [
-                'verify_peer'      => false,
-                'verify_peer_name' => false,
+                'header' => implode("\r\n", [
+                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept: application/json, text/plain, */*',
+                    'Accept-Language: en-US,en;q=0.9',
+                    'Connection: keep-alive',
+                ]),
             ],
         ]);
 
-        $json = @file_get_contents($url, false, $ctx);
-        if ($json === false) {
-            $this->logger->warning('crt.sh request failed', ['domain' => $domain]);
-            return [];
+        $start = microtime(true);
+        $http_response_header = null;
+        $body = @file_get_contents($url, false, $ctx);
+        $elapsed = microtime(true) - $start;
+
+        $bodyLen = is_string($body) ? strlen($body) : 0;
+
+        if ($debug) {
+            fwrite(STDERR, "--- response ---\n");
+            fwrite(STDERR, "Time: " . sprintf('%.1f', $elapsed) . "s\n");
+
+            if (isset($http_response_header) && is_array($http_response_header)) {
+                foreach ($http_response_header as $h) {
+                    fwrite(STDERR, "$h\n");
+                }
+            } else {
+                fwrite(STDERR, "(no response headers — connection failed or timeout)\n");
+            }
+
+            fwrite(STDERR, "Body: $bodyLen bytes\n");
+
+            if (is_string($body) && $bodyLen > 0) {
+                $preview = $bodyLen > 2000 ? substr($body, 0, 2000) . "\n... [truncated, $bodyLen total]" : $body;
+                fwrite(STDERR, $preview . "\n");
+            }
+
+            fwrite(STDERR, "--- end response ---\n");
         }
 
-        $entries = @json_decode($json, true);
-        if (!is_array($entries)) {
-            return [];
+        $status = 0;
+        if (isset($http_response_header[0]) && preg_match('/\d{3}/', $http_response_header[0], $m)) {
+            $status = (int) $m[0];
         }
 
-        $subdomains = [];
+        $data = [];
+        if ($status === 200 && is_string($body) && $bodyLen > 2) {
+            $decoded = json_decode($body, true);
+            if (is_array($decoded)) {
+                $data = $decoded;
+            }
+        }
+
+        return [
+            'status'      => $status,
+            'body_length' => $bodyLen,
+            'data'        => $data,
+            'time'        => $elapsed,
+        ];
+    }
+
+    /**
+     * Extract unique subdomain prefixes from raw crt.sh JSON response.
+     *
+     * Each entry has a name_value field that may contain multiple newline-separated
+     * names, including wildcards. Returns only the subdomain prefixes
+     * (e.g. "www", "mail", "api").
+     *
+     * @param  array  $crtshData  Decoded JSON array from crt.sh
+     * @param  string $domain     The base domain (e.g. "example.com")
+     * @return string[]           Unique subdomain prefixes
+     */
+    public function extractCrtshSubdomains(array $crtshData, string $domain): array
+    {
         $domainLower = strtolower($domain);
+        $suffix      = '.' . $domainLower;
+        $suffixLen   = strlen($suffix);
+        $subs        = [];
 
-        foreach ($entries as $entry) {
-            $name = $entry['name_value'] ?? '';
-            foreach (explode("\n", $name) as $n) {
-                $n = strtolower(trim($n));
-                $n = ltrim($n, '*.');
-                if (empty($n)) continue;
+        foreach ($crtshData as $entry) {
+            if (empty($entry['name_value'])) {
+                continue;
+            }
 
-                if ($n === $domainLower) continue;
+            foreach (explode("\n", $entry['name_value']) as $name) {
+                $name = strtolower(trim($name));
 
-                if (str_ends_with($n, '.' . $domainLower)) {
-                    $sub = str_replace('.' . $domainLower, '', $n);
-                    if ($sub !== '' && !isset($subdomains[$sub])) {
-                        $subdomains[$sub] = true;
-                    }
+                if (strpos($name, '*.') === 0) {
+                    $name = substr($name, 2);
+                }
+
+                if ($name === $domainLower) {
+                    continue;
+                }
+
+                if (substr($name, -$suffixLen) !== $suffix) {
+                    continue;
+                }
+
+                $sub = substr($name, 0, strlen($name) - $suffixLen);
+                if (!empty($sub)) {
+                    $subs[$sub] = true;
                 }
             }
         }
 
-        $result = array_keys($subdomains);
-        $this->logger->info('crt.sh discovery completed', [
-            'domain' => $domain,
-            'subdomains_found' => count($result),
-        ]);
+        return array_keys($subs);
+    }
 
-        return $result;
+    /**
+     * Flush complete stderr lines from buffer via callback.
+     */
+    private function flushCrtshStderrLines(string &$buffer, ?callable $onLine): void
+    {
+        while (($pos = strpos($buffer, "\n")) !== false) {
+            $line = trim(substr($buffer, 0, $pos));
+            $buffer = substr($buffer, $pos + 1);
+            if ($line !== '' && $onLine) {
+                $onLine($line);
+            }
+        }
+    }
+
+    /**
+     * Drain remaining data from a non-blocking stream and close it.
+     */
+    private static function drainStream($stream): string
+    {
+        if (!is_resource($stream)) {
+            return '';
+        }
+        $data = stream_get_contents($stream);
+        fclose($stream);
+        return $data ?: '';
     }
 
     // ========================================================================

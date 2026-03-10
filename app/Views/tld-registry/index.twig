@@ -348,10 +348,10 @@
                                         <i class="fas fa-eye"></i>
                                     </a>
                                     {% if session.role is defined and session.role == 'admin' %}
-                                    <a href="/tld-registry/{{ tld.id }}/refresh" class="text-green-600 hover:text-green-800" title="Refresh" onclick="return confirm('Refresh TLD data from IANA?')">
+                                    <a href="/tld-registry/{{ tld.id }}/refresh" class="text-green-600 hover:text-green-800" title="Refresh" onclick="return confirmClick(event, 'Refresh TLD data from IANA?', { title: 'Refresh TLD', icon: 'fa-sync text-green-500', confirmText: 'Refresh', confirmClass: 'bg-green-600 hover:bg-green-700' })">
                                         <i class="fas fa-sync-alt"></i>
                                     </a>
-                                    <a href="/tld-registry/{{ tld.id }}/toggle-active" class="text-orange-600 hover:text-orange-800" title="Toggle Status" onclick="return confirm('Toggle TLD status?')">
+                                    <a href="/tld-registry/{{ tld.id }}/toggle-active" class="text-orange-600 hover:text-orange-800" title="Toggle Status" onclick="return confirmClick(event, 'Toggle TLD status?', { title: 'Toggle Status', icon: 'fa-toggle-on text-orange-500', confirmText: 'Toggle', confirmClass: 'bg-orange-600 hover:bg-orange-700' })">
                                         <i class="fas fa-power-off"></i>
                                     </a>
                                     {% endif %}
@@ -421,7 +421,7 @@
                             <i class="fas fa-eye mr-1"></i> View
                         </a>
                         {% if session.role is defined and session.role == 'admin' %}
-                        <a href="/tld-registry/{{ tld.id }}/refresh" class="flex-1 px-3 py-1.5 bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 rounded text-center text-sm hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors" onclick="return confirm('Refresh TLD data?')">
+                        <a href="/tld-registry/{{ tld.id }}/refresh" class="flex-1 px-3 py-1.5 bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400 rounded text-center text-sm hover:bg-green-100 dark:hover:bg-green-500/20 transition-colors" onclick="return confirmClick(event, 'Refresh TLD data?', { title: 'Refresh TLD', icon: 'fa-sync text-green-500', confirmText: 'Refresh', confirmClass: 'bg-green-600 hover:bg-green-700' })">
                             <i class="fas fa-sync-alt mr-1"></i> Refresh
                         </a>
                         {% endif %}
@@ -584,63 +584,12 @@
     </div>
 </div>
 
-{# Import TLD Modal #}
-<div id="tldImportModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md">
-        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-                <i class="fas fa-upload text-primary mr-2"></i>Import TLDs
-            </h3>
-            <button onclick="document.getElementById('tldImportModal').classList.add('hidden')" class="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <form method="POST" action="/tld-registry/import" enctype="multipart/form-data" id="tldImportForm">
-            {{ csrf_field() }}
-            <div class="p-6 space-y-4">
-                {# Drag & Drop Zone #}
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Select File</label>
-                    <div id="tldDropzone" class="relative border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 text-center cursor-pointer transition-all hover:border-primary hover:bg-gray-50 dark:hover:bg-slate-700">
-                        <input type="file" name="import_file" accept=".csv,.json" required id="tldFileInput"
-                               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
-                        <div id="tldDropzoneContent">
-                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 dark:text-slate-500 mb-2"></i>
-                            <p class="text-sm text-gray-600 dark:text-slate-400 font-medium">Drag & drop your file here</p>
-                            <p class="text-xs text-gray-400 dark:text-slate-500 my-1">or</p>
-                            <span class="inline-flex items-center px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-medium">
-                                <i class="fas fa-folder-open mr-1.5"></i>Browse Files
-                            </span>
-                            <p class="mt-2.5 text-xs text-gray-400 dark:text-slate-500">CSV, JSON &middot; Max {{ max_upload_size() }}</p>
-                        </div>
-                        <div id="tldDropzoneFile" class="hidden">
-                            <i class="fas fa-file-alt text-2xl text-primary mb-1.5"></i>
-                            <p class="text-sm font-medium text-gray-700 dark:text-slate-300" id="tldFileName"></p>
-                            <p class="text-xs text-gray-400 dark:text-slate-500" id="tldFileSize"></p>
-                            <button type="button" id="tldFileRemove" class="mt-1.5 text-xs text-red-500 hover:text-red-700 font-medium">
-                                <i class="fas fa-trash-alt mr-1"></i>Remove
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-lg p-3">
-                    <p class="text-xs text-gray-700 dark:text-slate-300 font-medium mb-1"><i class="fas fa-info-circle text-blue-500 mr-1"></i> Expected Format</p>
-                    <p class="text-xs text-gray-600 dark:text-slate-400">CSV columns: <code class="bg-white dark:bg-slate-800 px-1 rounded">tld, whois_server, rdap_servers, registry_url, is_active</code></p>
-                    <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">JSON: array of objects with same fields</p>
-                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Existing TLDs will be updated. New TLDs will be created as active.</p>
-                </div>
-            </div>
-            <div class="px-6 py-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex justify-end gap-2 rounded-b-lg">
-                <button type="button" onclick="document.getElementById('tldImportModal').classList.add('hidden')" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
-                    Cancel
-                </button>
-                <button type="submit" id="tldImportBtn" class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
-                    <i class="fas fa-upload mr-1.5"></i>Import TLDs
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
+{% include 'partials/import-modal.twig' with {
+    prefix: 'tld',
+    title: 'Import TLDs',
+    action: '/tld-registry/import',
+    format_html: '<p class="text-xs text-gray-600 dark:text-slate-400">CSV columns: <code class="bg-white dark:bg-slate-800 px-1 rounded">tld, whois_server, rdap_servers, registry_url, is_active</code></p><p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">JSON: array of objects with same fields</p><p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Existing TLDs will be updated. New TLDs will be created as active.</p>'
+} %}
 
 <script>
 function toggleAllCheckboxes(selectAllCheckbox) {
@@ -691,14 +640,15 @@ function clearSelection() {
     updateSelectedCount();
 }
 
-function confirmBulkDelete() {
+async function confirmBulkDelete() {
     const checkboxes = document.querySelectorAll('.tld-checkbox:checked');
     if (checkboxes.length === 0) {
         alert('Please select TLDs to delete');
         return;
     }
 
-    if (confirm(`Are you sure you want to delete ${checkboxes.length} selected TLD(s)? This action cannot be undone.`)) {
+    var ok = await confirmAction({ message: 'Are you sure you want to delete ' + checkboxes.length + ' selected TLD(s)? This action cannot be undone.' });
+    if (ok) {
         const form = document.getElementById('bulk-delete-form');
         checkboxes.forEach(checkbox => {
             const input = document.createElement('input');
@@ -759,84 +709,6 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-(function() {
-    const dropzone = document.getElementById('tldDropzone');
-    const fileInput = document.getElementById('tldFileInput');
-    const content = document.getElementById('tldDropzoneContent');
-    const fileInfo = document.getElementById('tldDropzoneFile');
-    const fileName = document.getElementById('tldFileName');
-    const fileSize = document.getElementById('tldFileSize');
-    const removeBtn = document.getElementById('tldFileRemove');
-    const form = document.getElementById('tldImportForm');
-    const submitBtn = document.getElementById('tldImportBtn');
-
-    if (!dropzone) return;
-
-    function formatSize(bytes) {
-        if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
-        if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
-        return bytes + ' B';
-    }
-
-    function showFile(file) {
-        fileName.textContent = file.name;
-        fileSize.textContent = formatSize(file.size);
-        content.classList.add('hidden');
-        fileInfo.classList.remove('hidden');
-        dropzone.classList.remove('border-gray-300');
-        dropzone.classList.add('border-primary', 'bg-primary/5');
-    }
-
-    function resetDropzone() {
-        fileInput.value = '';
-        content.classList.remove('hidden');
-        fileInfo.classList.add('hidden');
-        dropzone.classList.add('border-gray-300');
-        dropzone.classList.remove('border-primary', 'bg-primary/5');
-    }
-
-    fileInput.addEventListener('change', function() {
-        if (this.files.length) showFile(this.files[0]);
-    });
-
-    removeBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        resetDropzone();
-    });
-
-    ['dragenter', 'dragover'].forEach(evt => {
-        dropzone.addEventListener(evt, function(e) {
-            e.preventDefault();
-            dropzone.classList.add('border-primary', 'bg-primary/5');
-            dropzone.classList.remove('border-gray-300');
-        });
-    });
-
-    ['dragleave', 'drop'].forEach(evt => {
-        dropzone.addEventListener(evt, function(e) {
-            e.preventDefault();
-            if (!fileInput.files.length) {
-                dropzone.classList.remove('border-primary', 'bg-primary/5');
-                dropzone.classList.add('border-gray-300');
-            }
-        });
-    });
-
-    dropzone.addEventListener('drop', function(e) {
-        e.preventDefault();
-        const files = e.dataTransfer.files;
-        if (files.length) {
-            fileInput.files = files;
-            showFile(files[0]);
-        }
-    });
-
-    form.addEventListener('submit', function() {
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Importing...';
-    });
-})();
 </script>
 
 {% endblock %}

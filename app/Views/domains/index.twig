@@ -375,10 +375,16 @@
                                             <i class="fas fa-sync-alt"></i>
                                         </button>
                                     </form>
+                                    {% if auth.isAdmin %}
+                                        <button type="button" class="domain-transfer-btn text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300" title="Transfer Domain"
+                                                data-domain-id="{{ domain.id }}" data-domain-name="{{ domain.domain_name }}">
+                                            <i class="fas fa-exchange-alt"></i>
+                                        </button>
+                                    {% endif %}
                                     <a href="/domains/{{ domain.id }}/edit?from=/domains" class="text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-300" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
-                                    <form method="POST" action="/domains/{{ domain.id }}/delete" class="inline" onsubmit="return confirm('Delete this domain?')">
+                                    <form method="POST" action="/domains/{{ domain.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this domain?')">
                                         {{ csrf_field() }}
                                         <button type="submit" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300" title="Delete">
                                             <i class="fas fa-trash"></i>
@@ -398,7 +404,18 @@
                 <div class="p-6 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors duration-150">
                     <div class="flex items-center mb-3">
                         <input type="checkbox" class="domain-checkbox-mobile rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary mr-3" value="{{ domain.id }}" onchange="updateBulkActions()">
-                        <a href="/domains/{{ domain.id }}" class="text-lg font-semibold text-gray-900 dark:text-white hover:text-primary">{{ domain.domain_name }}</a>
+                        <a href="/domains/{{ domain.id }}" class="flex-1 text-lg font-semibold text-gray-900 dark:text-white hover:text-primary">{{ domain.domain_name }}</a>
+                        <div class="flex items-center space-x-2">
+                            <a href="/domains/{{ domain.id }}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" title="View">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            {% if auth.isAdmin %}
+                                <button type="button" class="domain-transfer-btn text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300" title="Transfer Domain"
+                                        data-domain-id="{{ domain.id }}" data-domain-name="{{ domain.domain_name }}">
+                                    <i class="fas fa-exchange-alt"></i>
+                                </button>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             {% endfor %}
@@ -566,13 +583,12 @@ function bulkRefresh() {
     form.submit();
 }
 
-function bulkDelete() {
+async function bulkDelete() {
     const ids = getSelectedIds();
     if (ids.length === 0) return;
 
-    if (!confirm(`Delete ${ids.length} domain(s)? This action cannot be undone.`)) {
-        return;
-    }
+    var ok = await confirmAction({ message: 'Delete ' + ids.length + ' domain(s)? This action cannot be undone.' });
+    if (!ok) return;
 
     const form = document.createElement('form');
     form.method = 'POST';
@@ -641,16 +657,15 @@ function bulkAddTag(tagName) {
     form.submit();
 }
 
-function bulkRemoveAllTags() {
+async function bulkRemoveAllTags() {
     const ids = getSelectedIds();
     if (ids.length === 0) {
         alert('Please select at least one domain');
         return;
     }
 
-    if (!confirm(`Remove all tags from ${ids.length} domain(s)?`)) {
-        return;
-    }
+    var ok = await confirmAction({ message: 'Remove all tags from ' + ids.length + ' domain(s)?', title: 'Remove Tags', icon: 'fa-tags text-orange-500' });
+    if (!ok) return;
 
     const form = document.createElement('form');
     form.method = 'POST';
@@ -680,51 +695,15 @@ function bulkTransfer() {
         alert('Please select at least one domain');
         return;
     }
-
-    const users = {{ users|default([])|json_encode|raw }};
-    if (users.length === 0) {
-        alert('No users available for transfer');
-        return;
-    }
-
-    let userOptions = users.map(user =>
-        `<option value="${user.id}">${user.username} (${user.full_name || user.email})</option>`
-    ).join('');
-
-    const modal = document.createElement('div');
-    modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50';
-    modal.innerHTML = `
-        <div class="relative top-20 mx-auto p-5 border border-gray-200 dark:border-slate-700 w-96 shadow-lg rounded-md bg-white dark:bg-slate-800">
-            <div class="mt-3">
-                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Transfer ${ids.length} Domain(s)</h3>
-                <p class="text-sm text-gray-500 dark:text-slate-400 mb-4">Select the user to transfer the selected domains to:</p>
-
-                <form method="POST" action="/domains/bulk-transfer">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    ${ids.map(id => `<input type="hidden" name="domain_ids[]" value="${id}">`).join('')}
-
-                    <div class="mb-4">
-                        <label for="target_user_id" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Transfer to User:</label>
-                        <select name="target_user_id" id="target_user_id" required class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-slate-900 text-gray-900 dark:text-white">
-                            <option value="">Select a user...</option>
-                            ${userOptions}
-                        </select>
-                    </div>
-
-                    <div class="flex justify-end space-x-3">
-                        <button type="button" onclick="this.closest('.fixed').remove()" class="px-4 py-2 bg-gray-300 dark:bg-slate-600 text-gray-700 dark:text-slate-300 rounded-md hover:bg-gray-400 dark:hover:bg-slate-500">
-                            Cancel
-                        </button>
-                        <button type="submit" class="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark">
-                            Transfer Domains
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    `;
-
-    document.body.appendChild(modal);
+    openTransferModal({
+        title: 'Transfer ' + ids.length + ' Domain(s)',
+        description: 'Select the user to transfer the selected domains to.',
+        action: '/domains/bulk-transfer',
+        fields: { 'domain_ids[]': ids },
+        submitText: 'Transfer Domains',
+        users: {{ users|default([])|json_encode|raw }},
+        csrfToken: '{{ csrf_token() }}'
+    });
 }
 
 document.getElementById('bulk-assign-form')?.addEventListener('submit', function(e) {
@@ -977,5 +956,26 @@ document.addEventListener('click', function(e) {
         document.getElementById('domainExportMenu').classList.add('hidden');
     }
 });
+
+function transferDomain(domainId, domainName) {
+    const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    openTransferModal({
+        title: 'Transfer Domain',
+        description: 'Transfer <strong>' + esc(domainName) + '</strong> to another user.',
+        action: '/domains/transfer',
+        fields: { domain_id: domainId },
+        users: {{ users|default([])|json_encode|raw }},
+        csrfToken: '{{ csrf_token() }}'
+    });
+}
+
+document.addEventListener('click', function(e) {
+    const btn = e.target.closest('.domain-transfer-btn');
+    if (btn) {
+        e.preventDefault();
+        transferDomain(parseInt(btn.dataset.domainId, 10), btn.dataset.domainName || '');
+    }
+});
 </script>
+{% include 'partials/transfer-modal.twig' %}
 {% endblock %}

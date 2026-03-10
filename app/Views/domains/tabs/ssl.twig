@@ -319,7 +319,7 @@
                                 Check Now
                             </button>
                         </form>
-                        <form method="POST" action="/domains/{{ domain.id }}/ssl/{{ certificate.id }}/delete" class="inline" onsubmit="return confirm('Remove SSL monitoring for {{ certificate.display_target }}?');">
+                        <form method="POST" action="/domains/{{ domain.id }}/ssl/{{ certificate.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Remove SSL monitoring for {{ certificate.display_target }}?')">
                             {{ csrf_field()|raw }}
                             <button type="submit" class="inline-flex items-center px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors font-medium">
                                 <i class="fas fa-trash mr-1" style="font-size: 9px;"></i>
@@ -433,14 +433,15 @@ function clearSSLSelection() {
     updateSSLBulkActions();
 }
 
-function submitBulkSslAction(action) {
+async function submitBulkSslAction(action) {
     const selectedIds = getSelectedSSLIds();
     if (selectedIds.length === 0) {
         return;
     }
 
-    if (action === 'delete' && !window.confirm(`Remove SSL monitoring for ${selectedIds.length} endpoint(s)?`)) {
-        return;
+    if (action === 'delete') {
+        var ok = await confirmAction({ message: 'Remove SSL monitoring for ' + selectedIds.length + ' endpoint(s)?' });
+        if (!ok) return;
     }
 
     const input = document.getElementById(`ssl-bulk-${action}-ids`);

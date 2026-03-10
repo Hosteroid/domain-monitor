@@ -507,9 +507,14 @@ class EmailHelper
     
     /**
      * Get email subject based on data
+     * Uses explicit subject when provided (DNS, SSL, etc.), otherwise domain expiration logic
      */
     public static function getEmailSubject(array $data): string
     {
+        if (!empty($data['subject'])) {
+            return $data['subject'];
+        }
+
         if (isset($data['domain'])) {
             $daysLeft = $data['days_left'] ?? null;
             if ($daysLeft === null) {

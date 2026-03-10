@@ -40,8 +40,10 @@ class PushoverChannel implements NotificationChannelInterface
                 'priority' => $priority,
             ];
 
-            // Optional: Add title
-            if (isset($data['domain'])) {
+            // Optional: Add title - use subject when provided (DNS, SSL, etc.)
+            if (!empty($data['subject'])) {
+                $payload['title'] = $data['subject'];
+            } elseif (isset($data['domain'])) {
                 $payload['title'] = '🔔 Domain Expiration Alert: ' . $data['domain'];
             } else {
                 $payload['title'] = '🔔 Domain Monitor Notification';

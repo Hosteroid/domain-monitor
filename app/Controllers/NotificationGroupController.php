@@ -1065,16 +1065,35 @@ class NotificationGroupController extends Controller
             return;
         }
 
+        $logger = new \App\Services\Logger('transfer');
+
         try {
-            // Transfer group
             $this->groupModel->update($groupId, ['user_id' => $targetUserId]);
             
-            // Also transfer all domains in this group
             $domainModel = new \App\Models\Domain();
-            $domainModel->updateWhere(['notification_group_id' => $groupId], ['user_id' => $targetUserId]);
+            $domainsTransferred = $domainModel->updateWhere(['notification_group_id' => $groupId], ['user_id' => $targetUserId]);
+
+            $tagModel = new \App\Models\Tag();
+            $tagsRemoved = $tagModel->removeOtherUserTagsFromDomainsByGroup($groupId, $targetUserId);
+
+            $logger->info('Notification group transferred', [
+                'group_id' => $groupId,
+                'group_name' => $group['name'],
+                'from_user_id' => $group['user_id'],
+                'to_user_id' => $targetUserId,
+                'to_username' => $targetUser['username'],
+                'domains_transferred' => $domainsTransferred,
+                'tags_removed' => $tagsRemoved,
+                'admin_user_id' => \Core\Auth::id(),
+            ]);
             
             $_SESSION['success'] = "Group '{$group['name']}' and its domains transferred to {$targetUser['username']}";
         } catch (\Exception $e) {
+            $logger->error('Notification group transfer failed', [
+                'group_id' => $groupId,
+                'to_user_id' => $targetUserId,
+                'error' => $e->getMessage(),
+            ]);
             $_SESSION['error'] = 'Failed to transfer group. Please try again.';
         }
 
@@ -1113,24 +1132,50 @@ class NotificationGroupController extends Controller
             return;
         }
 
+        $domainModel = new \App\Models\Domain();
+        $tagModel = new \App\Models\Tag();
+        $logger = new \App\Services\Logger('transfer');
+
         $transferred = 0;
         foreach ($groupIds as $groupId) {
             $groupId = (int)$groupId;
             if ($groupId > 0) {
                 try {
-                    // Transfer group
+                    $group = $this->groupModel->find($groupId);
                     $this->groupModel->update($groupId, ['user_id' => $targetUserId]);
                     
-                    // Also transfer all domains in this group
-                    $domainModel = new \App\Models\Domain();
-                    $domainModel->updateWhere(['notification_group_id' => $groupId], ['user_id' => $targetUserId]);
+                    $domainsTransferred = $domainModel->updateWhere(['notification_group_id' => $groupId], ['user_id' => $targetUserId]);
+                    $tagsRemoved = $tagModel->removeOtherUserTagsFromDomainsByGroup($groupId, $targetUserId);
+
+                    $logger->info('Notification group transferred (bulk)', [
+                        'group_id' => $groupId,
+                        'group_name' => $group['name'] ?? 'unknown',
+                        'from_user_id' => $group['user_id'] ?? null,
+                        'to_user_id' => $targetUserId,
+                        'to_username' => $targetUser['username'],
+                        'domains_transferred' => $domainsTransferred,
+                        'tags_removed' => $tagsRemoved,
+                        'admin_user_id' => \Core\Auth::id(),
+                    ]);
                     
                     $transferred++;
                 } catch (\Exception $e) {
-                    // Continue with other groups
+                    $logger->error('Notification group transfer failed (bulk)', [
+                        'group_id' => $groupId,
+                        'to_user_id' => $targetUserId,
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
         }
+
+        $logger->info('Bulk notification group transfer completed', [
+            'transferred' => $transferred,
+            'total_requested' => count($groupIds),
+            'to_user_id' => $targetUserId,
+            'to_username' => $targetUser['username'],
+            'admin_user_id' => \Core\Auth::id(),
+        ]);
 
         $_SESSION['success'] = "$transferred group(s) and their domains transferred to {$targetUser['username']}";
         $this->redirect('/groups');

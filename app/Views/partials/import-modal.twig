@@ -1,0 +1,175 @@
+{#
+ # Shared import modal with drag & drop file upload.
+ #
+ # Parameters:
+ #   prefix       - Unique prefix for element IDs (e.g. 'tag', 'group', 'tld', 'dnsZone')
+ #   title        - Modal title (e.g. 'Import Tags')
+ #   action       - Form POST action URL
+ #   accept       - File input accept attribute (default: '.csv,.json')
+ #   file_hint    - Accepted file types hint (default: 'CSV, JSON')
+ #   format_html  - Raw HTML for the "Expected Format" info block
+ #   submit_label - Submit button text (default: title)
+ #   input_name   - File input name attribute (default: 'import_file')
+ #   extra_fields - Optional raw HTML for extra form fields (textarea, etc.)
+ #}
+
+{% set _accept = accept|default('.csv,.json') %}
+{% set _file_hint = file_hint|default('CSV, JSON') %}
+{% set _submit = submit_label|default(title) %}
+{% set _input_name = input_name|default('import_file') %}
+
+<div id="{{ prefix }}ImportModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                <i class="fas fa-upload text-primary mr-2"></i>{{ title }}
+            </h3>
+            <button onclick="document.getElementById('{{ prefix }}ImportModal').classList.add('hidden')"
+                    class="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="{{ action }}" enctype="multipart/form-data" id="{{ prefix }}ImportForm">
+            {{ csrf_field() }}
+            <div class="p-6 space-y-4">
+                {% if extra_fields is defined and extra_fields %}
+                    {{ extra_fields|raw }}
+                {% endif %}
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Select File</label>
+                    <div id="{{ prefix }}Dropzone" class="relative border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 text-center cursor-pointer transition-all hover:border-primary hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <input type="file" name="{{ _input_name }}" accept="{{ _accept }}" required id="{{ prefix }}FileInput"
+                               class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div id="{{ prefix }}DropzoneContent">
+                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 dark:text-slate-500 mb-2"></i>
+                            <p class="text-sm text-gray-600 dark:text-slate-400 font-medium">Drag & drop your file here</p>
+                            <p class="text-xs text-gray-400 dark:text-slate-500 my-1">or</p>
+                            <span class="inline-flex items-center px-3 py-1.5 bg-primary text-white text-xs rounded-lg font-medium">
+                                <i class="fas fa-folder-open mr-1.5"></i>Browse Files
+                            </span>
+                            <p class="mt-2.5 text-xs text-gray-400 dark:text-slate-500">{{ _file_hint }} &middot; Max {{ max_upload_size() }}</p>
+                        </div>
+                        <div id="{{ prefix }}DropzoneFile" class="hidden">
+                            <i class="fas fa-file-alt text-2xl text-primary mb-1.5"></i>
+                            <p class="text-sm font-medium text-gray-700 dark:text-slate-300" id="{{ prefix }}FileName"></p>
+                            <p class="text-xs text-gray-400 dark:text-slate-500" id="{{ prefix }}FileSize"></p>
+                            <button type="button" id="{{ prefix }}FileRemove" class="mt-1.5 text-xs text-red-500 hover:text-red-700 font-medium">
+                                <i class="fas fa-trash-alt mr-1"></i>Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {% if format_html is defined and format_html %}
+                <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-lg p-3">
+                    <p class="text-xs text-gray-700 dark:text-slate-300 font-medium mb-1">
+                        <i class="fas fa-info-circle text-blue-500 mr-1"></i> Expected Format
+                    </p>
+                    {{ format_html|raw }}
+                </div>
+                {% endif %}
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="document.getElementById('{{ prefix }}ImportModal').classList.add('hidden')"
+                        class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" id="{{ prefix }}ImportBtn"
+                        class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                    <i class="fas fa-upload mr-1.5"></i>{{ _submit }}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(function() {
+    var pfx = '{{ prefix }}';
+    var dropzone = document.getElementById(pfx + 'Dropzone');
+    if (!dropzone) return;
+    var fileInput = document.getElementById(pfx + 'FileInput');
+    var content   = document.getElementById(pfx + 'DropzoneContent');
+    var fileInfo  = document.getElementById(pfx + 'DropzoneFile');
+    var fileName  = document.getElementById(pfx + 'FileName');
+    var fileSize  = document.getElementById(pfx + 'FileSize');
+    var removeBtn = document.getElementById(pfx + 'FileRemove');
+    var form      = document.getElementById(pfx + 'ImportForm');
+    var submitBtn = document.getElementById(pfx + 'ImportBtn');
+
+    function formatSize(bytes) {
+        if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+        if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return bytes + ' B';
+    }
+
+    function showFile(file) {
+        fileName.textContent = file.name;
+        fileSize.textContent = formatSize(file.size);
+        content.classList.add('hidden');
+        fileInfo.classList.remove('hidden');
+        dropzone.classList.remove('border-gray-300');
+        dropzone.classList.add('border-primary', 'bg-primary/5');
+    }
+
+    function resetDropzone() {
+        fileInput.value = '';
+        content.classList.remove('hidden');
+        fileInfo.classList.add('hidden');
+        dropzone.classList.add('border-gray-300');
+        dropzone.classList.remove('border-primary', 'bg-primary/5');
+    }
+
+    fileInput.addEventListener('change', function() {
+        if (this.files.length) showFile(this.files[0]);
+    });
+
+    removeBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        resetDropzone();
+    });
+
+    ['dragenter', 'dragover'].forEach(function(evt) {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            dropzone.classList.add('border-primary', 'bg-primary/5');
+            dropzone.classList.remove('border-gray-300');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(function(evt) {
+        dropzone.addEventListener(evt, function(e) {
+            e.preventDefault();
+            if (!fileInput.files.length) {
+                dropzone.classList.remove('border-primary', 'bg-primary/5');
+                dropzone.classList.add('border-gray-300');
+            }
+        });
+    });
+
+    dropzone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        var files = e.dataTransfer.files;
+        if (files.length) {
+            fileInput.files = files;
+            showFile(files[0]);
+        }
+    });
+
+    form.addEventListener('submit', function() {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1.5"></i>Importing...';
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            var modal = document.getElementById(pfx + 'ImportModal');
+            if (modal && !modal.classList.contains('hidden')) {
+                modal.classList.add('hidden');
+            }
+        }
+    });
+})();
+</script>

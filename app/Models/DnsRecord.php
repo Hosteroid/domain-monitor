@@ -80,10 +80,12 @@ class DnsRecord extends Model
 
     /**
      * Save a snapshot of DNS records for a domain.
-     * Updates existing records, inserts new ones, removes stale ones.
+     * Updates existing records, inserts new ones.
+     * Only auto-removes stale records whose source is 'discovered' — manual and imported records are preserved.
+     *
      * @return array{added: int, updated: int, removed: int}
      */
-    public function saveSnapshot(int $domainId, array $groupedRecords): array
+    public function saveSnapshot(int $domainId, array $groupedRecords, string $source = 'discovered'): array
     {
         $stats = ['added' => 0, 'updated' => 0, 'removed' => 0];
         $now = date('Y-m-d H:i:s');
@@ -108,27 +110,26 @@ class DnsRecord extends Model
                     $stats['updated']++;
                 } else {
                     $stmt = $this->db->prepare(
-                        "INSERT INTO dns_records (domain_id, record_type, host, value, ttl, priority, is_cloudflare, raw_data, first_seen_at, last_seen_at, created_at, updated_at)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        "INSERT INTO dns_records (domain_id, record_type, host, value, ttl, priority, is_cloudflare, raw_data, source, first_seen_at, last_seen_at, created_at, updated_at)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                     );
-                    $stmt->execute([$domainId, $type, $host, $value, $ttl, $priority, $isCloudflare, $rawData, $now, $now, $now, $now]);
+                    $stmt->execute([$domainId, $type, $host, $value, $ttl, $priority, $isCloudflare, $rawData, $source, $now, $now, $now, $now]);
                     $seenIds[] = (int)$this->db->lastInsertId();
                     $stats['added']++;
                 }
             }
         }
 
-        // Remove records that no longer exist
+        // Only auto-remove stale discovered records — manual/imported records are never auto-deleted
         if (!empty($seenIds)) {
             $placeholders = implode(',', array_fill(0, count($seenIds), '?'));
             $deleteStmt = $this->db->prepare(
-                "DELETE FROM dns_records WHERE domain_id = ? AND id NOT IN ({$placeholders})"
+                "DELETE FROM dns_records WHERE domain_id = ? AND source = 'discovered' AND id NOT IN ({$placeholders})"
             );
             $deleteStmt->execute(array_merge([$domainId], $seenIds));
             $stats['removed'] = $deleteStmt->rowCount();
         } else {
-            // No records found at all — remove everything
-            $deleteStmt = $this->db->prepare("DELETE FROM dns_records WHERE domain_id = ?");
+            $deleteStmt = $this->db->prepare("DELETE FROM dns_records WHERE domain_id = ? AND source = 'discovered'");
             $deleteStmt->execute([$domainId]);
             $stats['removed'] = $deleteStmt->rowCount();
         }
@@ -212,5 +213,83 @@ class DnsRecord extends Model
         }
 
         return $grouped;
+    }
+
+    /**
+     * Delete a single DNS record belonging to a domain.
+     */
+    public function deleteRecord(int $id, int $domainId): bool
+    {
+        $stmt = $this->db->prepare("DELETE FROM dns_records WHERE id = ? AND domain_id = ?");
+        $stmt->execute([$id, $domainId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Bulk delete DNS records belonging to a domain.
+     *
+     * @return int Number of records deleted
+     */
+    public function bulkDeleteRecords(array $ids, int $domainId): int
+    {
+        if (empty($ids)) {
+            return 0;
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare(
+            "DELETE FROM dns_records WHERE domain_id = ? AND id IN ({$placeholders})"
+        );
+        $stmt->execute(array_merge([$domainId], $ids));
+        return $stmt->rowCount();
+    }
+
+    /**
+     * Add a single manually-created DNS record.
+     */
+    public function addManualRecord(int $domainId, string $type, string $host, string $value, ?int $ttl = null, ?int $priority = null): int
+    {
+        $now = date('Y-m-d H:i:s');
+        $stmt = $this->db->prepare(
+            "INSERT INTO dns_records (domain_id, record_type, host, value, ttl, priority, is_cloudflare, source, first_seen_at, last_seen_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, 0, 'manual', ?, ?, ?, ?)"
+        );
+        $stmt->execute([$domainId, $type, $host, $value, $ttl, $priority, $now, $now, $now, $now]);
+        return (int)$this->db->lastInsertId();
+    }
+
+    /**
+     * Bulk-insert records from a zone file import.
+     *
+     * @return int Number of records imported
+     */
+    public function addImportedRecords(int $domainId, array $groupedRecords): int
+    {
+        $now = date('Y-m-d H:i:s');
+        $count = 0;
+
+        foreach ($groupedRecords as $type => $records) {
+            foreach ($records as $record) {
+                $host = $record['host'] ?? '@';
+                $value = $record['value'] ?? '';
+                $ttl = $record['ttl'] ?? null;
+                $priority = $record['priority'] ?? null;
+                $isCloudflare = !empty($record['is_cloudflare']) ? 1 : 0;
+                $rawData = isset($record['raw']) ? json_encode($record['raw']) : null;
+
+                $existing = $this->findExisting($domainId, $type, $host, $value, $priority);
+                if ($existing) {
+                    continue;
+                }
+
+                $stmt = $this->db->prepare(
+                    "INSERT INTO dns_records (domain_id, record_type, host, value, ttl, priority, is_cloudflare, raw_data, source, first_seen_at, last_seen_at, created_at, updated_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'imported', ?, ?, ?, ?)"
+                );
+                $stmt->execute([$domainId, $type, $host, $value, $ttl, $priority, $isCloudflare, $rawData, $now, $now, $now, $now]);
+                $count++;
+            }
+        }
+
+        return $count;
     }
 }

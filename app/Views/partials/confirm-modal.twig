@@ -1,0 +1,122 @@
+{# Global confirmation modal — replaces native confirm() dialogs.
+   Included once in layout/base.twig. Provides:
+
+   confirmAction({ message, title, confirmText, cancelText, confirmClass, icon })
+     Returns a Promise<boolean>.
+
+   confirmSubmit(event, message, opts)
+     For onsubmit="return confirmSubmit(event, 'Delete?')"
+
+   confirmClick(event, message, opts)
+     For onclick="return confirmClick(event, 'Are you sure?')"
+#}
+
+<div id="confirmModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[60] flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-sm">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white" id="confirmModalTitle">
+                <i id="confirmModalIcon" class="fas fa-exclamation-triangle text-red-500 mr-2"></i>
+                <span id="confirmModalTitleText">Confirm</span>
+            </h3>
+            <button type="button" id="confirmModalClose"
+                    class="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <p class="text-sm text-gray-600 dark:text-slate-400" id="confirmModalMessage"></p>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex justify-end gap-2 rounded-b-lg">
+            <button type="button" id="confirmModalCancel"
+                    class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                Cancel
+            </button>
+            <button type="button" id="confirmModalConfirm"
+                    class="px-4 py-2 text-white rounded-lg text-sm font-medium transition-colors">
+                Confirm
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var modal       = document.getElementById('confirmModal');
+    var titleText   = document.getElementById('confirmModalTitleText');
+    var icon        = document.getElementById('confirmModalIcon');
+    var message     = document.getElementById('confirmModalMessage');
+    var confirmBtn  = document.getElementById('confirmModalConfirm');
+    var cancelBtn   = document.getElementById('confirmModalCancel');
+    var closeBtn    = document.getElementById('confirmModalClose');
+
+    var _resolve = null;
+
+    function close(result) {
+        modal.classList.add('hidden');
+        if (_resolve) { _resolve(result); _resolve = null; }
+    }
+
+    confirmBtn.addEventListener('click', function() { close(true); });
+    cancelBtn.addEventListener('click', function() { close(false); });
+    closeBtn.addEventListener('click', function() { close(false); });
+
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) close(false);
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+            close(false);
+        }
+    });
+
+    window.confirmAction = function(opts) {
+        opts = opts || {};
+
+        titleText.textContent = opts.title || 'Confirm';
+        message.innerHTML     = opts.message || 'Are you sure?';
+
+        var iconClass = opts.icon || 'fa-exclamation-triangle text-red-500';
+        icon.className = 'fas ' + iconClass + ' mr-2';
+
+        confirmBtn.textContent = opts.confirmText || 'Confirm';
+        cancelBtn.textContent  = opts.cancelText  || 'Cancel';
+
+        var btnClass = opts.confirmClass || 'bg-red-600 hover:bg-red-700';
+        confirmBtn.className = 'px-4 py-2 text-white rounded-lg text-sm font-medium transition-colors ' + btnClass;
+
+        modal.classList.remove('hidden');
+        confirmBtn.focus();
+
+        return new Promise(function(resolve) { _resolve = resolve; });
+    };
+
+    window.confirmSubmit = function(e, msg, opts) {
+        e.preventDefault();
+        var form = e.target.closest('form') || e.target;
+        opts = opts || {};
+        opts.message = opts.message || msg;
+        confirmAction(opts).then(function(ok) {
+            if (ok) form.submit();
+        });
+        return false;
+    };
+
+    window.confirmClick = function(e, msg, opts) {
+        e.preventDefault();
+        var el = e.currentTarget || e.target.closest('a') || e.target;
+        opts = opts || {};
+        opts.message = opts.message || msg;
+        confirmAction(opts).then(function(ok) {
+            if (ok) {
+                if (el.tagName === 'A' && el.href) {
+                    window.location.href = el.href;
+                } else if (el.form) {
+                    el.form.submit();
+                }
+            }
+        });
+        return false;
+    };
+})();
+</script>

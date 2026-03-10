@@ -570,11 +570,19 @@ class TagController extends Controller
             'showing_to' => min($offset + $perPage, $total)
         ];
         
+        $users = [];
+        if (\Core\Auth::isAdmin()) {
+            $userModel = new \App\Models\User();
+            $currentUserId = \Core\Auth::id();
+            $users = array_values(array_filter($userModel->all(), fn($u) => (int)$u['id'] !== $currentUserId));
+        }
+
         $this->view('tags/view', [
             'tag' => $tag,
             'domains' => $paginatedDomains,
             'filters' => $filters,
-            'pagination' => $pagination
+            'pagination' => $pagination,
+            'users' => $users,
         ]);
     }
 
@@ -770,6 +778,12 @@ class TagController extends Controller
             return;
         }
 
+        if ($tag['user_id'] === null) {
+            $_SESSION['error'] = 'Global tags cannot be transferred';
+            $this->redirect('/tags');
+            return;
+        }
+
         $userModel = new \App\Models\User();
         $targetUser = $userModel->find($targetUserId);
         if (!$targetUser) {
@@ -778,9 +792,28 @@ class TagController extends Controller
             return;
         }
 
+        $logger = new \App\Services\Logger('transfer');
+
         if ($this->tagModel->update($tagId, ['user_id' => $targetUserId])) {
+            $domainsRemoved = $this->tagModel->removeTagFromOtherUserDomains($tagId, $targetUserId);
+
+            $logger->info('Tag transferred', [
+                'tag_id' => $tagId,
+                'tag_name' => $tag['name'],
+                'from_user_id' => $tag['user_id'],
+                'to_user_id' => $targetUserId,
+                'to_username' => $targetUser['username'],
+                'domain_associations_removed' => $domainsRemoved,
+                'admin_user_id' => \Core\Auth::id(),
+            ]);
+
             $_SESSION['success'] = "Tag '{$tag['name']}' transferred to {$targetUser['username']}";
         } else {
+            $logger->error('Tag transfer failed', [
+                'tag_id' => $tagId,
+                'to_user_id' => $targetUserId,
+                'error' => 'Model update returned false',
+            ]);
             $_SESSION['error'] = 'Failed to transfer tag. Please try again.';
         }
 
@@ -818,18 +851,50 @@ class TagController extends Controller
             return;
         }
 
+        $logger = new \App\Services\Logger('transfer');
+
         $transferred = 0;
+        $skippedGlobal = 0;
         foreach ($tagIds as $tagId) {
             $tagId = (int)$tagId;
             if ($tagId > 0) {
                 $tag = $this->tagModel->find($tagId);
+                if ($tag && $tag['user_id'] === null) {
+                    $skippedGlobal++;
+                    continue;
+                }
                 if ($tag && $this->tagModel->update($tagId, ['user_id' => $targetUserId])) {
+                    $domainsRemoved = $this->tagModel->removeTagFromOtherUserDomains($tagId, $targetUserId);
+
+                    $logger->info('Tag transferred (bulk)', [
+                        'tag_id' => $tagId,
+                        'tag_name' => $tag['name'],
+                        'from_user_id' => $tag['user_id'],
+                        'to_user_id' => $targetUserId,
+                        'to_username' => $targetUser['username'],
+                        'domain_associations_removed' => $domainsRemoved,
+                        'admin_user_id' => \Core\Auth::id(),
+                    ]);
+
                     $transferred++;
                 }
             }
         }
 
-        $_SESSION['success'] = $transferred . ' tag(s) transferred to ' . $targetUser['username'];
+        $logger->info('Bulk tag transfer completed', [
+            'transferred' => $transferred,
+            'skipped_global' => $skippedGlobal,
+            'total_requested' => count($tagIds),
+            'to_user_id' => $targetUserId,
+            'to_username' => $targetUser['username'],
+            'admin_user_id' => \Core\Auth::id(),
+        ]);
+
+        $msg = $transferred . ' tag(s) transferred to ' . $targetUser['username'];
+        if ($skippedGlobal > 0) {
+            $msg .= " ($skippedGlobal global tag(s) skipped)";
+        }
+        $_SESSION['success'] = $msg;
         $this->redirect('/tags');
     }
 }

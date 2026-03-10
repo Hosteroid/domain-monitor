@@ -1,0 +1,182 @@
+{# Shared transfer modal component.
+   Include once per page, then call:
+
+   openTransferModal({
+       title:        'Transfer Domain',
+       description:  'Transfer <strong>example.com</strong> to another user.',
+       action:       '/domains/transfer',
+       fields:       { domain_id: 123 }          // or for arrays: { 'tag_ids[]': [1,2,3] }
+       submitText:   'Transfer',                  // optional, defaults to 'Transfer'
+       users:        [...],                       // user objects with id, username, full_name/email
+       csrfToken:    '...'
+   });
+#}
+<script>
+(function() {
+    const _esc = (s) => String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    function _buildSearchableSelect(container, hiddenInput, users) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'relative';
+        wrapper.innerHTML = `
+            <div class="transfer-picker-selected hidden flex items-center justify-between px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm text-gray-900 dark:text-white cursor-pointer hover:border-primary transition-colors">
+                <span class="transfer-picker-selected-text truncate"></span>
+                <button type="button" class="transfer-picker-clear ml-2 text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 flex-shrink-0" title="Clear selection">
+                    <i class="fas fa-times text-xs"></i>
+                </button>
+            </div>
+            <div class="transfer-picker-search-wrap">
+                <div class="relative">
+                    <input type="text" class="transfer-picker-search w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white" placeholder="Search users..." autocomplete="off">
+                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-xs"></i>
+                </div>
+                <div class="transfer-picker-list mt-1 max-h-48 overflow-y-auto border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 shadow-lg"></div>
+            </div>
+        `;
+        container.appendChild(wrapper);
+
+        const searchInput = wrapper.querySelector('.transfer-picker-search');
+        const searchWrap = wrapper.querySelector('.transfer-picker-search-wrap');
+        const listEl = wrapper.querySelector('.transfer-picker-list');
+        const selectedEl = wrapper.querySelector('.transfer-picker-selected');
+        const selectedText = wrapper.querySelector('.transfer-picker-selected-text');
+        const clearBtn = wrapper.querySelector('.transfer-picker-clear');
+
+        function renderList(filter) {
+            const query = (filter || '').toLowerCase();
+            const filtered = users.filter(u => {
+                const uname = (u.username || '').toLowerCase();
+                const fname = (u.full_name || u.email || '').toLowerCase();
+                return uname.includes(query) || fname.includes(query);
+            });
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = '<div class="px-3 py-2.5 text-sm text-gray-400 dark:text-slate-500 italic">No users found</div>';
+                return;
+            }
+
+            listEl.innerHTML = filtered.map(u =>
+                `<div class="transfer-picker-item px-3 py-2.5 text-sm cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-900 dark:text-white flex items-center justify-between transition-colors" data-user-id="${u.id}">
+                    <div>
+                        <span class="font-medium">${_esc(u.username)}</span>
+                        <span class="text-gray-500 dark:text-slate-400 ml-1">(${_esc(u.full_name || u.email || 'No name')})</span>
+                    </div>
+                    <i class="fas fa-chevron-right text-xs text-gray-300 dark:text-slate-600"></i>
+                </div>`
+            ).join('');
+
+            listEl.querySelectorAll('.transfer-picker-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const userId = item.dataset.userId;
+                    const user = users.find(u => String(u.id) === userId);
+                    if (!user) return;
+                    hiddenInput.value = userId;
+                    selectedText.innerHTML = `<i class="fas fa-user mr-2 text-primary"></i><span class="font-medium">${_esc(user.username)}</span> <span class="text-gray-500 dark:text-slate-400 ml-1">(${_esc(user.full_name || user.email || 'No name')})</span>`;
+                    selectedEl.classList.remove('hidden');
+                    searchWrap.classList.add('hidden');
+                });
+            });
+        }
+
+        renderList('');
+        searchInput.addEventListener('input', () => renderList(searchInput.value));
+
+        clearBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hiddenInput.value = '';
+            selectedEl.classList.add('hidden');
+            searchWrap.classList.remove('hidden');
+            searchInput.value = '';
+            renderList('');
+            searchInput.focus();
+        });
+
+        selectedEl.addEventListener('click', (e) => {
+            if (e.target.closest('.transfer-picker-clear')) return;
+            selectedEl.classList.add('hidden');
+            searchWrap.classList.remove('hidden');
+            searchInput.focus();
+        });
+
+        setTimeout(() => searchInput.focus(), 50);
+    }
+
+    window.openTransferModal = function(opts) {
+        const users = opts.users || [];
+        if (users.length === 0) {
+            alert('No users available for transfer');
+            return;
+        }
+
+        let fieldsHtml = '';
+        if (opts.fields) {
+            Object.entries(opts.fields).forEach(([name, value]) => {
+                if (Array.isArray(value)) {
+                    value.forEach(v => {
+                        fieldsHtml += `<input type="hidden" name="${_esc(name)}" value="${_esc(v)}">`;
+                    });
+                } else {
+                    fieldsHtml += `<input type="hidden" name="${_esc(name)}" value="${_esc(value)}">`;
+                }
+            });
+        }
+
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md">
+                <form method="POST" action="${_esc(opts.action)}" onsubmit="return !!this.querySelector('input[name=target_user_id]').value">
+                    <input type="hidden" name="csrf_token" value="${_esc(opts.csrfToken)}">
+                    ${fieldsHtml}
+
+                    <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                            <i class="fas fa-exchange-alt text-primary mr-2"></i>${opts.title || 'Transfer'}
+                        </h3>
+                        <button type="button" class="transfer-modal-cancel text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div class="p-6 space-y-4">
+                        ${opts.description ? `<p class="text-sm text-gray-500 dark:text-slate-400">${opts.description}</p>` : ''}
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Transfer to User</label>
+                            <input type="hidden" name="target_user_id" value="">
+                            <div class="user-picker-mount"></div>
+                        </div>
+                    </div>
+
+                    <div class="px-6 py-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex justify-end gap-2 rounded-b-lg">
+                        <button type="button" class="transfer-modal-cancel px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                            <i class="fas fa-exchange-alt mr-1.5"></i>${_esc(opts.submitText || 'Transfer')}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        const mount = modal.querySelector('.user-picker-mount');
+        const hiddenInput = modal.querySelector('input[name="target_user_id"]');
+        _buildSearchableSelect(mount, hiddenInput, users);
+
+        modal.querySelectorAll('.transfer-modal-cancel').forEach(btn => {
+            btn.addEventListener('click', () => modal.remove());
+        });
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) modal.remove();
+        });
+        document.addEventListener('keydown', function handler(e) {
+            if (e.key === 'Escape' && document.body.contains(modal)) {
+                modal.remove();
+                document.removeEventListener('keydown', handler);
+            }
+        });
+    };
+})();
+</script>

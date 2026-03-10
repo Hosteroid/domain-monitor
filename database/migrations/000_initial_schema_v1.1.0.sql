@@ -360,6 +360,7 @@ CREATE TABLE IF NOT EXISTS dns_records (
     ttl INT NULL,
     priority INT NULL COMMENT 'MX priority',
     is_cloudflare BOOLEAN DEFAULT FALSE,
+    source ENUM('discovered','manual','imported') NOT NULL DEFAULT 'discovered',
     raw_data JSON NULL COMMENT 'Full record data from dns_get_record()',
     first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

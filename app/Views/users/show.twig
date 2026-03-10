@@ -48,12 +48,12 @@
             <form method="POST" action="/users/{{ user.id }}/toggle-status" class="inline">
                 {{ csrf_field() }}
                 {% if isActive %}
-                    <button type="submit" onclick="return confirm('Deactivate this user?')" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">
+                    <button type="submit" onclick="return confirmClick(event, 'Deactivate this user?', { title: 'Deactivate', icon: 'fa-user-slash text-orange-500', confirmClass: 'bg-orange-600 hover:bg-orange-700' })" class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-medium">
                         <i class="fas fa-user-slash mr-2"></i>
                         Deactivate
                     </button>
                 {% else %}
-                    <button type="submit" onclick="return confirm('Activate this user?')" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
+                    <button type="submit" onclick="return confirmClick(event, 'Activate this user?', { title: 'Activate', icon: 'fa-user-check text-green-500', confirmClass: 'bg-green-600 hover:bg-green-700' })" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
                         <i class="fas fa-user-check mr-2"></i>
                         Activate
                     </button>
@@ -61,7 +61,7 @@
             </form>
             <form method="POST" action="/users/{{ user.id }}/delete" class="inline">
                 {{ csrf_field() }}
-                <button type="submit" onclick="return confirm('Are you sure you want to delete this user? This action cannot be undone.')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
+                <button type="submit" onclick="return confirmClick(event, 'Are you sure you want to delete this user? This action cannot be undone.')" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
                     <i class="fas fa-trash mr-2"></i>
                     Delete
                 </button>
@@ -529,8 +529,15 @@
                                             {{ domain.statusText }}
                                         </span>
                                     </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-slate-400">
-                                        {{ domain.group_name|default('—') }}
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                        {% if domain.group_name %}
+                                            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400">
+                                                <i class="fas fa-bell mr-1"></i>
+                                                {{ domain.group_name }}
+                                            </span>
+                                        {% else %}
+                                            <span class="text-gray-400 dark:text-slate-500">No Group</span>
+                                        {% endif %}
                                     </td>
                                 </tr>
                             {% endfor %}

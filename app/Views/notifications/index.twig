@@ -310,7 +310,7 @@
                                     <i class="fas fa-check text-xs"></i>
                                 </a>
                             {% endif %}
-                            <form method="POST" action="/notifications/{{ notification.id }}/delete" class="inline" onsubmit="return confirm('Delete this notification?')">
+                            <form method="POST" action="/notifications/{{ notification.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this notification?')">
                                 {{ csrf_field() }}
                                 <button type="submit" class="w-7 h-7 flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded transition-colors" title="Delete">
                                     <i class="fas fa-times text-xs"></i>
@@ -407,16 +407,14 @@
 </form>
 
 <script>
-function markAllAsRead() {
-    if (confirm('Mark all notifications as read?')) {
-        window.location.href = '/notifications/mark-all-read';
-    }
+async function markAllAsRead() {
+    var ok = await confirmAction({ message: 'Mark all notifications as read?', title: 'Mark All Read', icon: 'fa-check-double text-primary', confirmText: 'Mark Read', confirmClass: 'bg-primary hover:bg-primary-dark' });
+    if (ok) window.location.href = '/notifications/mark-all-read';
 }
 
-function clearAll() {
-    if (confirm('Clear all notifications? This action cannot be undone.')) {
-        document.getElementById('clearAllForm').submit();
-    }
+async function clearAll() {
+    var ok = await confirmAction({ message: 'Clear all notifications? This action cannot be undone.' });
+    if (ok) document.getElementById('clearAllForm').submit();
 }
 </script>
 {% endblock %}

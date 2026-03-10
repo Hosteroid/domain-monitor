@@ -396,7 +396,7 @@ function getSelectedUserIds() {
     return Array.from(checkboxes).map(cb => cb.value);
 }
 
-function bulkToggleStatus(action) {
+async function bulkToggleStatus(action) {
     const userIds = getSelectedUserIds();
 
     if (userIds.length === 0) {
@@ -405,9 +405,8 @@ function bulkToggleStatus(action) {
     }
 
     const actionText = action === 'active' ? 'activate' : 'deactivate';
-    if (!confirm(`Are you sure you want to ${actionText} ${userIds.length} user(s)?`)) {
-        return;
-    }
+    var ok = await confirmAction({ message: 'Are you sure you want to ' + actionText + ' ' + userIds.length + ' user(s)?', title: actionText.charAt(0).toUpperCase() + actionText.slice(1) + ' Users', icon: action === 'active' ? 'fa-user-check text-green-500' : 'fa-user-slash text-orange-500' });
+    if (!ok) return;
 
     const form = document.createElement('form');
     form.method = 'POST';
@@ -450,10 +449,9 @@ function toggleUserStatus(userId) {
     form.submit();
 }
 
-function deleteUser(userId) {
-    if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
-        return;
-    }
+async function deleteUser(userId) {
+    var ok = await confirmAction({ message: 'Are you sure you want to delete this user? This action cannot be undone.' });
+    if (!ok) return;
 
     const form = document.createElement('form');
     form.method = 'POST';
@@ -469,7 +467,7 @@ function deleteUser(userId) {
     form.submit();
 }
 
-function bulkDeleteUsers() {
+async function bulkDeleteUsers() {
     const userIds = getSelectedUserIds();
 
     if (userIds.length === 0) {
@@ -477,9 +475,8 @@ function bulkDeleteUsers() {
         return;
     }
 
-    if (!confirm(`Are you sure you want to delete ${userIds.length} user(s)? This action cannot be undone.`)) {
-        return;
-    }
+    var ok = await confirmAction({ message: 'Are you sure you want to delete ' + userIds.length + ' user(s)? This action cannot be undone.' });
+    if (!ok) return;
 
     const form = document.createElement('form');
     form.method = 'POST';

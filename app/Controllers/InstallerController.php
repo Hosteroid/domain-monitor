@@ -59,8 +59,9 @@ class InstallerController extends Controller
             '026_update_app_version_v1.1.4.sql',
             '027_add_dns_monitoring.sql',
             '028_add_ssl_monitoring.sql',
+            '029_add_dns_record_source.sql',
         ];
-        
+
         try {
             $pdo = \Core\Database::getConnection();
             
@@ -204,9 +205,10 @@ class InstallerController extends Controller
                     '026_update_app_version_v1.1.4.sql',
                     '027_add_dns_monitoring.sql',
                     '028_add_ssl_monitoring.sql',
+                    '029_add_dns_record_source.sql',
                 ];
             }
-            
+
             // If no migrations executed and no data - fresh install (use consolidated)
             if (empty($executed)) {
                 return $freshInstallMigration;
@@ -429,8 +431,9 @@ class InstallerController extends Controller
                     '026_update_app_version_v1.1.4.sql',
                     '027_add_dns_monitoring.sql',
                     '028_add_ssl_monitoring.sql',
+                    '029_add_dns_record_source.sql',
                 ];
-                
+
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");
                 foreach ($allIndividualMigrations as $migration) {
                     try {
@@ -664,7 +667,7 @@ class InstallerController extends Controller
                     
                     // Fallback: detect "to" version from which migrations were run
                     if ($toVersion === $fromVersion) {
-                        if (in_array('028_add_ssl_monitoring.sql', $executed)) {
+                        if (in_array('029_add_dns_record_source.sql', $executed)) {
                             $toVersion = '1.1.5';
                         } elseif (in_array('026_update_app_version_v1.1.4.sql', $executed)) {
                             $toVersion = '1.1.4';

@@ -52,10 +52,11 @@ class DiscordChannel implements NotificationChannelInterface
 
     private function createEmbed(string $message, array $data): array
     {
+        $title = $data['subject'] ?? '🔔 Domain Monitor Alert';
         $color = $this->getColorByDaysLeft($data['days_left'] ?? null);
 
         $embed = [
-            'title' => '🔔 Domain Expiration Alert',
+            'title' => $title,
             'description' => $message,
             'color' => $color,
             'timestamp' => date('c'),
@@ -65,23 +66,22 @@ class DiscordChannel implements NotificationChannelInterface
         ];
 
         if (isset($data['domain'])) {
-            $embed['fields'] = [
-                [
-                    'name' => 'Domain',
-                    'value' => $data['domain'],
-                    'inline' => true
-                ],
-                [
-                    'name' => 'Days Left',
-                    'value' => (string) ($data['days_left'] ?? 'N/A'),
-                    'inline' => true
-                ],
-                [
-                    'name' => 'Expiration Date',
-                    'value' => $data['expiration_date'] ?? 'N/A',
-                    'inline' => true
-                ]
+            $fields = [
+                ['name' => 'Domain', 'value' => $data['domain'], 'inline' => true]
             ];
+
+            // Only add expiration fields for domain expiration alerts
+            if (array_key_exists('days_left', $data) || array_key_exists('expiration_date', $data)) {
+                $fields[] = ['name' => 'Days Left', 'value' => (string) ($data['days_left'] ?? 'N/A'), 'inline' => true];
+                $fields[] = ['name' => 'Expiration Date', 'value' => $data['expiration_date'] ?? 'N/A', 'inline' => true];
+            } elseif (isset($data['hostname']) && $data['hostname'] !== $data['domain']) {
+                $fields[] = ['name' => 'Hostname', 'value' => $data['hostname'], 'inline' => true];
+            }
+            if (isset($data['new_status'])) {
+                $fields[] = ['name' => 'Status', 'value' => $data['new_status'], 'inline' => true];
+            }
+
+            $embed['fields'] = $fields;
         }
 
         return $embed;

@@ -312,16 +312,20 @@ class DomainController extends Controller
         $skipped = 0;
         $errors = [];
 
+        $invalidImported = 0;
+
         foreach ($domainsData as $row) {
-            $domainName = strtolower(trim($row['domain_name'] ?? ''));
+            $domainName = trim($row['domain_name'] ?? '');
             if (empty($domainName)) {
                 continue;
             }
 
-            // Remove protocol/www
-            $domainName = preg_replace('#^https?://#', '', $domainName);
-            $domainName = preg_replace('#^www\.#', '', $domainName);
-            $domainName = rtrim($domainName, '/');
+            $domainCheck = \App\Helpers\InputValidator::validateRootDomain($domainName);
+            if (!$domainCheck['valid']) {
+                $invalidImported++;
+                continue;
+            }
+            $domainName = $domainCheck['domain'];
 
             if ($this->domainModel->existsByDomain($domainName)) {
                 $skipped++;
@@ -394,6 +398,7 @@ class DomainController extends Controller
 
         $msg = "{$added} domain(s) imported successfully";
         if ($skipped > 0) $msg .= ", {$skipped} skipped (already exist)";
+        if ($invalidImported > 0) $msg .= ", {$invalidImported} rejected (not root domains)";
         if (!empty($errors)) $msg .= ", " . count($errors) . " failed";
         $_SESSION['success'] = $msg;
         $this->redirect('/domains');
@@ -437,24 +442,19 @@ class DomainController extends Controller
         // CSRF Protection
         $this->verifyCsrf('/domains/create');
 
-        $domainName = trim($_POST['domain_name'] ?? '');
+        $domainName = \App\Helpers\InputValidator::sanitizeDomainInput(trim($_POST['domain_name'] ?? ''));
         $groupId = !empty($_POST['notification_group_id']) ? (int)$_POST['notification_group_id'] : null;
         $tagsInput = trim($_POST['tags'] ?? '');
         $userId = \Core\Auth::id();
 
-        // Validate
-        if (empty($domainName)) {
-            $_SESSION['error'] = 'Domain name is required';
+        // Validate root domain (not a subdomain, respects multi-level TLDs)
+        $domainCheck = \App\Helpers\InputValidator::validateRootDomain($domainName);
+        if (!$domainCheck['valid']) {
+            $_SESSION['error'] = $domainCheck['error'];
             $this->redirect('/domains/create');
             return;
         }
-
-        // Validate domain format
-        if (!\App\Helpers\InputValidator::validateDomain($domainName)) {
-            $_SESSION['error'] = 'Invalid domain name format (e.g., example.com)';
-            $this->redirect('/domains/create');
-            return;
-        }
+        $domainName = $domainCheck['domain'];
 
         // Validate tags
         $tagValidation = \App\Helpers\InputValidator::validateTags($tagsInput);
@@ -799,9 +799,8 @@ class DomainController extends Controller
         $dnsService = new \App\Services\DnsService();
         $dnsModel = new \App\Models\DnsRecord();
 
-        // Feed previously known hosts so manual refresh doesn't lose crt.sh-discovered subdomains
         $existingHosts = $dnsModel->getDistinctHosts($id);
-        $records = $dnsService->lookup($domain['domain_name'], $existingHosts);
+        $records = $dnsService->refreshExisting($domain['domain_name'], $existingHosts);
         $totalRecords = array_sum(array_map('count', $records));
 
         if ($totalRecords === 0) {
@@ -811,30 +810,7 @@ class DomainController extends Controller
             return 'DNS: no records found';
         }
 
-        // Enrich A/AAAA records with IP details (PTR, ASN, geo) and store in raw_data
-        $ips = [];
-        foreach (['A', 'AAAA'] as $type) {
-            if (!empty($records[$type])) {
-                foreach ($records[$type] as $r) {
-                    if (!empty($r['value'])) {
-                        $ips[] = $r['value'];
-                    }
-                }
-            }
-        }
-        if (!empty($ips)) {
-            $ipDetails = $dnsService->lookupIpDetails($ips);
-            foreach (['A', 'AAAA'] as $type) {
-                if (!empty($records[$type])) {
-                    foreach ($records[$type] as &$rec) {
-                        if (!empty($rec['value']) && isset($ipDetails[$rec['value']])) {
-                            $rec['raw']['_ip_info'] = $ipDetails[$rec['value']];
-                        }
-                    }
-                    unset($rec);
-                }
-            }
-        }
+        $this->enrichIpDetails($records, $dnsService);
 
         $stats = $dnsModel->saveSnapshot($id, $records);
         $this->domainModel->update($id, ['dns_last_checked' => date('Y-m-d H:i:s')]);
@@ -1409,8 +1385,20 @@ class DomainController extends Controller
             }
         }
 
-        // Split by new lines and clean
-        $domainNames = array_filter(array_map('trim', explode("\n", $domainsText)));
+        // Split by new lines, sanitize each, and filter empties
+        $rawLines = array_filter(array_map('trim', explode("\n", $domainsText)));
+        $domainNames = [];
+        $invalidDomains = [];
+        foreach ($rawLines as $line) {
+            $cleaned = \App\Helpers\InputValidator::sanitizeDomainInput($line);
+            if (empty($cleaned)) continue;
+            $check = \App\Helpers\InputValidator::validateRootDomain($cleaned);
+            if (!$check['valid']) {
+                $invalidDomains[] = $cleaned;
+                continue;
+            }
+            $domainNames[] = $check['domain'];
+        }
         
         $added = 0;
         $skipped = 0;
@@ -1423,6 +1411,7 @@ class DomainController extends Controller
         $logger->info('Bulk domain add started', [
             'user_id' => $userId,
             'domain_count' => count($domainNames),
+            'invalid_count' => count($invalidDomains),
             'notification_group_id' => $groupId,
             'tags' => $tags
         ]);
@@ -1497,6 +1486,7 @@ class DomainController extends Controller
 
         $message = "Added $added domain(s)";
         if ($skipped > 0) $message .= ", skipped $skipped duplicate(s)";
+        if (count($invalidDomains) > 0) $message .= ", " . count($invalidDomains) . " rejected (not root domains)";
         if (count($errors) > 0) $message .= ", failed to add " . count($errors) . " domain(s)";
 
         if ($availableCount > 0) {
@@ -2048,12 +2038,42 @@ class DomainController extends Controller
             return;
         }
 
+        $logger = new \App\Services\Logger('transfer');
+
         try {
-            // Transfer domain
             $this->domainModel->update($domainId, ['user_id' => $targetUserId]);
+
+            $groupUnlinked = false;
+            if (!empty($domain['notification_group_id'])) {
+                $groupModel = new \App\Models\NotificationGroup();
+                $group = $groupModel->find($domain['notification_group_id']);
+                if ($group && $group['user_id'] != $targetUserId) {
+                    $this->domainModel->update($domainId, ['notification_group_id' => null]);
+                    $groupUnlinked = true;
+                }
+            }
+
+            $tagModel = new \App\Models\Tag();
+            $tagsRemoved = $tagModel->removeOtherUserTagsFromDomain($domainId, $targetUserId);
+
+            $logger->info('Domain transferred', [
+                'domain_id' => $domainId,
+                'domain_name' => $domain['domain_name'],
+                'from_user_id' => $domain['user_id'],
+                'to_user_id' => $targetUserId,
+                'to_username' => $targetUser['username'],
+                'group_unlinked' => $groupUnlinked,
+                'tags_removed' => $tagsRemoved,
+                'admin_user_id' => \Core\Auth::id(),
+            ]);
             
             $_SESSION['success'] = "Domain '{$domain['domain_name']}' transferred to {$targetUser['username']}";
         } catch (\Exception $e) {
+            $logger->error('Domain transfer failed', [
+                'domain_id' => $domainId,
+                'to_user_id' => $targetUserId,
+                'error' => $e->getMessage(),
+            ]);
             $_SESSION['error'] = 'Failed to transfer domain. Please try again.';
         }
 
@@ -2092,18 +2112,58 @@ class DomainController extends Controller
             return;
         }
 
+        $groupModel = new \App\Models\NotificationGroup();
+        $tagModel = new \App\Models\Tag();
+        $logger = new \App\Services\Logger('transfer');
+
         $transferred = 0;
         foreach ($domainIds as $domainId) {
             $domainId = (int)$domainId;
             if ($domainId > 0) {
                 try {
+                    $domain = $this->domainModel->find($domainId);
                     $this->domainModel->update($domainId, ['user_id' => $targetUserId]);
+
+                    $groupUnlinked = false;
+                    if ($domain && !empty($domain['notification_group_id'])) {
+                        $group = $groupModel->find($domain['notification_group_id']);
+                        if ($group && $group['user_id'] != $targetUserId) {
+                            $this->domainModel->update($domainId, ['notification_group_id' => null]);
+                            $groupUnlinked = true;
+                        }
+                    }
+
+                    $tagsRemoved = $tagModel->removeOtherUserTagsFromDomain($domainId, $targetUserId);
+
+                    $logger->info('Domain transferred (bulk)', [
+                        'domain_id' => $domainId,
+                        'domain_name' => $domain['domain_name'] ?? 'unknown',
+                        'from_user_id' => $domain['user_id'] ?? null,
+                        'to_user_id' => $targetUserId,
+                        'to_username' => $targetUser['username'],
+                        'group_unlinked' => $groupUnlinked,
+                        'tags_removed' => $tagsRemoved,
+                        'admin_user_id' => \Core\Auth::id(),
+                    ]);
+
                     $transferred++;
                 } catch (\Exception $e) {
-                    // Continue with other domains
+                    $logger->error('Domain transfer failed (bulk)', [
+                        'domain_id' => $domainId,
+                        'to_user_id' => $targetUserId,
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
         }
+
+        $logger->info('Bulk domain transfer completed', [
+            'transferred' => $transferred,
+            'total_requested' => count($domainIds),
+            'to_user_id' => $targetUserId,
+            'to_username' => $targetUser['username'],
+            'admin_user_id' => \Core\Auth::id(),
+        ]);
 
         $_SESSION['success'] = "$transferred domain(s) transferred to {$targetUser['username']}";
         $this->redirect('/domains');
@@ -2140,6 +2200,295 @@ class DomainController extends Controller
         }
 
         $this->redirectBackToDomain($id, '#dns');
+    }
+
+    /**
+     * Discover DNS records via Quick Scan (synchronous) or Deep Scan (background).
+     */
+    public function discoverDns($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $logger = new \App\Services\Logger('dns');
+        $mode = $_POST['mode'] ?? 'quick';
+
+        if ($mode === 'deep') {
+            $domainName = escapeshellarg($domain['domain_name']);
+            $scriptPath = realpath(__DIR__ . '/../../cron/discover_dns.php');
+
+            if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+                $cmd = "start /b php " . escapeshellarg($scriptPath) . " --domain $domainName";
+            } else {
+                $cmd = "nohup php " . escapeshellarg($scriptPath) . " --domain $domainName > /dev/null 2>&1 &";
+            }
+            exec($cmd);
+
+            $logger->info('Deep DNS scan started (background)', [
+                'domain_name' => $domain['domain_name'],
+            ]);
+            $_SESSION['info'] = 'Deep scan started in background. New records will appear when discovery completes — refresh the page to see them.';
+        } else {
+            $dnsService = new \App\Services\DnsService();
+            $dnsModel = new \App\Models\DnsRecord();
+
+            $records = $dnsService->quickScan($domain['domain_name']);
+            $totalRecords = array_sum(array_map('count', $records));
+
+            $this->enrichIpDetails($records, $dnsService);
+
+            $stats = $dnsModel->saveSnapshot($id, $records);
+            $this->domainModel->update($id, ['dns_last_checked' => date('Y-m-d H:i:s')]);
+
+            $logger->info('Quick DNS scan completed', [
+                'domain_name' => $domain['domain_name'],
+                'total'       => $totalRecords,
+                'added'       => $stats['added'],
+            ]);
+            $_SESSION['success'] = "Quick scan complete: {$totalRecords} records found";
+        }
+
+        $this->redirectBackToDomain($id, '#dns');
+    }
+
+    /**
+     * Add a single DNS record manually.
+     */
+    public function addDnsRecord($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $logger = new \App\Services\Logger('dns');
+        $dnsModel = new \App\Models\DnsRecord();
+
+        $type     = strtoupper(trim($_POST['record_type'] ?? ''));
+        $host     = trim($_POST['host'] ?? '@');
+        $value    = trim($_POST['value'] ?? '');
+        $ttl      = !empty($_POST['ttl']) ? (int)$_POST['ttl'] : 3600;
+        $priority = !empty($_POST['priority']) ? (int)$_POST['priority'] : null;
+
+        $validTypes = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'SRV', 'CAA'];
+        if (!in_array($type, $validTypes) || $value === '') {
+            $_SESSION['error'] = 'Invalid record type or missing value';
+            $this->redirectBackToDomain($id, '#dns');
+            return;
+        }
+
+        $dnsModel->addManualRecord($id, $type, $host, $value, $ttl, $priority);
+
+        $logger->info('Manual DNS record added', [
+            'domain_name' => $domain['domain_name'],
+            'type'        => $type,
+            'host'        => $host,
+            'value'       => $value,
+        ]);
+
+        $_SESSION['success'] = "DNS record added: {$type} {$host}";
+        $this->redirectBackToDomain($id, '#dns');
+    }
+
+    /**
+     * Delete a single DNS record.
+     */
+    public function deleteDnsRecord($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $recordId = (int)($params['recordId'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $logger = new \App\Services\Logger('dns');
+        $dnsModel = new \App\Models\DnsRecord();
+
+        if ($dnsModel->deleteRecord($recordId, $id)) {
+            $logger->info('DNS record deleted', [
+                'domain_name' => $domain['domain_name'],
+                'record_id'   => $recordId,
+            ]);
+            $_SESSION['success'] = 'DNS record deleted';
+        } else {
+            $_SESSION['error'] = 'DNS record not found';
+        }
+
+        $this->redirectBackToDomain($id, '#dns');
+    }
+
+    /**
+     * Bulk delete DNS records.
+     */
+    public function bulkDeleteDnsRecords($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $logger = new \App\Services\Logger('dns');
+        $dnsModel = new \App\Models\DnsRecord();
+
+        $ids = $_POST['record_ids'] ?? [];
+        if (!is_array($ids)) {
+            $ids = [];
+        }
+        $ids = array_map('intval', $ids);
+
+        $count = $dnsModel->bulkDeleteRecords($ids, $id);
+
+        $logger->info('Bulk DNS records deleted', [
+            'domain_name' => $domain['domain_name'],
+            'count'       => $count,
+        ]);
+
+        $_SESSION['success'] = "Deleted {$count} DNS record(s)";
+        $this->redirectBackToDomain($id, '#dns');
+    }
+
+    /**
+     * Import DNS records from a BIND zone file.
+     */
+    public function importDnsZone($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
+        $id = (int)($params['id'] ?? 0);
+        $domain = $this->checkDomainAccess($id);
+
+        if (!$domain) {
+            $_SESSION['error'] = 'Domain not found';
+            $this->redirect('/domains');
+            return;
+        }
+
+        $logger = new \App\Services\Logger('dns');
+        $dnsService = new \App\Services\DnsService();
+        $dnsModel = new \App\Models\DnsRecord();
+
+        $content = '';
+        if (!empty($_FILES['zone_file']['tmp_name'])) {
+            $content = file_get_contents($_FILES['zone_file']['tmp_name']);
+        } elseif (!empty($_POST['zone_content'])) {
+            $content = $_POST['zone_content'];
+        }
+
+        if (trim($content) === '') {
+            $_SESSION['error'] = 'No zone file content provided';
+            $this->redirectBackToDomain($id, '#dns');
+            return;
+        }
+
+        try {
+            $parsed = $dnsService->parseBindZone($content, $domain['domain_name']);
+            $totalParsed = array_sum(array_map('count', $parsed));
+
+            if ($totalParsed === 0) {
+                $_SESSION['error'] = 'No valid DNS records found in zone file';
+                $this->redirectBackToDomain($id, '#dns');
+                return;
+            }
+
+            $count = $dnsModel->addImportedRecords($id, $parsed);
+
+            $logger->info('DNS zone file imported', [
+                'domain_name' => $domain['domain_name'],
+                'parsed'      => $totalParsed,
+                'imported'    => $count,
+            ]);
+
+            $_SESSION['success'] = "Imported {$count} DNS records from zone file";
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to parse zone file: ' . $e->getMessage();
+            $logger->error('DNS zone import failed', [
+                'domain_name' => $domain['domain_name'],
+                'error'       => $e->getMessage(),
+            ]);
+        }
+
+        $this->redirectBackToDomain($id, '#dns');
+    }
+
+    /**
+     * Enrich A/AAAA records in-place with IP metadata (PTR, ASN, geo).
+     */
+    private function enrichIpDetails(array &$records, \App\Services\DnsService $dnsService): void
+    {
+        $ips = [];
+        foreach (['A', 'AAAA'] as $type) {
+            if (!empty($records[$type])) {
+                foreach ($records[$type] as $r) {
+                    if (!empty($r['value'])) {
+                        $ips[] = $r['value'];
+                    }
+                }
+            }
+        }
+        if (!empty($ips)) {
+            $ipDetails = $dnsService->lookupIpDetails($ips);
+            foreach (['A', 'AAAA'] as $type) {
+                if (!empty($records[$type])) {
+                    foreach ($records[$type] as &$rec) {
+                        if (!empty($rec['value']) && isset($ipDetails[$rec['value']])) {
+                            $rec['raw']['_ip_info'] = $ipDetails[$rec['value']];
+                        }
+                    }
+                    unset($rec);
+                }
+            }
+        }
     }
 
     /**

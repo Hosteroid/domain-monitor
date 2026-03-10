@@ -93,25 +93,27 @@
                 </div>
 
                 <div>
-                    <label for="app_timezone" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                         Timezone
                     </label>
-                    <select id="app_timezone" name="app_timezone" required
-                            class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
-                        {% for tz, label in popularTimezones %}
-                            <option value="{{ tz }}" {{ appSettings.app_timezone == tz ? 'selected' : '' }}>
-                                {{ label }}
-                            </option>
-                        {% endfor %}
-                        <option disabled>──────────</option>
-                        {% for tz in allTimezones %}
-                            {% if tz not in popularTimezones|keys %}
-                            <option value="{{ tz }}" {{ appSettings.app_timezone == tz ? 'selected' : '' }}>
-                                {{ tz }}
-                            </option>
-                            {% endif %}
-                        {% endfor %}
-                    </select>
+                    <input type="hidden" id="app_timezone" name="app_timezone" value="{{ appSettings.app_timezone }}" required>
+                    <div id="tz-picker" class="relative">
+                        <div id="tz-selected" class="flex items-center justify-between px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-sm text-gray-900 dark:text-white cursor-pointer hover:border-primary">
+                            <span id="tz-selected-text">
+                                <i class="fas fa-globe mr-2 text-primary"></i>{{ popularTimezones[appSettings.app_timezone] is defined ? popularTimezones[appSettings.app_timezone] : appSettings.app_timezone|default('UTC') }}
+                            </span>
+                            <i class="fas fa-chevron-down text-xs text-gray-400 dark:text-slate-500"></i>
+                        </div>
+                        <div id="tz-dropdown" class="hidden absolute z-20 left-0 right-0 mt-1 border border-gray-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 shadow-lg">
+                            <div class="p-2 border-b border-gray-200 dark:border-slate-600">
+                                <div class="relative">
+                                    <input type="text" id="tz-search" class="w-full pl-9 pr-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white" placeholder="Search timezones..." autocomplete="off">
+                                    <i class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-slate-500 text-xs"></i>
+                                </div>
+                            </div>
+                            <div id="tz-list" class="max-h-64 overflow-y-auto"></div>
+                        </div>
+                    </div>
                     <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Application timezone for dates and times</p>
                 </div>
 
@@ -970,7 +972,7 @@
                     </div>
                 </div>
 
-                <form method="POST" action="/settings/clear-logs" onsubmit="return confirm('Are you sure you want to clear logs older than 30 days? This action cannot be undone.')">
+                <form method="POST" action="/settings/clear-logs" onsubmit="return confirmSubmit(event, 'Are you sure you want to clear logs older than 30 days? This action cannot be undone.')">
                     {{ csrf_field() }}
                     <button type="submit" class="inline-flex items-center px-4 py-2.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
                         <i class="fas fa-trash-alt mr-2"></i>
@@ -1168,7 +1170,7 @@
             </div>
 
             <form method="POST" action="/settings/updates/rollback" class="mt-4"
-                  onsubmit="return confirm('Are you sure you want to rollback? This will restore files to the previous version.')">
+                  onsubmit="return confirmSubmit(event, 'Are you sure you want to rollback? This will restore files to the previous version.')">
                 {{ csrf_field() }}
                 <button type="submit" class="inline-flex items-center px-4 py-2.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
                     <i class="fas fa-undo mr-2"></i>
@@ -1449,13 +1451,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (footerEl) {
             footerEl.className = 'px-4 py-3 flex-shrink-0 border-t rounded-b-xl ' + (isRelease ? 'bg-blue-100 dark:bg-blue-500/20 border-blue-200 dark:border-blue-500/20' : 'bg-amber-100 dark:bg-amber-500/20 border-amber-200 dark:border-amber-500/20');
             if (isRelease) {
-                footerEl.innerHTML = '<form method="POST" action="/settings/updates/apply" onsubmit="return confirm(\'Apply update to v' + escapeHtml(data.latest_version || '') + '? A backup will be created before updating.\')">' +
+                footerEl.innerHTML = '<form method="POST" action="/settings/updates/apply" onsubmit="return confirmSubmit(event, \'Apply update to v' + escapeHtml(data.latest_version || '') + '? A backup will be created before updating.\', { title: \'Update\', icon: \'fa-download text-blue-500\', confirmText: \'Update\', confirmClass: \'bg-blue-600 hover:bg-blue-700\' })">' +
                     (csrf ? '<input type="hidden" name="csrf_token" value="' + escapeHtml(csrf) + '">' : '') +
                     '<input type="hidden" name="update_type" value="release">' +
                     '<button type="submit" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium"><i class="fas fa-download mr-2"></i> Update to v' + escapeHtml(data.latest_version || '') + '</button>' +
                     '</form>';
             } else {
-                footerEl.innerHTML = '<form method="POST" action="/settings/updates/apply" onsubmit="return confirm(\'Apply hotfix? This will update your files to the latest main branch. A backup will be created first.\')">' +
+                footerEl.innerHTML = '<form method="POST" action="/settings/updates/apply" onsubmit="return confirmSubmit(event, \'Apply hotfix? This will update your files to the latest main branch. A backup will be created first.\', { title: \'Apply Hotfix\', icon: \'fa-download text-amber-500\', confirmText: \'Apply Hotfix\', confirmClass: \'bg-amber-600 hover:bg-amber-700\' })">' +
                     (csrf ? '<input type="hidden" name="csrf_token" value="' + escapeHtml(csrf) + '">' : '') +
                     '<input type="hidden" name="update_type" value="hotfix">' +
                     '<button type="submit" class="inline-flex items-center px-4 py-2 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition-colors font-medium"><i class="fas fa-download mr-2"></i> Apply Hotfix</button>' +
@@ -1591,5 +1593,99 @@ document.addEventListener('DOMContentLoaded', function() {
         updateCaptchaUI();
     }
 });
+
+(function() {
+    const popularTimezones = {{ popularTimezones|json_encode|raw }};
+    const allTimezones = {{ allTimezones|json_encode|raw }};
+
+    const hiddenInput = document.getElementById('app_timezone');
+    const selectedEl = document.getElementById('tz-selected');
+    const selectedText = document.getElementById('tz-selected-text');
+    const dropdown = document.getElementById('tz-dropdown');
+    const searchInput = document.getElementById('tz-search');
+    const listEl = document.getElementById('tz-list');
+
+    const popularKeys = Object.keys(popularTimezones);
+    const otherTimezones = allTimezones.filter(tz => !popularKeys.includes(tz));
+
+    const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    function renderList(filter) {
+        const query = (filter || '').toLowerCase();
+
+        const matchPopular = popularKeys.filter(tz => {
+            const label = (popularTimezones[tz] || '').toLowerCase();
+            return tz.toLowerCase().includes(query) || label.includes(query);
+        });
+
+        const matchOther = otherTimezones.filter(tz => tz.toLowerCase().includes(query));
+
+        if (matchPopular.length === 0 && matchOther.length === 0) {
+            listEl.innerHTML = '<div class="px-3 py-2 text-sm text-gray-400 dark:text-slate-500 italic">No timezones found</div>';
+            return;
+        }
+
+        let html = '';
+
+        if (matchPopular.length > 0) {
+            html += '<div class="px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider bg-gray-50 dark:bg-slate-800">Popular</div>';
+            html += matchPopular.map(tz =>
+                `<div class="tz-item px-3 py-2 text-sm cursor-pointer hover:bg-primary/10 dark:hover:bg-primary/20 text-gray-900 dark:text-white flex items-center justify-between${hiddenInput.value === tz ? ' bg-primary/5 dark:bg-primary/10' : ''}" data-tz="${esc(tz)}">
+                    <span>${esc(popularTimezones[tz])}</span>
+                    ${hiddenInput.value === tz ? '<i class="fas fa-check text-primary text-xs"></i>' : ''}
+                </div>`
+            ).join('');
+        }
+
+        if (matchOther.length > 0) {
+            html += '<div class="px-3 py-1.5 text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wider bg-gray-50 dark:bg-slate-800 border-t border-gray-200 dark:border-slate-600">All Timezones</div>';
+            const capped = matchOther.slice(0, 50);
+            html += capped.map(tz =>
+                `<div class="tz-item px-3 py-2 text-sm cursor-pointer hover:bg-primary/10 dark:hover:bg-primary/20 text-gray-900 dark:text-white flex items-center justify-between${hiddenInput.value === tz ? ' bg-primary/5 dark:bg-primary/10' : ''}" data-tz="${esc(tz)}">
+                    <span>${esc(tz)}</span>
+                    ${hiddenInput.value === tz ? '<i class="fas fa-check text-primary text-xs"></i>' : ''}
+                </div>`
+            ).join('');
+            if (matchOther.length > 50) {
+                html += '<div class="px-3 py-2 text-xs text-gray-400 dark:text-slate-500 italic">Type to narrow down ' + (matchOther.length - 50) + ' more...</div>';
+            }
+        }
+
+        listEl.innerHTML = html;
+
+        listEl.querySelectorAll('.tz-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const tz = item.dataset.tz;
+                hiddenInput.value = tz;
+                const label = popularTimezones[tz] || tz;
+                selectedText.innerHTML = '<i class="fas fa-globe mr-2 text-primary"></i>' + esc(label);
+                dropdown.classList.add('hidden');
+                searchInput.value = '';
+            });
+        });
+    }
+
+    selectedEl.addEventListener('click', () => {
+        dropdown.classList.toggle('hidden');
+        if (!dropdown.classList.contains('hidden')) {
+            renderList('');
+            setTimeout(() => searchInput.focus(), 50);
+        }
+    });
+
+    searchInput.addEventListener('input', () => renderList(searchInput.value));
+
+    document.addEventListener('click', (e) => {
+        if (!document.getElementById('tz-picker').contains(e.target)) {
+            dropdown.classList.add('hidden');
+        }
+    });
+
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            dropdown.classList.add('hidden');
+        }
+    });
+})();
 </script>
 {% endblock %}

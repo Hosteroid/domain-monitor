@@ -105,7 +105,7 @@ class WebhookChannel implements NotificationChannelInterface
     private function buildGenericPayload(string $message, array $data): array
     {
         return [
-            'event' => 'domain_expiration_alert',
+            'event' => 'domain_monitor_alert',
             'message' => $message,
             'data' => $data,
             'sent_at' => date('c')

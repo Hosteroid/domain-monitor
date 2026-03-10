@@ -89,16 +89,17 @@ class DomainHelper
     
     /**
      * Get CSS class for expiry date styling
+     * Includes dark: variants for visibility on dark theme
      */
     private static function getExpiryClass(?int $daysLeft): string
     {
         if ($daysLeft === null) return '';
         
-        if ($daysLeft < 0) return 'text-red-600 font-semibold';
-        if ($daysLeft <= 30) return 'text-orange-600 font-semibold';
-        if ($daysLeft <= 90) return 'text-yellow-600';
+        if ($daysLeft < 0) return 'text-red-600 dark:text-red-400 font-semibold';
+        if ($daysLeft <= 30) return 'text-orange-600 dark:text-orange-400 font-semibold';
+        if ($daysLeft <= 90) return 'text-yellow-600 dark:text-yellow-400';
         
-        return '';
+        return 'text-gray-600 dark:text-slate-400';
     }
     
     /**

@@ -23,6 +23,7 @@ use App\Models\User;
 use App\Services\WhoisService;
 use App\Services\NotificationService;
 use App\Services\UpdateService;
+use App\Helpers\CronHelper;
 use Core\Database;
 
 // Load environment variables
@@ -56,27 +57,11 @@ try {
 
 // Log file
 $logFile = __DIR__ . '/../logs/cron.log';
+$cron = new CronHelper($logFile);
 
-function logMessage(string $message) {
-    global $logFile;
-    $timestamp = date('Y-m-d H:i:s');
-    file_put_contents($logFile, "[$timestamp] $message\n", FILE_APPEND);
-    echo "[$timestamp] $message\n";
-}
-
-function formatElapsedTime(float $seconds): string {
-    if ($seconds < 60) {
-        return sprintf("%.2f seconds", $seconds);
-    } elseif ($seconds < 3600) {
-        $minutes = floor($seconds / 60);
-        $remainingSeconds = $seconds - ($minutes * 60);
-        return sprintf("%d minute%s %.2f seconds", $minutes, $minutes != 1 ? 's' : '', $remainingSeconds);
-    } else {
-        $hours = floor($seconds / 3600);
-        $remainingMinutes = floor(($seconds - ($hours * 3600)) / 60);
-        $remainingSeconds = $seconds - ($hours * 3600) - ($remainingMinutes * 60);
-        return sprintf("%d hour%s %d minute%s %.2f seconds", $hours, $hours != 1 ? 's' : '', $remainingMinutes, $remainingMinutes != 1 ? 's' : '', $remainingSeconds);
-    }
+function logMessage(string $message): void {
+    global $cron;
+    $cron->log($message);
 }
 
 // Record start time
@@ -806,7 +791,7 @@ $settingModel->updateLastCheckRun();
 // Calculate elapsed time
 $endTime = microtime(true);
 $elapsedTime = $endTime - $startTime;
-$formattedTime = formatElapsedTime($elapsedTime);
+$formattedTime = CronHelper::formatElapsedTime($elapsedTime);
 
 // Summary
 logMessage("\n=== Cron job completed ===");

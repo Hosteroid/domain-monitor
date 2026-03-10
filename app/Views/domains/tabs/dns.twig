@@ -23,22 +23,32 @@
 <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-8 text-center">
     <i class="fas fa-network-wired text-gray-300 dark:text-slate-600 mb-3" style="font-size: 36px;"></i>
     <h3 class="text-sm font-semibold text-gray-900 dark:text-white mb-1">No DNS Records Yet</h3>
-    <p class="text-xs text-gray-500 dark:text-slate-400 mb-4">Click "Refresh DNS" to fetch the current DNS records for this domain.</p>
+    <p class="text-xs text-gray-500 dark:text-slate-400 mb-4">Run a quick scan, import a zone file, or add records manually.</p>
     {% if domain %}
-    <form method="POST" action="/domains/{{ domain.id }}/refresh-dns" class="inline" onsubmit="return handleDnsRefresh(this)">
-        {{ csrf_field()|raw }}
-        <button type="submit" class="dns-refresh-btn inline-flex items-center px-4 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
-            <i class="fas fa-sync-alt mr-1.5" style="font-size: 10px;"></i>
-            <span class="btn-label">Refresh DNS</span>
+    <div class="flex items-center justify-center gap-2 flex-wrap">
+        <form method="POST" action="/domains/{{ domain.id }}/discover-dns" class="inline">
+            {{ csrf_field()|raw }}
+            <input type="hidden" name="mode" value="quick">
+            <button type="submit" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                <i class="fas fa-bolt mr-1.5" style="font-size: 10px;"></i>Quick Scan
+            </button>
+        </form>
+        <button type="button" onclick="document.getElementById('addDnsRecordModal').classList.remove('hidden')"
+                class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
+            <i class="fas fa-plus mr-1.5" style="font-size: 10px;"></i>Add Record
         </button>
-    </form>
+        <button type="button" onclick="document.getElementById('dnsZoneImportModal').classList.remove('hidden')"
+                class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+            <i class="fas fa-file-import mr-1.5" style="font-size: 10px;"></i>Import Zone
+        </button>
+    </div>
     {% endif %}
 </div>
 {% else %}
 
 <!-- Action Bar -->
-<div class="flex justify-between items-center mb-3">
-    <div class="flex items-center gap-3">
+<div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-3">
+    <div class="flex items-center gap-3 flex-wrap">
         <p class="text-xs text-gray-600 dark:text-slate-400">
             <i class="far fa-clock mr-1"></i>
             Last checked: {{ domain.dns_last_checked ? domain.dns_last_checked|date('M d, Y H:i') : 'Never' }}
@@ -51,13 +61,63 @@
         {% endif %}
     </div>
     {% if domain and dnsMonitoringEnabled %}
-    <form method="POST" action="/domains/{{ domain.id }}/refresh-dns" class="inline" onsubmit="return handleDnsRefresh(this)">
-        {{ csrf_field()|raw }}
-        <button type="submit" class="dns-refresh-btn inline-flex items-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
-            <i class="fas fa-sync-alt mr-1.5" style="font-size: 10px;"></i>
-            <span class="btn-label">Refresh DNS</span>
+    <div class="flex items-center gap-2 flex-wrap">
+        {# Refresh DNS (re-check existing only) #}
+        <form method="POST" action="/domains/{{ domain.id }}/refresh-dns" class="inline" onsubmit="return handleDnsRefresh(this)">
+            {{ csrf_field()|raw }}
+            <button type="submit" class="dns-refresh-btn inline-flex items-center px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
+                <i class="fas fa-sync-alt mr-1.5" style="font-size: 10px;"></i>
+                <span class="btn-label">Refresh DNS</span>
+            </button>
+        </form>
+
+        {# Discover DNS dropdown #}
+        <div class="relative" id="discoverDropdown">
+            <button type="button" onclick="document.getElementById('discoverMenu').classList.toggle('hidden')"
+                    class="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                <i class="fas fa-search mr-1.5" style="font-size: 10px;"></i>
+                Discover DNS
+                <i class="fas fa-caret-down ml-1.5" style="font-size: 10px;"></i>
+            </button>
+            <div id="discoverMenu" class="hidden absolute right-0 mt-1 w-56 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg shadow-lg z-30">
+                <form method="POST" action="/domains/{{ domain.id }}/discover-dns">
+                    {{ csrf_field()|raw }}
+                    <input type="hidden" name="mode" value="quick">
+                    <button type="submit" class="w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 rounded-t-lg transition-colors">
+                        <div class="font-semibold text-gray-900 dark:text-white"><i class="fas fa-bolt text-amber-500 mr-1.5"></i>Quick Scan</div>
+                        <p class="text-gray-500 dark:text-slate-400 mt-0.5">Root domain + NS/MX targets</p>
+                    </button>
+                </form>
+                <form method="POST" action="/domains/{{ domain.id }}/discover-dns">
+                    {{ csrf_field()|raw }}
+                    <input type="hidden" name="mode" value="deep">
+                    <button type="submit" class="w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 rounded-b-lg border-t border-gray-100 dark:border-slate-700 transition-colors">
+                        <div class="font-semibold text-gray-900 dark:text-white"><i class="fas fa-microscope text-purple-500 mr-1.5"></i>Deep Scan</div>
+                        <p class="text-gray-500 dark:text-slate-400 mt-0.5">Brute force + crt.sh (background)</p>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        {# Add Record #}
+        <button type="button" onclick="document.getElementById('addDnsRecordModal').classList.remove('hidden')"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+            <i class="fas fa-plus mr-1.5" style="font-size: 10px;"></i>Add Record
         </button>
-    </form>
+
+        {# Import Zone #}
+        <button type="button" onclick="document.getElementById('dnsZoneImportModal').classList.remove('hidden')"
+                class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+            <i class="fas fa-file-import mr-1.5" style="font-size: 10px;"></i>Import Zone
+        </button>
+
+        {# Bulk delete (shown when records are selected) #}
+        <button type="button" id="dnsBulkDeleteBtn" class="hidden inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium"
+                onclick="submitDnsBulkDelete()">
+            <i class="fas fa-trash-alt mr-1.5" style="font-size: 10px;"></i>
+            Delete Selected (<span id="dnsSelectedCount">0</span>)
+        </button>
+    </div>
     {% endif %}
 </div>
 
@@ -131,22 +191,30 @@
             <table class="min-w-full">
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
+                        <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="A"></th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Host</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">IP Address</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">PTR</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">ASN</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                        <th class="w-8 px-2 py-2"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
                     {% for record in dnsRecords['A'] %}
                     {% set ipInfo = dnsIpDetails[record.value]|default(null) %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
                         <td class="px-4 py-2 text-xs font-medium text-gray-900 dark:text-white">
                             {% if record.host == '@' %}
                                 <span class="text-blue-600 dark:text-blue-400">@ (root)</span>
                             {% else %}
                                 {{ record.host }}
+                            {% endif %}
+                            {% if record.source|default('discovered') == 'manual' %}
+                                <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                            {% elseif record.source|default('discovered') == 'imported' %}
+                                <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
                             {% endif %}
                         </td>
                         <td class="px-4 py-2 text-xs">
@@ -177,6 +245,14 @@
                             {% endif %}
                         </td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                        <td class="w-8 px-2 py-2">
+                            <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this DNS record?')">
+                                {{ csrf_field()|raw }}
+                                <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                                    <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -199,22 +275,30 @@
             <table class="min-w-full">
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
+                        <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="AAAA"></th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Host</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">IPv6 Address</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">PTR</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">ASN</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                        <th class="w-8 px-2 py-2"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
                     {% for record in dnsRecords['AAAA'] %}
                     {% set ipInfo = dnsIpDetails[record.value]|default(null) %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
                         <td class="px-4 py-2 text-xs font-medium text-gray-900 dark:text-white">
                             {% if record.host == '@' %}
                                 <span class="text-indigo-600 dark:text-indigo-400">@ (root)</span>
                             {% else %}
                                 {{ record.host }}
+                            {% endif %}
+                            {% if record.source|default('discovered') == 'manual' %}
+                                <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                            {% elseif record.source|default('discovered') == 'imported' %}
+                                <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
                             {% endif %}
                         </td>
                         <td class="px-4 py-2 text-xs">
@@ -245,6 +329,14 @@
                             {% endif %}
                         </td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                        <td class="w-8 px-2 py-2">
+                            <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this DNS record?')">
+                                {{ csrf_field()|raw }}
+                                <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                                    <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -267,17 +359,32 @@
             <table class="min-w-full">
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
+                        <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="CNAME"></th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Alias</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Target</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                        <th class="w-8 px-2 py-2"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
                     {% for record in dnsRecords['CNAME'] %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
-                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.host }}</td>
+                        <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.host }}{% if record.source|default('discovered') == 'manual' %}
+                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                        {% elseif record.source|default('discovered') == 'imported' %}
+                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                        {% endif %}</td>
                         <td class="px-4 py-2 text-xs font-mono text-blue-600 dark:text-blue-400">{{ record.value }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                        <td class="w-8 px-2 py-2">
+                            <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this DNS record?')">
+                                {{ csrf_field()|raw }}
+                                <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                                    <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -300,19 +407,34 @@
             <table class="min-w-full">
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
+                        <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="MX"></th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Priority</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Mail Server</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                        <th class="w-8 px-2 py-2"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
                     {% for record in dnsRecords['MX'] %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
                         <td class="px-4 py-2">
-                            <span class="inline-flex items-center justify-center w-6 h-6 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 font-bold rounded-full text-xs">{{ record.priority }}</span>
+                            <span class="inline-flex items-center justify-center w-6 h-6 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 font-bold rounded-full text-xs">{{ record.priority }}</span>{% if record.source|default('discovered') == 'manual' %}
+                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                        {% elseif record.source|default('discovered') == 'imported' %}
+                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                        {% endif %}
                         </td>
                         <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.value }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                        <td class="w-8 px-2 py-2">
+                            <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this DNS record?')">
+                                {{ csrf_field()|raw }}
+                                <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                                    <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -331,10 +453,19 @@
                 <span class="ml-2 px-1.5 py-0.5 bg-purple-600 text-white text-xs font-semibold rounded">{{ dnsRecords['TXT']|length }}</span>
             </h3>
         </div>
-        <div class="p-4 space-y-2">
-            {% for record in dnsRecords['TXT'] %}
-            <div class="bg-gray-50 dark:bg-slate-700 rounded p-2 border border-gray-200 dark:border-slate-600">
-                <div class="flex items-start">
+        <div class="overflow-x-auto">
+            <table class="min-w-full">
+                <thead class="bg-gray-50 dark:bg-slate-900">
+                    <tr>
+                        <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="TXT"></th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Type</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Value</th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                        <th class="w-8 px-2 py-2"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                    {% for record in dnsRecords['TXT'] %}
                     {% set val = record.value|lower %}
                     {% if val starts with 'v=spf1' %}
                         {% set txtType = 'SPF' %}
@@ -351,11 +482,29 @@
                     {% else %}
                         {% set txtType = 'TXT' %}
                     {% endif %}
-                    <span class="inline-flex items-center px-1.5 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400 text-xs font-semibold rounded mr-2 flex-shrink-0">{{ txtType }}</span>
-                    <p class="flex-1 text-xs font-mono text-gray-900 dark:text-white break-all">{{ record.value }}</p>
-                </div>
-            </div>
-            {% endfor %}
+                    <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
+                        <td class="px-4 py-2">
+                            <span class="inline-flex items-center px-1.5 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400 text-xs font-semibold rounded">{{ txtType }}</span>{% if record.source|default('discovered') == 'manual' %}
+                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                        {% elseif record.source|default('discovered') == 'imported' %}
+                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                        {% endif %}
+                        </td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white break-all">{{ record.value }}</td>
+                        <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                        <td class="w-8 px-2 py-2">
+                            <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this DNS record?')">
+                                {{ csrf_field()|raw }}
+                                <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                                    <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
     {% endif %}
@@ -374,11 +523,13 @@
             <table class="min-w-full">
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
+                        <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="NS"></th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">#</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Nameserver</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">IPv4</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">IPv6</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                        <th class="w-8 px-2 py-2"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
@@ -386,10 +537,15 @@
                     {% set rawData = record.raw_data ? record.raw_data|from_json : null %}
                     {% set nsIps = rawData ? rawData._ns_ips|default(null) : null %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
                         <td class="px-4 py-2">
                             <div class="w-6 h-6 bg-teal-500 rounded flex items-center justify-center text-white font-bold text-xs">{{ loop.index }}</div>
                         </td>
-                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.value }}</td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.value }}{% if record.source|default('discovered') == 'manual' %}
+                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                        {% elseif record.source|default('discovered') == 'imported' %}
+                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                        {% endif %}</td>
                         <td class="px-4 py-2 text-xs font-mono text-gray-600 dark:text-slate-400">
                             {% if nsIps and nsIps.ipv4|default([])|length > 0 %}
                                 {{ nsIps.ipv4|join(', ') }}
@@ -401,6 +557,14 @@
                             {% else %}-{% endif %}
                         </td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                        <td class="w-8 px-2 py-2">
+                            <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this DNS record?')">
+                                {{ csrf_field()|raw }}
+                                <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                                    <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -423,24 +587,39 @@
             <table class="min-w-full">
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
+                        <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="SRV"></th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Service</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Target</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Port</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Priority</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Weight</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                        <th class="w-8 px-2 py-2"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
                     {% for record in dnsRecords['SRV'] %}
                     {% set rawData = record.raw_data ? record.raw_data|from_json : {} %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
-                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.host }}</td>
+                        <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
+                        <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.host }}{% if record.source|default('discovered') == 'manual' %}
+                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                        {% elseif record.source|default('discovered') == 'imported' %}
+                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                        {% endif %}</td>
                         <td class="px-4 py-2 text-xs font-mono text-blue-600 dark:text-blue-400">{{ record.value }}</td>
                         <td class="px-4 py-2 text-xs text-gray-900 dark:text-white font-semibold">{{ rawData.port|default('-') }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.priority|default('-') }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ rawData.weight|default('-') }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                        <td class="w-8 px-2 py-2">
+                            <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this DNS record?')">
+                                {{ csrf_field()|raw }}
+                                <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                                    <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -463,22 +642,37 @@
             <table class="min-w-full">
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
+                        <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="CAA"></th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Tag</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Value (CA)</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Flags</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
+                        <th class="w-8 px-2 py-2"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
                     {% for record in dnsRecords['CAA'] %}
                     {% set rawData = record.raw_data ? record.raw_data|from_json : {} %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                        <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
                         <td class="px-4 py-2">
-                            <span class="inline-flex items-center px-1.5 py-0.5 bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 text-xs font-semibold rounded">{{ rawData.tag|default('-') }}</span>
+                            <span class="inline-flex items-center px-1.5 py-0.5 bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 text-xs font-semibold rounded">{{ rawData.tag|default('-') }}</span>{% if record.source|default('discovered') == 'manual' %}
+                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                        {% elseif record.source|default('discovered') == 'imported' %}
+                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                        {% endif %}
                         </td>
                         <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ rawData.value|default(record.value) }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ rawData.flags|default('0') }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
+                        <td class="w-8 px-2 py-2">
+                            <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this DNS record?')">
+                                {{ csrf_field()|raw }}
+                                <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                                    <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                                </button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -489,6 +683,88 @@
 
 </div>
 {% endif %}
+{% endif %}
+
+{# ===== Add Record Modal ===== #}
+{% if domain %}
+<div id="addDnsRecordModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-md">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                <i class="fas fa-plus text-primary mr-2"></i>Add DNS Record
+            </h3>
+            <button onclick="document.getElementById('addDnsRecordModal').classList.add('hidden')"
+                    class="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="/domains/{{ domain.id }}/dns-records" id="addDnsRecordForm">
+            {{ csrf_field()|raw }}
+            <div class="p-6 space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Type</label>
+                        <select name="record_type" id="dnsRecordType" required class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+                            <option value="A">A (IPv4)</option>
+                            <option value="AAAA">AAAA (IPv6)</option>
+                            <option value="CNAME">CNAME (Alias)</option>
+                            <option value="MX">MX (Mail)</option>
+                            <option value="TXT">TXT (Text)</option>
+                            <option value="NS">NS (Nameserver)</option>
+                            <option value="SRV">SRV (Service)</option>
+                            <option value="CAA">CAA (CA Auth)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Host</label>
+                        <input type="text" name="host" id="dnsRecordHost" value="@" required class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="@ or subdomain">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5" id="dnsValueLabel">Value</label>
+                    <input type="text" name="value" id="dnsRecordValue" required class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="IPv4 address (e.g. 1.2.3.4)">
+                    <p class="mt-1 text-xs text-gray-400 dark:text-slate-500" id="dnsValueHint">Enter the IPv4 address this record points to.</p>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">TTL <span class="text-gray-400 font-normal">(seconds)</span></label>
+                        <input type="number" name="ttl" id="dnsRecordTtl" min="0" value="3600" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="3600">
+                    </div>
+                    <div id="dnsPriorityWrap">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Priority</label>
+                        <input type="number" name="priority" id="dnsRecordPriority" min="0" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="10">
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="document.getElementById('addDnsRecordModal').classList.add('hidden')"
+                        class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                    Cancel
+                </button>
+                <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                    <i class="fas fa-plus mr-1.5"></i>Add Record
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# ===== Import Zone Modal (shared partial) ===== #}
+{% include 'partials/import-modal.twig' with {
+    prefix: 'dnsZone',
+    title: 'Import DNS Zone File',
+    action: '/domains/' ~ domain.id ~ '/dns-import',
+    accept: '.txt,.zone,.db,.bind',
+    file_hint: 'BIND zone file (.txt, .zone)',
+    input_name: 'zone_file',
+    format_html: '<p class="text-xs text-gray-600 dark:text-slate-400">Standard BIND zone file format:</p><p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5 font-mono">@ IN A 1.2.3.4</p><p class="text-xs text-gray-600 dark:text-slate-400 font-mono">www IN CNAME example.com.</p><p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Duplicate records will be skipped. Imported records are tagged as "imported".</p>',
+    submit_label: 'Import Zone'
+} %}
+
+{# ===== Bulk Delete Form (hidden, submitted via JS) ===== #}
+<form id="dnsBulkDeleteForm" method="POST" action="/domains/{{ domain.id }}/dns-records/bulk-delete" class="hidden">
+    {{ csrf_field()|raw }}
+</form>
 {% endif %}
 
 <script>
@@ -504,4 +780,137 @@ function handleDnsRefresh(form) {
     if (label) label.textContent = 'Scanning DNS...';
     return true;
 }
+
+(function() {
+    // Close discover dropdown when clicking outside
+    document.addEventListener('click', function(e) {
+        var dropdown = document.getElementById('discoverDropdown');
+        var menu = document.getElementById('discoverMenu');
+        if (dropdown && menu && !dropdown.contains(e.target)) {
+            menu.classList.add('hidden');
+        }
+    });
+
+    // Checkbox select-all
+    document.querySelectorAll('.dns-select-all').forEach(function(selectAll) {
+        selectAll.addEventListener('change', function() {
+            var table = this.closest('table');
+            table.querySelectorAll('.dns-record-cb').forEach(function(cb) {
+                cb.checked = selectAll.checked;
+            });
+            updateBulkDeleteBtn();
+        });
+    });
+
+    // Individual checkbox change
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('dns-record-cb')) {
+            updateBulkDeleteBtn();
+        }
+    });
+
+    // Close modals on Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            var modals = ['addDnsRecordModal', 'dnsZoneImportModal'];
+            modals.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && !el.classList.contains('hidden')) {
+                    el.classList.add('hidden');
+                }
+            });
+            var menu = document.getElementById('discoverMenu');
+            if (menu) menu.classList.add('hidden');
+        }
+    });
+})();
+
+function updateBulkDeleteBtn() {
+    var checked = document.querySelectorAll('.dns-record-cb:checked');
+    var btn = document.getElementById('dnsBulkDeleteBtn');
+    var count = document.getElementById('dnsSelectedCount');
+    if (btn) {
+        if (checked.length > 0) {
+            btn.classList.remove('hidden');
+            if (count) count.textContent = checked.length;
+        } else {
+            btn.classList.add('hidden');
+        }
+    }
+}
+
+async function submitDnsBulkDelete() {
+    var checked = document.querySelectorAll('.dns-record-cb:checked');
+    if (checked.length === 0) return;
+    var ok = await confirmAction({ message: 'Delete ' + checked.length + ' selected DNS record(s)?' });
+    if (!ok) return;
+
+    var form = document.getElementById('dnsBulkDeleteForm');
+    // Remove any previous hidden inputs
+    form.querySelectorAll('input[name="record_ids[]"]').forEach(function(el) { el.remove(); });
+    checked.forEach(function(cb) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'record_ids[]';
+        input.value = cb.value;
+        form.appendChild(input);
+    });
+    form.submit();
+}
+
+(function() {
+    var typeSelect = document.getElementById('dnsRecordType');
+    if (!typeSelect) return;
+
+    var valueInput = document.getElementById('dnsRecordValue');
+    var valueLabel = document.getElementById('dnsValueLabel');
+    var valueHint  = document.getElementById('dnsValueHint');
+    var hostInput  = document.getElementById('dnsRecordHost');
+    var prioWrap   = document.getElementById('dnsPriorityWrap');
+    var prioInput  = document.getElementById('dnsRecordPriority');
+
+    var typeMeta = {
+        A:     { label: 'IPv4 Address',    placeholder: '1.2.3.4',                          hint: 'Enter the IPv4 address this record points to.',                priority: false },
+        AAAA:  { label: 'IPv6 Address',    placeholder: '2001:db8::1',                      hint: 'Enter the full IPv6 address.',                                 priority: false },
+        CNAME: { label: 'Target Hostname', placeholder: 'example.com',                      hint: 'The canonical hostname this alias resolves to (no trailing dot needed).', priority: false, host: 'subdomain' },
+        MX:    { label: 'Mail Server',     placeholder: 'mail.example.com',                 hint: 'Hostname of the mail server. Set priority (lower = higher preference).', priority: true, prioDefault: '10' },
+        TXT:   { label: 'Text Value',      placeholder: 'v=spf1 include:_spf.google.com ~all', hint: 'SPF, DKIM, verification tokens, or any text value.',        priority: false },
+        NS:    { label: 'Nameserver',      placeholder: 'ns1.example.com',                  hint: 'Hostname of the authoritative nameserver.',                    priority: false },
+        SRV:   { label: 'Target',          placeholder: 'sipserver.example.com',            hint: 'Target hostname. Host should be _service._proto format. Set priority & use value format: weight port target.', priority: true, prioDefault: '0', host: '_sip._tcp' },
+        CAA:   { label: 'Value',           placeholder: '0 issue "letsencrypt.org"',        hint: 'Format: flags tag value (e.g. 0 issue "letsencrypt.org").',    priority: false }
+    };
+
+    function updateFieldsForType() {
+        var t = typeSelect.value;
+        var meta = typeMeta[t] || typeMeta['A'];
+
+        valueLabel.textContent = meta.label;
+        valueInput.placeholder = meta.placeholder;
+        valueHint.textContent  = meta.hint;
+
+        if (meta.priority) {
+            prioWrap.classList.remove('hidden');
+            if (prioInput && !prioInput.value) prioInput.placeholder = meta.prioDefault || '10';
+        } else {
+            prioWrap.classList.add('hidden');
+            if (prioInput) prioInput.value = '';
+        }
+
+        if (meta.host) {
+            hostInput.placeholder = meta.host;
+        } else {
+            hostInput.placeholder = '@ or subdomain';
+        }
+    }
+
+    typeSelect.addEventListener('change', updateFieldsForType);
+    updateFieldsForType();
+
+    document.getElementById('addDnsRecordForm').addEventListener('submit', function() {
+        var ttlInput = document.getElementById('dnsRecordTtl');
+        if (ttlInput && (!ttlInput.value || ttlInput.value.trim() === '')) {
+            ttlInput.value = '3600';
+        }
+    });
+})();
 </script>

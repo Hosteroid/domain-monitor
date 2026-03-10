@@ -26,6 +26,7 @@ use App\Models\User;
 use App\Services\Logger;
 use App\Services\NotificationService;
 use App\Services\SslService;
+use App\Helpers\CronHelper;
 use Core\Database;
 
 if (php_sapi_name() !== 'cli') {
@@ -56,6 +57,7 @@ try {
 }
 
 $logFile = __DIR__ . '/../logs/ssl_cron.log';
+$cron = new CronHelper($logFile);
 $startTime = microtime(true);
 
 logMessage("=== Starting SSL check cron job ===");
@@ -132,7 +134,7 @@ foreach ($domains as $domain) {
             $port = (int)($target['port'] ?? 443);
             $endpointLabel = $sslService->formatTargetLabel($hostname, $port);
 
-            if (!hostnameResolves($hostname)) {
+            if (!CronHelper::hostnameResolves($hostname)) {
                 logMessage("  {$endpointLabel}: skipped (hostname does not resolve)");
                 $stats['skipped_unresolved']++;
                 continue;
@@ -231,7 +233,7 @@ logMessage("Issue endpoints:        {$stats['issues_detected']}");
 logMessage("External notifications: {$stats['notifications_sent']}");
 logMessage("In-app notifications:   {$stats['in_app_notifications']}");
 logMessage("Errors:                 {$stats['errors']}");
-logMessage("Execution time:         " . formatElapsedTime(microtime(true) - $startTime));
+logMessage("Execution time:         " . CronHelper::formatElapsedTime(microtime(true) - $startTime));
 logMessage("============================\n");
 
 exit(0);
@@ -350,57 +352,12 @@ function sendInAppSslNotifications(
 
 function logMessage(string $message): void
 {
-    global $logFile;
-    $timestamp = date('Y-m-d H:i:s');
-    $line = "[{$timestamp}] {$message}\n";
-    file_put_contents($logFile, $line, FILE_APPEND);
-    echo $line;
+    global $cron;
+    $cron->log($message);
 }
 
 function logTimeSince(float $since): void
 {
-    logMessage("  -> " . formatDuration(microtime(true) - $since));
-}
-
-function hostnameResolves(string $hostname): bool
-{
-    return @checkdnsrr($hostname, 'SOA')
-        || @checkdnsrr($hostname, 'A')
-        || @checkdnsrr($hostname, 'AAAA');
-}
-
-function formatDuration(float $seconds): string
-{
-    if ($seconds < 60) {
-        return sprintf('%.1fs', $seconds);
-    }
-
-    $minutes = (int) floor($seconds / 60);
-    $remaining = $seconds - ($minutes * 60);
-    return $minutes . 'm ' . sprintf('%.1fs', $remaining);
-}
-
-function formatElapsedTime(float $seconds): string
-{
-    if ($seconds < 60) {
-        return sprintf('%.2f seconds', $seconds);
-    }
-
-    if ($seconds < 3600) {
-        $minutes = (int) floor($seconds / 60);
-        $remaining = $seconds - ($minutes * 60);
-        return sprintf('%d minute%s %.2f seconds', $minutes, $minutes !== 1 ? 's' : '', $remaining);
-    }
-
-    $hours = (int) floor($seconds / 3600);
-    $minutes = (int) floor(($seconds - ($hours * 3600)) / 60);
-    $remaining = $seconds - ($hours * 3600) - ($minutes * 60);
-    return sprintf(
-        '%d hour%s %d minute%s %.2f seconds',
-        $hours,
-        $hours !== 1 ? 's' : '',
-        $minutes,
-        $minutes !== 1 ? 's' : '',
-        $remaining
-    );
+    global $cron;
+    $cron->logTimeSince($since, '  -> ');
 }

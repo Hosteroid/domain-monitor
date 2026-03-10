@@ -21,11 +21,11 @@
     </div>
     <div class="flex gap-2 items-center">
         {% if session.role is defined and session.role == 'admin' %}
-        <a href="/tld-registry/{{ tld.id }}/refresh" class="inline-flex items-center justify-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium min-w-[80px] h-[32px]" onclick="return confirm('Refresh TLD data from IANA?')">
+        <a href="/tld-registry/{{ tld.id }}/refresh" class="inline-flex items-center justify-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium min-w-[80px] h-[32px]" onclick="return confirmClick(event, 'Refresh TLD data from IANA?', { title: 'Refresh TLD', icon: 'fa-sync text-green-500', confirmText: 'Refresh', confirmClass: 'bg-green-600 hover:bg-green-700' })">
             <i class="fas fa-sync-alt mr-1.5"></i>
             Refresh
         </a>
-        <a href="/tld-registry/{{ tld.id }}/toggle-active" class="inline-flex items-center justify-center px-3 py-2 bg-orange-600 text-white text-xs rounded-lg hover:bg-orange-700 transition-colors font-medium min-w-[80px] h-[32px]" onclick="return confirm('Toggle TLD status?')">
+        <a href="/tld-registry/{{ tld.id }}/toggle-active" class="inline-flex items-center justify-center px-3 py-2 bg-orange-600 text-white text-xs rounded-lg hover:bg-orange-700 transition-colors font-medium min-w-[80px] h-[32px]" onclick="return confirmClick(event, 'Toggle TLD status?', { title: 'Toggle Status', icon: 'fa-toggle-on text-orange-500', confirmText: 'Toggle', confirmClass: 'bg-orange-600 hover:bg-orange-700' })">
             <i class="fas fa-power-off mr-1.5"></i>
             Toggle
         </a>
@@ -215,13 +215,13 @@
             </div>
             <div class="p-4 space-y-2">
                 {% if session.role is defined and session.role == 'admin' %}
-                <a href="/tld-registry/{{ tld.id }}/refresh" class="flex items-center p-3 border border-gray-200 dark:border-slate-700 hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-500/10 rounded-lg transition-all duration-200 group" onclick="return confirm('Refresh TLD data from IANA?')">
+                <a href="/tld-registry/{{ tld.id }}/refresh" class="flex items-center p-3 border border-gray-200 dark:border-slate-700 hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-500/10 rounded-lg transition-all duration-200 group" onclick="return confirmClick(event, 'Refresh TLD data from IANA?', { title: 'Refresh TLD', icon: 'fa-sync text-green-500', confirmText: 'Refresh', confirmClass: 'bg-green-600 hover:bg-green-700' })">
                     <div class="w-9 h-9 bg-green-50 dark:bg-green-500/10 group-hover:bg-green-500 rounded-lg flex items-center justify-center group-hover:text-white text-green-600 dark:text-green-400 transition-colors duration-200">
                         <i class="fas fa-sync-alt text-sm"></i>
                     </div>
                     <span class="ml-3 text-sm font-medium text-gray-700 dark:text-slate-300 group-hover:text-green-700 dark:group-hover:text-green-400">Refresh from IANA</span>
                 </a>
-                <a href="/tld-registry/{{ tld.id }}/toggle-active" class="flex items-center p-3 border border-gray-200 dark:border-slate-700 hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/10 rounded-lg transition-all duration-200 group" onclick="return confirm('Toggle TLD status?')">
+                <a href="/tld-registry/{{ tld.id }}/toggle-active" class="flex items-center p-3 border border-gray-200 dark:border-slate-700 hover:border-orange-500 hover:bg-orange-50 dark:hover:bg-orange-500/10 rounded-lg transition-all duration-200 group" onclick="return confirmClick(event, 'Toggle TLD status?', { title: 'Toggle Status', icon: 'fa-toggle-on text-orange-500', confirmText: 'Toggle', confirmClass: 'bg-orange-600 hover:bg-orange-700' })">
                     <div class="w-9 h-9 bg-orange-50 dark:bg-orange-500/10 group-hover:bg-orange-500 rounded-lg flex items-center justify-center group-hover:text-white text-orange-600 dark:text-orange-400 transition-colors duration-200">
                         <i class="fas fa-power-off text-sm"></i>
                     </div>

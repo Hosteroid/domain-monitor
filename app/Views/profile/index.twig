@@ -158,7 +158,7 @@
                                         {{ csrf_field() }}
                                         <button type="submit" 
                                                 class="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-500/30 rounded-lg text-sm font-medium text-red-700 dark:text-red-400 bg-white dark:bg-slate-700 hover:bg-red-50 dark:hover:bg-red-500/10"
-                                                onclick="return confirm('Are you sure you want to remove your avatar?')">
+                                                onclick="return confirmClick(event, 'Are you sure you want to remove your avatar?', { title: 'Remove Avatar', icon: 'fa-user-circle text-red-500' })">
                                             <i class="fas fa-trash mr-2"></i>
                                             Remove
                                         </button>
@@ -350,7 +350,7 @@
 
                             <div class="flex flex-col sm:flex-row gap-3">
                                 {% if twoFactorStatus.backup_codes_count < 3 %}
-                                <form method="POST" action="/2fa/regenerate-backup-codes" onsubmit="return confirm('Generate new backup codes? Your current codes will stop working.')">
+                                <form method="POST" action="/2fa/regenerate-backup-codes" onsubmit="return confirmSubmit(event, 'Generate new backup codes? Your current codes will stop working.', { title: 'Regenerate Codes', icon: 'fa-key text-blue-500', confirmText: 'Generate', confirmClass: 'bg-blue-600 hover:bg-blue-700' })">
                                     {{ csrf_field() }}
                                     <button type="submit" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium">
                                         <i class="fas fa-refresh mr-2"></i>
@@ -493,7 +493,7 @@
                             <p class="text-sm text-gray-600 dark:text-slate-400 mt-1">Manage devices and sessions where you're logged in ({{ sessions|default([])|length }} active)</p>
                         </div>
                         {% if sessions|default([])|length > 1 %}
-                        <form method="POST" action="/profile/logout-other-sessions" onsubmit="return confirm('Logout all other sessions?')" class="inline">
+                        <form method="POST" action="/profile/logout-other-sessions" onsubmit="return confirmSubmit(event, 'Logout all other sessions?', { title: 'Logout Sessions', icon: 'fa-sign-out-alt text-red-500' })" class="inline">
                             {{ csrf_field() }}
                             <button type="submit" class="inline-flex items-center px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium">
                                 <i class="fas fa-sign-out-alt mr-1.5"></i>
@@ -578,7 +578,7 @@
 
                                     <!-- Delete Button (only for non-current sessions) -->
                                     {% if not isCurrent %}
-                                        <form method="POST" action="/profile/logout-session/{{ session.id }}" onsubmit="return confirm('Terminate this session?\n\nThat device will be logged out immediately.')" class="ml-3">
+                                        <form method="POST" action="/profile/logout-session/{{ session.id }}" onsubmit="return confirmSubmit(event, 'Terminate this session? That device will be logged out immediately.', { title: 'Terminate Session', icon: 'fa-sign-out-alt text-red-500' })" class="ml-3">
                                             {{ csrf_field() }}
                                             <button type="submit" class="flex items-center justify-center w-8 h-8 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-600 hover:text-white dark:hover:bg-red-600 transition-colors" title="Terminate session">
                                                 <i class="fas fa-times text-sm"></i>
@@ -712,12 +712,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-function confirmDelete() {
-    if (confirm('Are you absolutely sure you want to delete your account?\n\nThis action is PERMANENT and cannot be undone!')) {
-        if (confirm('FINAL WARNING: This will permanently delete all your data.\n\nClick OK to proceed.')) {
-            document.getElementById('deleteAccountForm').submit();
-        }
-    }
+async function confirmDelete() {
+    var ok = await confirmAction({ message: 'Are you absolutely sure you want to delete your account? This action is PERMANENT and cannot be undone!', title: 'Delete Account', icon: 'fa-skull-crossbones text-red-600' });
+    if (!ok) return;
+    var ok2 = await confirmAction({ message: 'FINAL WARNING: This will permanently delete all your data. Click Confirm to proceed.', title: 'Final Confirmation', icon: 'fa-exclamation-circle text-red-600' });
+    if (ok2) document.getElementById('deleteAccountForm').submit();
 }
 
 function showDisable2FAModal() {

@@ -465,8 +465,9 @@ function submitResolution() {
     form.submit();
 }
 
-function deleteError() {
-    if (!confirm('Are you sure you want to delete this error and all its occurrences? This action cannot be undone.')) return;
+async function deleteError() {
+    var ok = await confirmAction({ message: 'Are you sure you want to delete this error and all its occurrences? This action cannot be undone.' });
+    if (!ok) return;
     const form = document.createElement('form');
     form.method = 'POST';
     form.action = '/errors/{{ error.error_id }}/delete';

@@ -53,12 +53,14 @@ class SlackChannel implements NotificationChannelInterface
 
     private function createBlocks(string $message, array $data): array
     {
+        $headerText = $data['subject'] ?? '🔔 Domain Monitor Alert';
+
         $blocks = [
             [
                 'type' => 'header',
                 'text' => [
                     'type' => 'plain_text',
-                    'text' => '🔔 Domain Expiration Alert'
+                    'text' => $headerText
                 ]
             ],
             [
@@ -71,26 +73,25 @@ class SlackChannel implements NotificationChannelInterface
         ];
 
         if (isset($data['domain'])) {
+            $fields = [
+                ['type' => 'mrkdwn', 'text' => "*Domain:*\n{$data['domain']}"]
+            ];
+
+            // Only add expiration fields for domain expiration alerts
+            if (array_key_exists('days_left', $data) || array_key_exists('expiration_date', $data)) {
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Days Left:*\n" . ($data['days_left'] ?? 'N/A')];
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Expiration:*\n" . ($data['expiration_date'] ?? 'N/A')];
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Registrar:*\n" . ($data['registrar'] ?? 'N/A')];
+            } elseif (isset($data['hostname']) && $data['hostname'] !== $data['domain']) {
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Hostname:*\n{$data['hostname']}"];
+            }
+            if (isset($data['new_status'])) {
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Status:*\n{$data['new_status']}"];
+            }
+
             $blocks[] = [
                 'type' => 'section',
-                'fields' => [
-                    [
-                        'type' => 'mrkdwn',
-                        'text' => "*Domain:*\n{$data['domain']}"
-                    ],
-                    [
-                        'type' => 'mrkdwn',
-                        'text' => "*Days Left:*\n{$data['days_left']}"
-                    ],
-                    [
-                        'type' => 'mrkdwn',
-                        'text' => "*Expiration:*\n{$data['expiration_date']}"
-                    ],
-                    [
-                        'type' => 'mrkdwn',
-                        'text' => "*Registrar:*\n{$data['registrar']}"
-                    ]
-                ]
+                'fields' => $fields
             ];
         }
 

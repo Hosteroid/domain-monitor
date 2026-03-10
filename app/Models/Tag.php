@@ -283,6 +283,66 @@ class Tag extends Model
     }
 
     /**
+     * Remove custom (non-global) tags from a domain that don't belong to the specified user.
+     * Global tags (user_id IS NULL) are preserved.
+     */
+    public function removeOtherUserTagsFromDomain(int $domainId, int $keepUserId): int
+    {
+        $sql = "DELETE dt FROM domain_tags dt
+                JOIN tags t ON dt.tag_id = t.id
+                WHERE dt.domain_id = ? AND t.user_id IS NOT NULL AND t.user_id != ?";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([$domainId, $keepUserId]);
+        $affected = $stmt->rowCount();
+
+        if ($affected > 0) {
+            $this->updateAllUsageCounts();
+        }
+
+        return $affected;
+    }
+
+    /**
+     * Remove domain_tags for a tag where the domain doesn't belong to the specified user.
+     */
+    public function removeTagFromOtherUserDomains(int $tagId, int $keepUserId): int
+    {
+        $sql = "DELETE dt FROM domain_tags dt
+                JOIN domains d ON dt.domain_id = d.id
+                WHERE dt.tag_id = ? AND d.user_id != ?";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([$tagId, $keepUserId]);
+        $affected = $stmt->rowCount();
+
+        if ($affected > 0) {
+            $this->updateUsageCount($tagId);
+        }
+
+        return $affected;
+    }
+
+    /**
+     * Remove custom (non-global) tags from all domains in a notification group
+     * that don't belong to the specified user.
+     */
+    public function removeOtherUserTagsFromDomainsByGroup(int $groupId, int $keepUserId): int
+    {
+        $sql = "DELETE dt FROM domain_tags dt
+                JOIN tags t ON dt.tag_id = t.id
+                JOIN domains d ON dt.domain_id = d.id
+                WHERE d.notification_group_id = ? AND t.user_id IS NOT NULL AND t.user_id != ?";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([$groupId, $keepUserId]);
+        $affected = $stmt->rowCount();
+
+        if ($affected > 0) {
+            $this->updateAllUsageCounts();
+        }
+
+        return $affected;
+    }
+
+    /**
      * Get available colors for tags
      */
     public function getAvailableColors(): array

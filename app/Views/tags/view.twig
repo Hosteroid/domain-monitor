@@ -210,16 +210,22 @@
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                 <div class="flex items-center justify-end space-x-2">
-                                    <a href="/domains/{{ domain.id }}" class="text-blue-600 hover:text-blue-800" title="View">
+                                    <a href="/domains/{{ domain.id }}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" title="View">
                                         <i class="fas fa-eye"></i>
                                     </a>
                                     <form method="POST" action="/domains/{{ domain.id }}/refresh-whois" class="inline">
                                         {{ csrf_field() }}
-                                        <button type="submit" class="text-green-600 hover:text-green-800" title="Refresh WHOIS">
+                                        <button type="submit" class="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300" title="Refresh WHOIS">
                                             <i class="fas fa-sync-alt"></i>
                                         </button>
                                     </form>
-                                    <a href="/domains/{{ domain.id }}/edit?from=/tags/{{ tag.id }}" class="text-yellow-600 hover:text-yellow-800" title="Edit">
+                                    {% if auth.isAdmin %}
+                                    <button type="button" class="domain-transfer-btn text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300" title="Transfer Domain"
+                                            data-domain-id="{{ domain.id }}" data-domain-name="{{ domain.domain_name }}">
+                                        <i class="fas fa-exchange-alt"></i>
+                                    </button>
+                                    {% endif %}
+                                    <a href="/domains/{{ domain.id }}/edit?from=/tags/{{ tag.id }}" class="text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-300" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </a>
                                 </div>
@@ -273,6 +279,12 @@
                                 <i class="fas fa-sync-alt mr-1"></i> Refresh WHOIS
                             </button>
                         </form>
+                        {% if auth.isAdmin %}
+                        <button type="button" class="domain-transfer-btn flex-1 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded text-center text-sm hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition-colors"
+                                data-domain-id="{{ domain.id }}" data-domain-name="{{ domain.domain_name }}">
+                            <i class="fas fa-exchange-alt mr-1"></i> Transfer
+                        </button>
+                        {% endif %}
                     </div>
                 </div>
             {% endfor %}
@@ -347,5 +359,29 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
+
+{% if auth.isAdmin %}
+<script>
+function transferDomain(domainId, domainName) {
+    var esc = function(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+    openTransferModal({
+        title: 'Transfer Domain',
+        description: 'Transfer <strong>' + esc(domainName) + '</strong> to another user.',
+        action: '/domains/transfer',
+        fields: { domain_id: domainId },
+        users: {{ users|default([])|json_encode|raw }},
+        csrfToken: '{{ csrf_token() }}'
+    });
+}
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.domain-transfer-btn');
+    if (btn) {
+        e.preventDefault();
+        transferDomain(parseInt(btn.dataset.domainId, 10), btn.dataset.domainName || '');
+    }
+});
+</script>
+{% include 'partials/transfer-modal.twig' %}
 {% endif %}
 {% endblock %}

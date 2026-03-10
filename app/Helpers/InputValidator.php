@@ -17,15 +17,88 @@ class InputValidator
      */
     public static function validateDomain(string $domain): bool
     {
-        // Check length (max 253 characters per RFC 1035)
         if (strlen($domain) > 253 || strlen($domain) < 3) {
             return false;
         }
 
-        // Validate domain format
-        // Allows: example.com, sub.example.com, example.co.uk
-        // Pattern: alphanumeric with hyphens, dots between labels, valid TLD
         return (bool)preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i', $domain);
+    }
+
+    /**
+     * Sanitize raw domain input — strips protocol, www prefix, trailing dots/slashes, paths.
+     *
+     * @return string Cleaned, lowercased domain (may still be invalid)
+     */
+    public static function sanitizeDomainInput(string $input): string
+    {
+        $input = strtolower(trim($input));
+
+        $input = preg_replace('#^https?://#', '', $input);
+        $input = preg_replace('#/.*$#', '', $input);
+        $input = rtrim($input, '.');
+        $input = trim($input);
+
+        if (str_starts_with($input, 'www.')) {
+            $stripped = substr($input, 4);
+            if (substr_count($stripped, '.') >= 1) {
+                $input = $stripped;
+            }
+        }
+
+        return $input;
+    }
+
+    /**
+     * Validate that a domain is a registrable root domain (not a subdomain).
+     * Uses the tld_registry table to identify multi-level TLDs like .co.uk.
+     *
+     * @return array{valid: bool, domain: string, error: string|null}
+     */
+    public static function validateRootDomain(string $domain): array
+    {
+        $domain = self::sanitizeDomainInput($domain);
+
+        if (empty($domain)) {
+            return ['valid' => false, 'domain' => '', 'error' => 'Domain name is required'];
+        }
+
+        if (!self::validateDomain($domain)) {
+            return ['valid' => false, 'domain' => $domain, 'error' => "Invalid domain format: $domain"];
+        }
+
+        $parts = explode('.', $domain);
+        if (count($parts) < 2) {
+            return ['valid' => false, 'domain' => $domain, 'error' => "Invalid domain: $domain"];
+        }
+
+        $tldModel = new \App\Models\TldRegistry();
+
+        $matchedTld = null;
+        for ($i = 1; $i < count($parts); $i++) {
+            $candidate = '.' . implode('.', array_slice($parts, $i));
+            $tld = $tldModel->findByTld($candidate);
+            if ($tld) {
+                $matchedTld = $candidate;
+                $labelCount = $i;
+                break;
+            }
+        }
+
+        if (!$matchedTld) {
+            $matchedTld = '.' . $parts[count($parts) - 1];
+            $labelCount = count($parts) - 1;
+        }
+
+        if ($labelCount !== 1) {
+            $rootDomain = $parts[$labelCount - 1] . $matchedTld;
+            return [
+                'valid' => false,
+                'domain' => $domain,
+                'error' => "\"$domain\" looks like a subdomain. Did you mean the root domain \"$rootDomain\"?"
+            ];
+        }
+
+        return ['valid' => true, 'domain' => $domain, 'error' => null];
     }
 
     /**
