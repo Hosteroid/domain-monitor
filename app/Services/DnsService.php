@@ -106,9 +106,8 @@ class DnsService
             $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
-            if (in_array($sub, ['_dmarc', '_mta-sts', '_domainkey']) || str_starts_with($sub, '_')) {
-                $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
-            }
+            $this->queryAndCollect($fqdn, DNS_MX, 'MX', $domain, $records, $seen);
+            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
         }
 
         foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
@@ -147,6 +146,8 @@ class DnsService
             $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
+            $this->queryAndCollect($fqdn, DNS_MX, 'MX', $domain, $records, $seen);
+            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
         }
 
         foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
@@ -222,7 +223,7 @@ class DnsService
         }
         $log("Subdomain probe complete: " . count($discovered) . " found out of {$total}");
 
-        // Deep scan discovered subdomains (A, AAAA, CNAME, TXT)
+        // Deep scan discovered subdomains
         if (!empty($discovered)) {
             $log("Querying " . count($discovered) . " discovered subdomain(s)...");
         }
@@ -231,9 +232,8 @@ class DnsService
             $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
-            if (in_array($sub, ['_dmarc', '_mta-sts', '_domainkey']) || str_starts_with($sub, '_')) {
-                $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
-            }
+            $this->queryAndCollect($fqdn, DNS_MX, 'MX', $domain, $records, $seen);
+            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
         }
 
         $log("Querying special TXT subdomains...");
@@ -452,15 +452,20 @@ class DnsService
     }
 
     /**
-     * Sort A/AAAA records: root (@) first, then alphabetical by host.
+     * Sort records: root (@) first, then alphabetical by host.
      */
     private function sortRecords(array &$records): void
     {
-        foreach (['A', 'AAAA'] as $type) {
+        foreach (['A', 'AAAA', 'MX', 'TXT', 'CAA'] as $type) {
+            if (empty($records[$type])) {
+                continue;
+            }
             usort($records[$type], function ($a, $b) {
-                if ($a['host'] === '@') return -1;
-                if ($b['host'] === '@') return 1;
-                return strcmp($a['host'], $b['host']);
+                if ($a['host'] === '@' && $b['host'] !== '@') return -1;
+                if ($b['host'] === '@' && $a['host'] !== '@') return 1;
+                $hostCmp = strcmp($a['host'], $b['host']);
+                if ($hostCmp !== 0) return $hostCmp;
+                return ($a['priority'] ?? 0) <=> ($b['priority'] ?? 0);
             });
         }
     }

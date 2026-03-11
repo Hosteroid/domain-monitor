@@ -408,6 +408,7 @@
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
                         <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="MX"></th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Host</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Priority</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Mail Server</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
@@ -418,12 +419,20 @@
                     {% for record in dnsRecords['MX'] %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
                         <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
+                        <td class="px-4 py-2 text-xs font-medium text-gray-900 dark:text-white">
+                            {% if record.host == '@' %}
+                                <span class="text-green-600 dark:text-green-400">@ (root)</span>
+                            {% else %}
+                                {{ record.host }}
+                            {% endif %}
+                            {% if record.source|default('discovered') == 'manual' %}
+                                <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                            {% elseif record.source|default('discovered') == 'imported' %}
+                                <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                            {% endif %}
+                        </td>
                         <td class="px-4 py-2">
-                            <span class="inline-flex items-center justify-center w-6 h-6 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 font-bold rounded-full text-xs">{{ record.priority }}</span>{% if record.source|default('discovered') == 'manual' %}
-                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
-                        {% elseif record.source|default('discovered') == 'imported' %}
-                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
-                        {% endif %}
+                            <span class="inline-flex items-center justify-center w-6 h-6 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 font-bold rounded-full text-xs">{{ record.priority }}</span>
                         </td>
                         <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ record.value }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
@@ -458,6 +467,7 @@
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
                         <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="TXT"></th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Host</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Type</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Value</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">TTL</th>
@@ -484,12 +494,20 @@
                     {% endif %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
                         <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
+                        <td class="px-4 py-2 text-xs font-medium text-gray-900 dark:text-white">
+                            {% if record.host == '@' %}
+                                <span class="text-purple-600 dark:text-purple-400">@ (root)</span>
+                            {% else %}
+                                {{ record.host }}
+                            {% endif %}
+                            {% if record.source|default('discovered') == 'manual' %}
+                                <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                            {% elseif record.source|default('discovered') == 'imported' %}
+                                <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                            {% endif %}
+                        </td>
                         <td class="px-4 py-2">
-                            <span class="inline-flex items-center px-1.5 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400 text-xs font-semibold rounded">{{ txtType }}</span>{% if record.source|default('discovered') == 'manual' %}
-                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
-                        {% elseif record.source|default('discovered') == 'imported' %}
-                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
-                        {% endif %}
+                            <span class="inline-flex items-center px-1.5 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400 text-xs font-semibold rounded">{{ txtType }}</span>
                         </td>
                         <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white break-all">{{ record.value }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ record.ttl }}s</td>
@@ -643,6 +661,7 @@
                 <thead class="bg-gray-50 dark:bg-slate-900">
                     <tr>
                         <th class="w-8 px-2 py-2"><input type="checkbox" class="dns-select-all rounded border-gray-300 dark:border-slate-600" data-type="CAA"></th>
+                        <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Host</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Tag</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Value (CA)</th>
                         <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Flags</th>
@@ -655,12 +674,20 @@
                     {% set rawData = record.raw_data ? record.raw_data|from_json : {} %}
                     <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
                         <td class="w-8 px-2 py-2"><input type="checkbox" class="dns-record-cb rounded border-gray-300 dark:border-slate-600" value="{{ record.id }}"></td>
+                        <td class="px-4 py-2 text-xs font-medium text-gray-900 dark:text-white">
+                            {% if record.host == '@' %}
+                                <span class="text-orange-600 dark:text-orange-400">@ (root)</span>
+                            {% else %}
+                                {{ record.host }}
+                            {% endif %}
+                            {% if record.source|default('discovered') == 'manual' %}
+                                <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                            {% elseif record.source|default('discovered') == 'imported' %}
+                                <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                            {% endif %}
+                        </td>
                         <td class="px-4 py-2">
-                            <span class="inline-flex items-center px-1.5 py-0.5 bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 text-xs font-semibold rounded">{{ rawData.tag|default('-') }}</span>{% if record.source|default('discovered') == 'manual' %}
-                            <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
-                        {% elseif record.source|default('discovered') == 'imported' %}
-                            <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
-                        {% endif %}
+                            <span class="inline-flex items-center px-1.5 py-0.5 bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400 text-xs font-semibold rounded">{{ rawData.tag|default('-') }}</span>
                         </td>
                         <td class="px-4 py-2 text-xs font-mono text-gray-900 dark:text-white">{{ rawData.value|default(record.value) }}</td>
                         <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400">{{ rawData.flags|default('0') }}</td>
