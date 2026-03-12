@@ -28,8 +28,13 @@ class MattermostChannel implements NotificationChannelInterface
                 'text' => $message
             ];
 
-            // Add attachments for richer formatting if domain data is available
-            if (isset($data['domain'])) {
+            // Add green-bar attachment only for expiration/SSL/status alerts, not for DNS change (plain text only)
+            $isRichAlert = isset($data['domain'])
+                && (array_key_exists('days_left', $data)
+                    || array_key_exists('expiration_date', $data)
+                    || isset($data['new_status'])
+                    || (isset($data['hostname']) && $data['hostname'] !== $data['domain']));
+            if ($isRichAlert) {
                 $color = $this->getColorByDaysLeft($data['days_left'] ?? null);
                 $title = $data['subject'] ?? '🔔 Domain Monitor Alert';
 
@@ -37,7 +42,6 @@ class MattermostChannel implements NotificationChannelInterface
                     ['short' => true, 'title' => 'Domain', 'value' => $data['domain']]
                 ];
 
-                // Only add expiration fields for domain expiration alerts
                 if (array_key_exists('days_left', $data) || array_key_exists('expiration_date', $data)) {
                     $fields[] = ['short' => true, 'title' => 'Days Left', 'value' => (string) ($data['days_left'] ?? 'N/A')];
                     $fields[] = ['short' => true, 'title' => 'Expiration Date', 'value' => $data['expiration_date'] ?? 'N/A'];
@@ -53,7 +57,6 @@ class MattermostChannel implements NotificationChannelInterface
                     [
                         'color' => $color,
                         'title' => $title,
-                        'text' => $message,
                         'fields' => $fields,
                         'footer' => 'Domain Monitor',
                         'ts' => time()
