@@ -819,7 +819,7 @@
                     <div>
                         <p class="text-xs text-gray-500 dark:text-slate-400 mb-1">DNS check (every 6 hours)</p>
                         <div class="bg-gray-900 text-gray-100 px-4 py-3 rounded-lg font-mono text-sm break-all">
-                            <code>0 0,6,12,18 * * php {{ cronPath|replace({'check_domains.php': 'check_dns.php'}) }}</code>
+                            <code>0 0,6,12,18 * * * php {{ cronPath|replace({'check_domains.php': 'check_dns.php'}) }}</code>
                         </div>
                     </div>
                     <div>
