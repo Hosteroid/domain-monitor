@@ -85,6 +85,12 @@ class DnsService
         $this->logger = new Logger('dns');
     }
 
+    // trailing dot: an absolute name is never retried with the resolver's search suffixes
+    private static function absolute(string $name): string
+    {
+        return rtrim($name, '.') . '.';
+    }
+
     // ========================================================================
     // DNS SCAN METHODS
     // ========================================================================
@@ -270,7 +276,7 @@ class DnsService
         string $baseDomain, array &$records, array &$seen
     ): void {
         try {
-            $raw = @dns_get_record($fqdn, $dnsConst);
+            $raw = @dns_get_record(self::absolute($fqdn), $dnsConst);
             if ($raw === false || empty($raw)) {
                 return;
             }
@@ -291,7 +297,7 @@ class DnsService
     private function queryAllFallback(string $fqdn, string $baseDomain, array &$records, array &$seen): void
     {
         try {
-            $all = @dns_get_record($fqdn, DNS_ALL);
+            $all = @dns_get_record(self::absolute($fqdn), DNS_ALL);
             if (!is_array($all) || empty($all)) {
                 return;
             }
@@ -328,11 +334,12 @@ class DnsService
      */
     private function subdomainExists(string $fqdn): bool
     {
-        if (@checkdnsrr($fqdn, 'A'))     return true;
-        if (@checkdnsrr($fqdn, 'AAAA'))  return true;
-        if (@checkdnsrr($fqdn, 'CNAME')) return true;
-        $ip = @gethostbyname($fqdn);
-        return ($ip !== $fqdn);
+        $name = self::absolute($fqdn);
+        if (@checkdnsrr($name, 'A'))     return true;
+        if (@checkdnsrr($name, 'AAAA'))  return true;
+        if (@checkdnsrr($name, 'CNAME')) return true;
+        $ip = @gethostbyname($name);
+        return ($ip !== $name);
     }
 
     /**
@@ -342,7 +349,7 @@ class DnsService
     {
         $ips = ['ipv4' => [], 'ipv6' => []];
 
-        $a = @dns_get_record($hostname, DNS_A);
+        $a = @dns_get_record(self::absolute($hostname), DNS_A);
         if (is_array($a)) {
             foreach ($a as $r) {
                 if (!empty($r['ip'])) {
@@ -351,7 +358,7 @@ class DnsService
             }
         }
 
-        $aaaa = @dns_get_record($hostname, DNS_AAAA);
+        $aaaa = @dns_get_record(self::absolute($hostname), DNS_AAAA);
         if (is_array($aaaa)) {
             foreach ($aaaa as $r) {
                 if (!empty($r['ipv6'])) {
@@ -387,7 +394,7 @@ class DnsService
         $this->queryAllFallback($domain, $domain, $records, $seen);
 
         if (empty($records['A'])) {
-            $ips = @gethostbynamel($domain);
+            $ips = @gethostbynamel(self::absolute($domain));
             if (is_array($ips)) {
                 foreach ($ips as $ip) {
                     $this->addIfNew('A', [
