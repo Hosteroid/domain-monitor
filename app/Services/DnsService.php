@@ -1182,6 +1182,9 @@ class DnsService
      * Batch-lookup IP details (ASN, PTR, org, country) for a list of IPs.
      * PTR via gethostbyaddr(); ASN/geo via ip-api.com batch.
      */
+    private static array $ptrCache = [];
+    private static bool $ipApiUnavailable = false;
+
     public function lookupIpDetails(array $ips): array
     {
         $unique = array_values(array_unique(array_filter($ips)));
@@ -1192,10 +1195,15 @@ class DnsService
         $result = [];
 
         foreach ($unique as $ip) {
-            $ptr = @gethostbyaddr($ip);
-            $result[$ip] = [
-                'reverse' => ($ptr !== false && $ptr !== $ip) ? $ptr : '',
-            ];
+            if (!array_key_exists($ip, self::$ptrCache)) {
+                $ptr = @gethostbyaddr($ip);
+                self::$ptrCache[$ip] = ($ptr !== false && $ptr !== $ip) ? $ptr : '';
+            }
+            $result[$ip] = ['reverse' => self::$ptrCache[$ip]];
+        }
+
+        if (self::$ipApiUnavailable) {
+            return $result;
         }
 
         $requestBody = [];
@@ -1226,7 +1234,8 @@ class DnsService
                 }
             }
         } else {
-            $this->logger->warning('ip-api.com batch request failed');
+            self::$ipApiUnavailable = true;
+            $this->logger->warning('ip-api.com batch request failed, skipping IP details for the rest of this run');
         }
 
         return $result;
