@@ -109,6 +109,10 @@ class DnsService
         // Query known subdomain hosts directly (no existence probe needed)
         foreach ($existingHosts as $sub) {
             $fqdn = "{$sub}.{$domain}";
+            if (str_starts_with($sub, '_')) {
+                $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+                continue;
+            }
             $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
