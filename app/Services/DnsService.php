@@ -391,7 +391,9 @@ class DnsService
             $this->queryAndCollect($domain, $dnsConst, $typeName, $domain, $records, $seen);
         }
 
-        $this->queryAllFallback($domain, $domain, $records, $seen);
+        if (array_sum(array_map('count', $records)) === 0) {
+            $this->queryAllFallback($domain, $domain, $records, $seen);
+        }
 
         if (empty($records['A'])) {
             $ips = @gethostbynamel(self::absolute($domain));
