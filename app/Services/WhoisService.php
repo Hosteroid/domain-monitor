@@ -929,7 +929,7 @@ class WhoisService
                 }
 
                 // Expiration date
-                if (preg_match('/(expir|expiry|expire|paid-till|renewal|registry.*expir)/i', $key) && !empty($value)) {
+                if (preg_match('/(expir|expiry|expire|paid-till|renewal|registry.*expir|^valid\s*until$)/i', $key) && !empty($value)) {
                     $data['expiration_date'] = $this->parseDate($value);
                 }
 
