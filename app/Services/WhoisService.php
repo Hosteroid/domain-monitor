@@ -16,7 +16,13 @@ class WhoisService
     
     // Track last error type for rate limit detection
     private static ?string $lastErrorType = null;
-    
+
+    // Why the last getDomainInfo call failed, worded for the user (null when there is nothing specific to say)
+    private static ?string $lastErrorMessage = null;
+
+    // Server, port and error of the last WHOIS connection that could not be opened
+    private ?array $lastConnectionError = null;
+
     /**
      * Clear TLD cache (useful for testing or forcing fresh lookups)
      */
@@ -39,6 +45,35 @@ class WhoisService
     public static function clearLastError(): void
     {
         self::$lastErrorType = null;
+        self::$lastErrorMessage = null;
+    }
+
+    /**
+     * Why the last getDomainInfo call failed, worded for the user, or null if there is no specific reason
+     */
+    public static function getLastErrorMessage(): ?string
+    {
+        return self::$lastErrorMessage;
+    }
+
+    /**
+     * Advice for a WHOIS server that can't be reached on port 43
+     */
+    public static function connectionFailureHint(string $tld, bool $hasRdap): string
+    {
+        if ($hasRdap) {
+            return "The RDAP lookup failed too, so check this server's outbound network access.";
+        }
+        return ".{$tld} has no RDAP service, so WHOIS on port 43 is required. Check that this server can make "
+             . "outbound connections to port 43; some hosting providers block it.";
+    }
+
+    /**
+     * Whether a WHOIS reply is the registry refusing this server's IP (e.g. Red.es for .es) rather than domain data
+     */
+    public static function isAccessDeniedResponse(string $response): bool
+    {
+        return (bool)preg_match('/IP address\b.{0,60}\bnot\s+authori[sz]ed|exceeded\s+the\s+established\s+limit/is', $response);
     }
 
     public function __construct()
@@ -53,7 +88,8 @@ class WhoisService
     {
         // Clear last error at start of each lookup
         self::$lastErrorType = null;
-        
+        self::$lastErrorMessage = null;
+
         try {
             // Get TLD
             $parts = explode('.', $domain);
@@ -156,10 +192,16 @@ class WhoisService
             }
 
             // Get WHOIS data
+            $this->lastConnectionError = null;
             $whoisData = $this->queryWhois($domain, $whoisServer);
 
             if (!$whoisData) {
                 self::$lastErrorType = 'no_data';
+                if ($this->lastConnectionError !== null) {
+                    self::$lastErrorType = 'connection_failed';
+                    self::$lastErrorMessage = "Could not connect to {$whoisServer} on port {$this->lastConnectionError['port']} "
+                        . "({$this->lastConnectionError['error']}). " . self::connectionFailureHint($tld, $rdapUrl !== null);
+                }
                 $logger = new \App\Services\Logger();
                 $logger->warning('No WHOIS data received', [
                     'domain' => $domain,
@@ -167,7 +209,19 @@ class WhoisService
                 ]);
                 return null;
             }
-            
+
+            if (self::isAccessDeniedResponse($whoisData)) {
+                self::$lastErrorType = 'access_denied';
+                self::$lastErrorMessage = "{$whoisServer} refused the query: the registry has not authorised this server's IP address "
+                    . "for WHOIS, or its query limit was exceeded. WHOIS Lookup shows the registry's message, including how to request access.";
+                $logger = new \App\Services\Logger();
+                $logger->warning('WHOIS query refused by registry', [
+                    'domain' => $domain,
+                    'server' => $whoisServer
+                ]);
+                return null;
+            }
+
             $logger = new \App\Services\Logger();
             $logger->debug('WHOIS data received', [
                 'domain' => $domain,
@@ -711,6 +765,11 @@ class WhoisService
         $fp = @fsockopen($server, $port, $errno, $errstr, $timeout);
 
         if (!$fp) {
+            $this->lastConnectionError = [
+                'server' => $server,
+                'port' => $port,
+                'error' => $errstr !== '' ? $errstr : "error {$errno}",
+            ];
             $logger = new \App\Services\Logger();
             $logger->warning("WHOIS connection failed", [
                 'server' => $server,

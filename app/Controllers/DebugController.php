@@ -343,7 +343,13 @@ class DebugController extends Controller
                 $whoisResponse = WhoisService::toUtf8($whoisResponse);
 
                 $response .= $whoisResponse;
-                
+
+                if (WhoisService::isAccessDeniedResponse($whoisResponse)) {
+                    $response .= "\n\n=== QUERY REFUSED BY REGISTRY ===\n";
+                    $response .= "✗ {$whoisServer} has not authorised this server's IP address, or its query limit was exceeded.\n";
+                    $response .= "  The registry's message above explains how to request access.\n";
+                }
+
                 // Check if domain is not found/available (using improved pattern)
                 $whoisResponseLower = strtolower($whoisResponse);
                 if (preg_match('/^(not found|no match|no entries found|no data found|domain not found|no such domain|available for registration|does not exist|queried object does not exist|is free|not registered)$/m', $whoisResponseLower) ||
@@ -371,7 +377,8 @@ class DebugController extends Controller
                     }
                 }
             } else {
-                $response .= "Error: Could not connect to WHOIS server: $errstr ($errno)";
+                $response .= "Error: Could not connect to WHOIS server: $errstr ($errno)\n";
+                $response .= "Hint: " . WhoisService::connectionFailureHint($tld, !empty($servers['rdap_url']));
             }
         }
         

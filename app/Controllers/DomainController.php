@@ -491,7 +491,7 @@ class DomainController extends Controller
         $whoisData = $this->whoisService->getDomainInfo($domainName);
 
         if (!$whoisData) {
-            $_SESSION['error'] = 'Could not retrieve WHOIS information for this domain';
+            $_SESSION['error'] = WhoisService::getLastErrorMessage() ?? 'Could not retrieve WHOIS information for this domain';
             $this->redirect('/domains/create');
             return;
         }
@@ -1164,7 +1164,7 @@ class DomainController extends Controller
         $result = $this->performWhoisRefresh($id, $domain);
 
         if ($result === null) {
-            $_SESSION['error'] = 'Could not retrieve WHOIS information';
+            $_SESSION['error'] = WhoisService::getLastErrorMessage() ?? 'Could not retrieve WHOIS information';
         } else {
             $_SESSION['success'] = 'WHOIS information refreshed';
         }
@@ -1407,6 +1407,7 @@ class DomainController extends Controller
         $skipped = 0;
         $availableCount = 0;
         $errors = [];
+        $failureReasons = [];
         $userId = \Core\Auth::id();
         
         // Log bulk add start
@@ -1431,6 +1432,7 @@ class DomainController extends Controller
 
             if (!$whoisData) {
                 $errors[] = $domainName;
+                $failureReasons[WhoisService::getLastErrorMessage() ?? 'WHOIS lookup failed.'][] = $domainName;
                 continue;
             }
 
@@ -1474,6 +1476,7 @@ class DomainController extends Controller
                         'error' => $e->getMessage()
                     ]);
                     $errors[] = $domainName;
+                    $failureReasons['Could not be saved (details in the application log).'][] = $domainName;
                 }
             }
         }
@@ -1493,13 +1496,13 @@ class DomainController extends Controller
         // Name the domains that were not added, so they don't disappear inside the success message
         $problems = [];
         if (count($invalidDomains) > 0) {
-            $problems[] = count($invalidDomains) . " rejected as not root domains: " . $this->formatDomainList($invalidDomains);
+            $problems[] = count($invalidDomains) . " rejected as not root domains: " . $this->formatDomainList($invalidDomains) . ".";
         }
         if (count($errors) > 0) {
-            $problems[] = "Could not add " . count($errors) . " domain(s), WHOIS lookup or save failed: " . $this->formatDomainList($errors);
+            $problems[] = "Could not add " . count($errors) . " domain(s). " . $this->formatFailureReasons($failureReasons);
         }
         if (!empty($problems)) {
-            $_SESSION['error'] = implode('. ', $problems) . '.';
+            $_SESSION['error'] = implode(' ', $problems);
         }
 
         if ($availableCount > 0) {
@@ -1520,6 +1523,24 @@ class DomainController extends Controller
             $list .= ' and ' . (count($domains) - $max) . ' more';
         }
         return $list;
+    }
+
+    /**
+     * "a.hr, b.hr: reason. c.es: reason." for flash messages, so each reason is shown once for all its domains.
+     *
+     * @param array<string, string[]> $domainsByReason Reason (ending in a full stop) => domain names
+     */
+    private function formatFailureReasons(array $domainsByReason, int $maxReasons = 3): string
+    {
+        $parts = [];
+        foreach (array_slice($domainsByReason, 0, $maxReasons, true) as $reason => $domains) {
+            $parts[] = $this->formatDomainList($domains) . ': ' . $reason;
+        }
+        $hidden = array_sum(array_map('count', array_slice($domainsByReason, $maxReasons, null, true)));
+        if ($hidden > 0) {
+            $parts[] = "{$hidden} more failed for other reasons (see the application log).";
+        }
+        return implode(' ', $parts);
     }
 
     public function bulkRefresh()
@@ -1564,6 +1585,7 @@ class DomainController extends Controller
 
         $refreshed = 0;
         $failed = 0;
+        $failureReasons = [];
 
         foreach ($domainIds as $id) {
             // Check domain access based on isolation mode
@@ -1583,6 +1605,7 @@ class DomainController extends Controller
                     'user_id' => $userId
                 ]);
                 $failed++;
+                $failureReasons[WhoisService::getLastErrorMessage() ?? 'WHOIS lookup failed.'][] = $domain['domain_name'];
                 continue;
             }
 
@@ -1615,6 +1638,9 @@ class DomainController extends Controller
         ]);
 
         $_SESSION['success'] = "Refreshed $refreshed domain(s)" . ($failed > 0 ? ", $failed failed" : '');
+        if ($failed > 0) {
+            $_SESSION['error'] = "Could not refresh {$failed} domain(s). " . $this->formatFailureReasons($failureReasons);
+        }
         $this->redirect('/domains');
     }
 

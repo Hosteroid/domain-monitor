@@ -111,6 +111,8 @@ foreach ($domains as $domain) {
             // Check if this was a rate limit error
             $wasRateLimited = WhoisService::wasLastErrorRateLimit();
             $wasActive = in_array($domain['status'], ['active', 'expiring_soon']);
+            $reason = WhoisService::getLastErrorMessage();
+            $reasonSuffix = $reason ? ": $reason" : '';
             
             if ($wasRateLimited && $wasActive) {
                 // Rate limited - add to retry queue instead of marking as error
@@ -130,14 +132,14 @@ foreach ($domains as $domain) {
                 $stats['retried']++;
             } elseif ($wasActive) {
                 // Other temporary error - preserve status
-                logMessage("  ⚠ Temporary error for $domainName - preserving status");
+                logMessage("  ⚠ Temporary error for $domainName - preserving status{$reasonSuffix}");
                 $domainModel->update($domain['id'], [
                     'last_checked' => date('Y-m-d H:i:s')
                 ]);
                 $stats['checked']++;
             } else {
                 // Non-active domain or permanent error
-                logMessage("  ✗ Failed to get WHOIS data for $domainName");
+                logMessage("  ✗ Failed to get WHOIS data for $domainName{$reasonSuffix}");
                 $stats['errors']++;
                 $domainModel->update($domain['id'], [
                     'status' => 'error',
@@ -597,7 +599,8 @@ if (!empty($retryQueue)) {
                             $remainingQueue[] = $queueItem;
                         } else {
                             // Failed after max retries or non-rate-limit error
-                            logMessage("    ✗ Failed after {$currentAttempt} attempt(s)");
+                            $reason = WhoisService::getLastErrorMessage();
+                            logMessage("    ✗ Failed after {$currentAttempt} attempt(s)" . ($reason ? ": $reason" : ''));
                             $wasActive = in_array($domain['status'], ['active', 'expiring_soon']);
                             
                             if ($wasActive) {
