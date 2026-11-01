@@ -136,6 +136,22 @@
         {% for record in dnsRecords['SOA'] %}
         {% set rawData = record.raw_data ? record.raw_data|from_json : null %}
         <div class="p-4">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-xs font-mono text-gray-900 dark:text-white">
+                    {% if record.host == '@' %}<span class="text-gray-500 dark:text-slate-400">@ (root)</span>{% else %}{{ record.host }}{% endif %}
+                    {% if record.source|default('discovered') == 'manual' %}
+                        <span class="ml-1 px-1 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 text-xs rounded font-medium" style="font-size: 9px;">manual</span>
+                    {% elseif record.source|default('discovered') == 'imported' %}
+                        <span class="ml-1 px-1 py-0.5 bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 text-xs rounded font-medium" style="font-size: 9px;">imported</span>
+                    {% endif %}
+                </span>
+                <form method="POST" action="/domains/{{ domain.id }}/dns-records/{{ record.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this SOA record?')">
+                    {{ csrf_field()|raw }}
+                    <button type="submit" class="text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors" title="Delete">
+                        <i class="fas fa-trash-alt" style="font-size: 10px;"></i>
+                    </button>
+                </form>
+            </div>
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
                     <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">Primary NS</label>

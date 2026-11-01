@@ -665,7 +665,7 @@ class DnsService
                 case 'SOA':
                     if (count($rdata) >= 7) {
                         $parsed = [
-                            'host' => $host, 'value' => implode(' ', $rdata), 'ttl' => $ttl,
+                            'host' => $host, 'value' => rtrim($rdata[0], '.'), 'ttl' => $ttl,
                             'is_cloudflare' => false,
                             'raw' => ['host' => ($host === '@' ? $domain : "{$host}.{$domain}"), 'type' => 'SOA', 'mname' => rtrim($rdata[0], '.'), 'rname' => rtrim($rdata[1], '.'), 'serial' => (int)$rdata[2], 'refresh' => (int)$rdata[3], 'retry' => (int)$rdata[4], 'expire' => (int)$rdata[5], 'minimum-ttl' => (int)$rdata[6], 'ttl' => $ttl],
                         ];

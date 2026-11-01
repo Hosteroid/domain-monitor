@@ -87,6 +87,11 @@ class DnsRecord extends Model
      */
     public function saveSnapshot(int $domainId, array $groupedRecords, string $source = 'discovered'): array
     {
+        return $this->withDomainLock($domainId, fn() => $this->writeSnapshot($domainId, $groupedRecords, $source));
+    }
+
+    private function writeSnapshot(int $domainId, array $groupedRecords, string $source): array
+    {
         $stats = ['added' => 0, 'updated' => 0, 'removed' => 0];
         $now = date('Y-m-d H:i:s');
         $seenIds = [];
@@ -99,6 +104,14 @@ class DnsRecord extends Model
                 $priority = $record['priority'] ?? null;
                 $isCloudflare = !empty($record['is_cloudflare']) ? 1 : 0;
                 $rawData = isset($record['raw']) ? json_encode($record['raw']) : null;
+
+                if ($type === 'SOA') {
+                    $soa = $this->saveSoa($domainId, $host, $value, $ttl, $rawData, $source, $now);
+                    $seenIds[] = $soa['id'];
+                    $stats[$soa['added'] ? 'added' : 'updated']++;
+                    $stats['removed'] += $soa['removed'];
+                    continue;
+                }
 
                 $existing = $this->findExisting($domainId, $type, $host, $value, $priority);
 
@@ -127,11 +140,11 @@ class DnsRecord extends Model
                 "DELETE FROM dns_records WHERE domain_id = ? AND source = 'discovered' AND id NOT IN ({$placeholders})"
             );
             $deleteStmt->execute(array_merge([$domainId], $seenIds));
-            $stats['removed'] = $deleteStmt->rowCount();
+            $stats['removed'] += $deleteStmt->rowCount();
         } else {
             $deleteStmt = $this->db->prepare("DELETE FROM dns_records WHERE domain_id = ? AND source = 'discovered'");
             $deleteStmt->execute([$domainId]);
-            $stats['removed'] = $deleteStmt->rowCount();
+            $stats['removed'] += $deleteStmt->rowCount();
         }
 
         return $stats;
@@ -139,6 +152,74 @@ class DnsRecord extends Model
 
     /**
      * Find an existing record by its natural key
+     */
+    /**
+     * Run a write against one domain's records while holding its row lock, so the
+     * cron and the Refresh button cannot interleave their snapshots of the same domain.
+     */
+    private function withDomainLock(int $domainId, callable $work)
+    {
+        $nested = $this->db->inTransaction();
+        if (!$nested) {
+            $this->db->beginTransaction();
+        }
+        try {
+            $this->db->prepare("SELECT id FROM domains WHERE id = ? FOR UPDATE")->execute([$domainId]);
+            $result = $work();
+            if (!$nested) {
+                $this->db->commit();
+            }
+            return $result;
+        } catch (\Throwable $e) {
+            if (!$nested) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * A name has exactly one SOA record, so a new value replaces whatever is stored
+     * for that name (imported or manual included) instead of sitting next to it.
+     *
+     * @return array{id: int, added: bool, replaced: bool, removed: int}
+     */
+    private function saveSoa(int $domainId, string $host, string $value, ?int $ttl, ?string $rawData, string $source, string $now): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT id, value FROM dns_records WHERE domain_id = ? AND record_type = 'SOA' AND host = ? ORDER BY (value = ?) DESC, id LIMIT 1"
+        );
+        $stmt->execute([$domainId, $host, $value]);
+        $existing = $stmt->fetch();
+
+        if ($existing) {
+            $this->db->prepare(
+                "UPDATE dns_records SET value = ?, ttl = ?, raw_data = ?, last_seen_at = ?, updated_at = ? WHERE id = ?"
+            )->execute([$value, $ttl, $rawData, $now, $now, $existing['id']]);
+            $id = (int)$existing['id'];
+        } else {
+            $this->db->prepare(
+                "INSERT INTO dns_records (domain_id, record_type, host, value, ttl, priority, is_cloudflare, raw_data, source, first_seen_at, last_seen_at, created_at, updated_at)
+                 VALUES (?, 'SOA', ?, ?, ?, NULL, 0, ?, ?, ?, ?, ?, ?)"
+            )->execute([$domainId, $host, $value, $ttl, $rawData, $source, $now, $now, $now, $now]);
+            $id = (int)$this->db->lastInsertId();
+        }
+
+        $extra = $this->db->prepare(
+            "DELETE FROM dns_records WHERE domain_id = ? AND record_type = 'SOA' AND host = ? AND id <> ?"
+        );
+        $extra->execute([$domainId, $host, $id]);
+
+        return [
+            'id'       => $id,
+            'added'    => $existing === false,
+            'replaced' => $existing !== false && $existing['value'] !== $value,
+            'removed'  => $extra->rowCount(),
+        ];
+    }
+
+    /**
+     * Find the stored record with exactly this type, host, value and priority.
      */
     private function findExisting(int $domainId, string $type, string $host, string $value, ?int $priority): ?array
     {
@@ -264,6 +345,11 @@ class DnsRecord extends Model
      */
     public function addImportedRecords(int $domainId, array $groupedRecords): int
     {
+        return $this->withDomainLock($domainId, fn() => $this->writeImportedRecords($domainId, $groupedRecords));
+    }
+
+    private function writeImportedRecords(int $domainId, array $groupedRecords): int
+    {
         $now = date('Y-m-d H:i:s');
         $count = 0;
 
@@ -275,6 +361,14 @@ class DnsRecord extends Model
                 $priority = $record['priority'] ?? null;
                 $isCloudflare = !empty($record['is_cloudflare']) ? 1 : 0;
                 $rawData = isset($record['raw']) ? json_encode($record['raw']) : null;
+
+                if ($type === 'SOA') {
+                    $soa = $this->saveSoa($domainId, $host, $value, $ttl, $rawData, 'imported', $now);
+                    if ($soa['added'] || $soa['replaced']) {
+                        $count++;
+                    }
+                    continue;
+                }
 
                 $existing = $this->findExisting($domainId, $type, $host, $value, $priority);
                 if ($existing) {
