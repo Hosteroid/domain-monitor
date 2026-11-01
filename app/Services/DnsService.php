@@ -85,6 +85,12 @@ class DnsService
         $this->logger = new Logger('dns');
     }
 
+    // trailing dot: an absolute name is never retried with the resolver's search suffixes
+    private static function absolute(string $name): string
+    {
+        return rtrim($name, '.') . '.';
+    }
+
     // ========================================================================
     // DNS SCAN METHODS
     // ========================================================================
@@ -103,6 +109,10 @@ class DnsService
         // Query known subdomain hosts directly (no existence probe needed)
         foreach ($existingHosts as $sub) {
             $fqdn = "{$sub}.{$domain}";
+            if (str_starts_with($sub, '_')) {
+                $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+                continue;
+            }
             $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
             $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
@@ -270,7 +280,7 @@ class DnsService
         string $baseDomain, array &$records, array &$seen
     ): void {
         try {
-            $raw = @dns_get_record($fqdn, $dnsConst);
+            $raw = @dns_get_record(self::absolute($fqdn), $dnsConst);
             if ($raw === false || empty($raw)) {
                 return;
             }
@@ -291,7 +301,7 @@ class DnsService
     private function queryAllFallback(string $fqdn, string $baseDomain, array &$records, array &$seen): void
     {
         try {
-            $all = @dns_get_record($fqdn, DNS_ALL);
+            $all = @dns_get_record(self::absolute($fqdn), DNS_ALL);
             if (!is_array($all) || empty($all)) {
                 return;
             }
@@ -328,11 +338,12 @@ class DnsService
      */
     private function subdomainExists(string $fqdn): bool
     {
-        if (@checkdnsrr($fqdn, 'A'))     return true;
-        if (@checkdnsrr($fqdn, 'AAAA'))  return true;
-        if (@checkdnsrr($fqdn, 'CNAME')) return true;
-        $ip = @gethostbyname($fqdn);
-        return ($ip !== $fqdn);
+        $name = self::absolute($fqdn);
+        if (@checkdnsrr($name, 'A'))     return true;
+        if (@checkdnsrr($name, 'AAAA'))  return true;
+        if (@checkdnsrr($name, 'CNAME')) return true;
+        $ip = @gethostbyname($name);
+        return ($ip !== $name);
     }
 
     /**
@@ -342,7 +353,7 @@ class DnsService
     {
         $ips = ['ipv4' => [], 'ipv6' => []];
 
-        $a = @dns_get_record($hostname, DNS_A);
+        $a = @dns_get_record(self::absolute($hostname), DNS_A);
         if (is_array($a)) {
             foreach ($a as $r) {
                 if (!empty($r['ip'])) {
@@ -351,7 +362,7 @@ class DnsService
             }
         }
 
-        $aaaa = @dns_get_record($hostname, DNS_AAAA);
+        $aaaa = @dns_get_record(self::absolute($hostname), DNS_AAAA);
         if (is_array($aaaa)) {
             foreach ($aaaa as $r) {
                 if (!empty($r['ipv6'])) {
@@ -384,10 +395,12 @@ class DnsService
             $this->queryAndCollect($domain, $dnsConst, $typeName, $domain, $records, $seen);
         }
 
-        $this->queryAllFallback($domain, $domain, $records, $seen);
+        if (array_sum(array_map('count', $records)) === 0) {
+            $this->queryAllFallback($domain, $domain, $records, $seen);
+        }
 
         if (empty($records['A'])) {
-            $ips = @gethostbynamel($domain);
+            $ips = @gethostbynamel(self::absolute($domain));
             if (is_array($ips)) {
                 foreach ($ips as $ip) {
                     $this->addIfNew('A', [
@@ -1169,6 +1182,9 @@ class DnsService
      * Batch-lookup IP details (ASN, PTR, org, country) for a list of IPs.
      * PTR via gethostbyaddr(); ASN/geo via ip-api.com batch.
      */
+    private static array $ptrCache = [];
+    private static bool $ipApiUnavailable = false;
+
     public function lookupIpDetails(array $ips): array
     {
         $unique = array_values(array_unique(array_filter($ips)));
@@ -1179,10 +1195,15 @@ class DnsService
         $result = [];
 
         foreach ($unique as $ip) {
-            $ptr = @gethostbyaddr($ip);
-            $result[$ip] = [
-                'reverse' => ($ptr !== false && $ptr !== $ip) ? $ptr : '',
-            ];
+            if (!array_key_exists($ip, self::$ptrCache)) {
+                $ptr = @gethostbyaddr($ip);
+                self::$ptrCache[$ip] = ($ptr !== false && $ptr !== $ip) ? $ptr : '';
+            }
+            $result[$ip] = ['reverse' => self::$ptrCache[$ip]];
+        }
+
+        if (self::$ipApiUnavailable) {
+            return $result;
         }
 
         $requestBody = [];
@@ -1213,7 +1234,8 @@ class DnsService
                 }
             }
         } else {
-            $this->logger->warning('ip-api.com batch request failed');
+            self::$ipApiUnavailable = true;
+            $this->logger->warning('ip-api.com batch request failed, skipping IP details for the rest of this run');
         }
 
         return $result;
