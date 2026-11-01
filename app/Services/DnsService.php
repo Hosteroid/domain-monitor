@@ -1215,8 +1215,8 @@ class DnsService
             if (self::$ipApiUnavailable || !$this->waitForIpApiWindow()) {
                 break;
             }
-            // A chunk refused with 429 is sent once more after the pause; a web request doesn't wait, so it skips it
-            if ($this->fetchIpApiBatch($chunk) === 429 && $this->waitForIpApiWindow()) {
+            // In CLI runs a chunk refused with 429 is sent once more after the pause; a web request skips it
+            if ($this->fetchIpApiBatch($chunk) === 429 && php_sapi_name() === 'cli' && $this->waitForIpApiWindow()) {
                 $this->fetchIpApiBatch($chunk);
             }
         }
