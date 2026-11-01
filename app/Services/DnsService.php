@@ -1185,6 +1185,7 @@ class DnsService
     private static array $ptrCache = [];
     private static array $ipApiCache = [];
     private static bool $ipApiUnavailable = false;
+    private static int $ipApiPausedUntil = 0;
 
     /**
      * Batch-lookup IP details (ASN, PTR, org, country) for a list of IPs.
@@ -1211,10 +1212,13 @@ class DnsService
         // ip-api.com allows 15 batch requests per minute and 100 IPs per batch, so only ask for IPs not seen this run
         $pending = array_values(array_filter($unique, fn($ip) => !array_key_exists($ip, self::$ipApiCache)));
         foreach (array_chunk($pending, 100) as $chunk) {
-            if (self::$ipApiUnavailable) {
+            if (self::$ipApiUnavailable || !$this->waitForIpApiWindow()) {
                 break;
             }
-            $this->fetchIpApiBatch($chunk);
+            // In CLI runs a chunk refused with 429 is sent once more after the pause; a web request skips it
+            if ($this->fetchIpApiBatch($chunk) === 429 && php_sapi_name() === 'cli' && $this->waitForIpApiWindow()) {
+                $this->fetchIpApiBatch($chunk);
+            }
         }
 
         foreach ($unique as $ip) {
@@ -1228,8 +1232,9 @@ class DnsService
 
     /**
      * Query ip-api.com for one batch of IPs and cache the answers for the rest of the run.
+     * Returns the HTTP status, 0 if nothing answered.
      */
-    private function fetchIpApiBatch(array $ips): void
+    private function fetchIpApiBatch(array $ips): int
     {
         $requestBody = [];
         foreach ($ips as $ip) {
@@ -1241,23 +1246,50 @@ class DnsService
 
         $context = stream_context_create([
             'http' => [
-                'method'  => 'POST',
-                'header'  => "Content-Type: application/json\r\nUser-Agent: DomainMonitor/1.0",
-                'content' => json_encode($requestBody),
-                'timeout' => 5,
+                'method'        => 'POST',
+                'header'        => "Content-Type: application/json\r\nUser-Agent: DomainMonitor/1.0",
+                'content'       => json_encode($requestBody),
+                'timeout'       => 5,
+                'ignore_errors' => true,
             ],
         ]);
 
+        $http_response_header = null;
         $response = @file_get_contents('http://ip-api.com/batch', false, $context);
-        if ($response === false) {
+
+        $status = 0;
+        if (isset($http_response_header[0]) && preg_match('/\d{3}/', $http_response_header[0], $m)) {
+            $status = (int) $m[0];
+        }
+
+        // X-Rl = requests left in the window, X-Ttl = seconds until it resets.
+        // ip-api.com bans clients that keep sending once X-Rl is 0.
+        $remaining = null;
+        $ttl = 60;
+        foreach ($http_response_header ?? [] as $header) {
+            if (preg_match('/^X-Rl:\s*(\d+)/i', $header, $m)) {
+                $remaining = (int) $m[1];
+            } elseif (preg_match('/^X-Ttl:\s*(\d+)/i', $header, $m)) {
+                $ttl = (int) $m[1];
+            }
+        }
+        if ($remaining === 0 || $status === 429) {
+            self::$ipApiPausedUntil = time() + min($ttl, 60) + 1;
+        }
+
+        if ($status === 429) {
+            $this->logger->warning('ip-api.com rate limit exceeded, pausing IP details until the window resets');
+            return $status;
+        }
+        if ($status !== 200 || !is_string($response)) {
             self::$ipApiUnavailable = true;
             $this->logger->warning('ip-api.com batch request failed, skipping IP details for the rest of this run');
-            return;
+            return $status;
         }
 
         $data = json_decode($response, true);
         if (!is_array($data)) {
-            return;
+            return $status;
         }
 
         // IPs ip-api.com has no data for (private ranges etc.) are cached as empty so they aren't asked again
@@ -1269,6 +1301,27 @@ class DnsService
                 self::$ipApiCache[$item['query']] = $item;
             }
         }
+
+        return $status;
+    }
+
+    /**
+     * Wait for ip-api.com's rate limit window to reset once it is used up.
+     * Only the CLI scripts wait; a web request skips the lookup and keeps the stored details.
+     */
+    private function waitForIpApiWindow(): bool
+    {
+        $wait = self::$ipApiPausedUntil - time();
+        if ($wait <= 0) {
+            return true;
+        }
+        if (php_sapi_name() !== 'cli') {
+            return false;
+        }
+
+        $this->logger->info("ip-api.com rate limit reached, waiting {$wait}s for the next batch");
+        sleep($wait);
+        return true;
     }
 
     // ========================================================================
