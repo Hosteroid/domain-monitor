@@ -1215,7 +1215,10 @@ class DnsService
             if (self::$ipApiUnavailable || !$this->waitForIpApiWindow()) {
                 break;
             }
-            $this->fetchIpApiBatch($chunk);
+            // A chunk refused with 429 is sent once more after the pause; a web request doesn't wait, so it skips it
+            if ($this->fetchIpApiBatch($chunk) === 429 && $this->waitForIpApiWindow()) {
+                $this->fetchIpApiBatch($chunk);
+            }
         }
 
         foreach ($unique as $ip) {
@@ -1229,8 +1232,9 @@ class DnsService
 
     /**
      * Query ip-api.com for one batch of IPs and cache the answers for the rest of the run.
+     * Returns the HTTP status, 0 if nothing answered.
      */
-    private function fetchIpApiBatch(array $ips): void
+    private function fetchIpApiBatch(array $ips): int
     {
         $requestBody = [];
         foreach ($ips as $ip) {
@@ -1275,17 +1279,17 @@ class DnsService
 
         if ($status === 429) {
             $this->logger->warning('ip-api.com rate limit exceeded, pausing IP details until the window resets');
-            return;
+            return $status;
         }
         if ($status !== 200 || !is_string($response)) {
             self::$ipApiUnavailable = true;
             $this->logger->warning('ip-api.com batch request failed, skipping IP details for the rest of this run');
-            return;
+            return $status;
         }
 
         $data = json_decode($response, true);
         if (!is_array($data)) {
-            return;
+            return $status;
         }
 
         // IPs ip-api.com has no data for (private ranges etc.) are cached as empty so they aren't asked again
@@ -1297,6 +1301,8 @@ class DnsService
                 self::$ipApiCache[$item['query']] = $item;
             }
         }
+
+        return $status;
     }
 
     /**
