@@ -10,6 +10,16 @@ namespace App\Helpers;
 class InputValidator
 {
     /**
+     * Second-level labels that ccTLD registries use for registrations (e.g. .com.br, .co.uk, .gob.mx, .me.uk).
+     * Every label that is a registration suffix under at least 9 two-letter ccTLDs in the ICANN section
+     * of the Public Suffix List (checked November 2026), plus ltd/plc (.uk) and ne (.jp).
+     */
+    private const COMMON_SECOND_LEVEL_SUFFIXES = [
+        'com', 'net', 'org', 'co', 'ac', 'gov', 'edu', 'biz', 'info', 'ltd', 'plc', 'or', 'ne', 'go', 'mil', 'nom', 'sch',
+        'gob', 'name', 'int', 'pro', 'tv', 'web', 'tm', 'asso', 'me', 'coop', 'id', 'med',
+    ];
+
+    /**
      * Validate domain name format
      *
      * @param string $domain Domain name to validate
@@ -87,6 +97,19 @@ class InputValidator
         if (!$matchedTld) {
             $matchedTld = '.' . $parts[count($parts) - 1];
             $labelCount = count($parts) - 1;
+        }
+
+        // The IANA import only holds single-label TLDs, so multi-level ccTLDs like .com.br are
+        // recognised here: the match was a two-letter ccTLD and the label before it is a common
+        // second-level suffix. Less common ones (e.g. .blog.br) can be added in TLD Registry.
+        $partCount = count($parts);
+        if ($partCount >= 3
+            && $labelCount === $partCount - 1
+            && strlen($parts[$partCount - 1]) === 2
+            && in_array($parts[$partCount - 2], self::COMMON_SECOND_LEVEL_SUFFIXES, true)
+        ) {
+            $matchedTld = '.' . $parts[$partCount - 2] . $matchedTld;
+            $labelCount = $partCount - 2;
         }
 
         if ($labelCount !== 1) {

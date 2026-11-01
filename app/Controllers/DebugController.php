@@ -70,6 +70,11 @@ class DebugController extends Controller
                 $servers = $discoverMethod->invoke($whoisService, $tld);
                 $discoveryDebug[] = "  -> RDAP: " . ($servers['rdap_url'] ?? 'Not found');
                 $discoveryDebug[] = "  -> WHOIS: " . ($servers['whois_server'] ?? 'Not found');
+            } elseif (!$servers['rdap_url']) {
+                $discoveryDebug[] = "";
+                $discoveryDebug[] = "No RDAP for double TLD, using RDAP of parent TLD: {$tld}";
+                $servers['rdap_url'] = $discoverMethod->invoke($whoisService, $tld)['rdap_url'];
+                $discoveryDebug[] = "  -> RDAP: " . ($servers['rdap_url'] ?? 'Not found');
             }
         } else {
             $discoveryDebug[] = "Trying single TLD: {$tld}";
@@ -335,7 +340,8 @@ class DebugController extends Controller
                     $whoisResponse .= fgets($fp, 128);
                 }
                 fclose($fp);
-                
+                $whoisResponse = WhoisService::toUtf8($whoisResponse);
+
                 $response .= $whoisResponse;
                 
                 // Check if domain is not found/available (using improved pattern)

@@ -165,7 +165,7 @@ foreach ($domains as $domain) {
             'abuse_email' => $whoisData['abuse_email'] ?? null,
             'last_checked' => date('Y-m-d H:i:s'),
             'status' => $status,
-            'whois_data' => json_encode($whoisData)
+            'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE)
         ]);
 
         $stats['checked']++;
@@ -633,7 +633,7 @@ if (!empty($retryQueue)) {
                         'abuse_email' => $whoisData['abuse_email'] ?? null,
                         'last_checked' => date('Y-m-d H:i:s'),
                         'status' => $status,
-                        'whois_data' => json_encode($whoisData)
+                        'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE)
                     ]);
                     
                     $stats['checked']++;

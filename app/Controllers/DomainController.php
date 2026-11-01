@@ -368,7 +368,7 @@ class DomainController extends Controller
                     'updated_date' => $whoisData['updated_date'] ?? null,
                     'abuse_email' => $whoisData['abuse_email'] ?? null,
                     'status' => $status,
-                    'whois_data' => json_encode($whoisData),
+                    'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE),
                     'notes' => trim($row['notes'] ?? ''),
                     'last_checked' => date('Y-m-d H:i:s'),
                     'notification_group_id' => $groupId,
@@ -514,7 +514,7 @@ class DomainController extends Controller
             'abuse_email' => $whoisData['abuse_email'] ?? null,
             'last_checked' => date('Y-m-d H:i:s'),
             'status' => $status,
-            'whois_data' => json_encode($whoisData),
+            'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE),
             'is_active' => 1,
             'user_id' => $userId
         ]);
@@ -776,7 +776,7 @@ class DomainController extends Controller
             'abuse_email' => $whoisData['abuse_email'] ?? null,
             'last_checked' => date('Y-m-d H:i:s'),
             'status' => $status,
-            'whois_data' => json_encode($whoisData)
+            'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE)
         ]);
 
         $logger->info('WHOIS refresh completed', [
@@ -1452,7 +1452,7 @@ class DomainController extends Controller
                     'abuse_email' => $whoisData['abuse_email'] ?? null,
                     'last_checked' => date('Y-m-d H:i:s'),
                     'status' => $status,
-                    'whois_data' => json_encode($whoisData),
+                    'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE),
                     'is_active' => 1,
                     'user_id' => \Core\Auth::id()
                 ]);
@@ -1489,15 +1489,37 @@ class DomainController extends Controller
 
         $message = "Added $added domain(s)";
         if ($skipped > 0) $message .= ", skipped $skipped duplicate(s)";
-        if (count($invalidDomains) > 0) $message .= ", " . count($invalidDomains) . " rejected (not root domains)";
-        if (count($errors) > 0) $message .= ", failed to add " . count($errors) . " domain(s)";
+
+        // Name the domains that were not added, so they don't disappear inside the success message
+        $problems = [];
+        if (count($invalidDomains) > 0) {
+            $problems[] = count($invalidDomains) . " rejected as not root domains: " . $this->formatDomainList($invalidDomains);
+        }
+        if (count($errors) > 0) {
+            $problems[] = "Could not add " . count($errors) . " domain(s), WHOIS lookup or save failed: " . $this->formatDomainList($errors);
+        }
+        if (!empty($problems)) {
+            $_SESSION['error'] = implode('. ', $problems) . '.';
+        }
 
         if ($availableCount > 0) {
             $_SESSION['warning'] = "Note: $availableCount domain(s) appear to be AVAILABLE (not registered).";
         }
-        
+
         $_SESSION['success'] = $message;
         $this->redirect('/domains');
+    }
+
+    /**
+     * Comma-separated list of domain names for flash messages, shortened after $max names.
+     */
+    private function formatDomainList(array $domains, int $max = 10): string
+    {
+        $list = implode(', ', array_slice($domains, 0, $max));
+        if (count($domains) > $max) {
+            $list .= ' and ' . (count($domains) - $max) . ' more';
+        }
+        return $list;
     }
 
     public function bulkRefresh()
@@ -1577,7 +1599,7 @@ class DomainController extends Controller
                 'abuse_email' => $whoisData['abuse_email'] ?? null,
                 'last_checked' => date('Y-m-d H:i:s'),
                 'status' => $status,
-                'whois_data' => json_encode($whoisData)
+                'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE)
             ]);
 
             $refreshed++;

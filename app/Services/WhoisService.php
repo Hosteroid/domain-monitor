@@ -75,6 +75,10 @@ class WhoisService
                 // If double TLD lookup failed, try single TLD
                 if (!$servers['rdap_url'] && !$servers['whois_server']) {
                     $servers = $this->discoverTldServers($tld);
+                } elseif (!$servers['rdap_url']) {
+                    // The RDAP bootstrap only lists TLDs; the parent TLD's server answers for
+                    // its second-level suffixes too (e.g. rdap.registro.br for .com.br)
+                    $servers['rdap_url'] = $this->discoverTldServers($tld)['rdap_url'];
                 }
             } else {
                 $servers = $this->discoverTldServers($tld);
@@ -728,7 +732,16 @@ class WhoisService
 
         fclose($fp);
 
-        return $response;
+        return self::toUtf8($response);
+    }
+
+    /**
+     * WHOIS has no charset negotiation and some registries (e.g. whois.registro.br) answer in Latin-1.
+     * Convert anything that isn't valid UTF-8, so it can be parsed, displayed and stored as JSON.
+     */
+    public static function toUtf8(string $text): string
+    {
+        return mb_check_encoding($text, 'UTF-8') ? $text : mb_convert_encoding($text, 'UTF-8', 'ISO-8859-1');
     }
 
     /**
