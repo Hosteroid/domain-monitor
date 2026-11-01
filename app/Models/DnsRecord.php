@@ -116,6 +116,9 @@ class DnsRecord extends Model
                 $existing = $this->findExisting($domainId, $type, $host, $value, $priority);
 
                 if ($existing) {
+                    if (($type === 'A' || $type === 'AAAA') && isset($record['raw'])) {
+                        $rawData = json_encode($this->keepStoredIpInfo($record['raw'], $existing['raw_data']));
+                    }
                     $this->db->prepare(
                         "UPDATE dns_records SET ttl = ?, is_cloudflare = ?, raw_data = ?, last_seen_at = ?, updated_at = ? WHERE id = ?"
                     )->execute([$ttl, $isCloudflare, $rawData, $now, $now, $existing['id']]);
@@ -151,8 +154,25 @@ class DnsRecord extends Model
     }
 
     /**
-     * Find an existing record by its natural key
+     * Keep the ASN/geo details already stored for an A/AAAA record when this run's
+     * ip-api.com lookup returned nothing for its IP (rate limit, timeout).
      */
+    private function keepStoredIpInfo(array $raw, ?string $storedRawData): array
+    {
+        if (isset($raw['_ip_info']['status']) || empty($storedRawData)) {
+            return $raw;
+        }
+
+        $storedInfo = json_decode($storedRawData, true)['_ip_info'] ?? null;
+        if (!isset($storedInfo['status'])) {
+            return $raw;
+        }
+
+        // The fresh PTR wins, the stored ASN/geo fills the gap
+        $raw['_ip_info'] = array_merge($storedInfo, $raw['_ip_info'] ?? []);
+        return $raw;
+    }
+
     /**
      * Run a write against one domain's records while holding its row lock, so the
      * cron and the Refresh button cannot interleave their snapshots of the same domain.
@@ -187,15 +207,17 @@ class DnsRecord extends Model
     private function saveSoa(int $domainId, string $host, string $value, ?int $ttl, ?string $rawData, string $source, string $now): array
     {
         $stmt = $this->db->prepare(
-            "SELECT id, value FROM dns_records WHERE domain_id = ? AND record_type = 'SOA' AND host = ? ORDER BY (value = ?) DESC, id LIMIT 1"
+            "SELECT id, value, source FROM dns_records WHERE domain_id = ? AND record_type = 'SOA' AND host = ? ORDER BY (value = ?) DESC, id LIMIT 1"
         );
         $stmt->execute([$domainId, $host, $value]);
         $existing = $stmt->fetch();
 
         if ($existing) {
+            // A replaced value now comes from this snapshot, so it takes this snapshot's source
+            $newSource = $existing['value'] === $value ? $existing['source'] : $source;
             $this->db->prepare(
-                "UPDATE dns_records SET value = ?, ttl = ?, raw_data = ?, last_seen_at = ?, updated_at = ? WHERE id = ?"
-            )->execute([$value, $ttl, $rawData, $now, $now, $existing['id']]);
+                "UPDATE dns_records SET value = ?, ttl = ?, raw_data = ?, source = ?, last_seen_at = ?, updated_at = ? WHERE id = ?"
+            )->execute([$value, $ttl, $rawData, $newSource, $now, $now, $existing['id']]);
             $id = (int)$existing['id'];
         } else {
             $this->db->prepare(

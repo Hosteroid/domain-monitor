@@ -109,8 +109,11 @@ class DnsService
         // Query known subdomain hosts directly (no existence probe needed)
         foreach ($existingHosts as $sub) {
             $fqdn = "{$sub}.{$domain}";
+            // Underscore names hold TXT, SRV or a CNAME (e.g. delegated _acme-challenge), never A/AAAA/MX
             if (str_starts_with($sub, '_')) {
+                $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
                 $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+                $this->queryAndCollect($fqdn, DNS_SRV, 'SRV', $domain, $records, $seen);
                 continue;
             }
             $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
@@ -120,7 +123,8 @@ class DnsService
             $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
         }
 
-        foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
+        // Known hosts above already covered these when they exist
+        foreach (array_diff(self::SPECIAL_TXT_SUBDOMAINS, $existingHosts) as $sub) {
             $fqdn = "{$sub}.{$domain}";
             $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
         }
@@ -1178,13 +1182,15 @@ class DnsService
     // IP DETAILS (PTR, ASN, GEO)
     // ========================================================================
 
+    private static array $ptrCache = [];
+    private static array $ipApiCache = [];
+    private static bool $ipApiUnavailable = false;
+
     /**
      * Batch-lookup IP details (ASN, PTR, org, country) for a list of IPs.
      * PTR via gethostbyaddr(); ASN/geo via ip-api.com batch.
+     * Both are cached for the process, so IPs shared by many domains are looked up once per run.
      */
-    private static array $ptrCache = [];
-    private static bool $ipApiUnavailable = false;
-
     public function lookupIpDetails(array $ips): array
     {
         $unique = array_values(array_unique(array_filter($ips)));
@@ -1202,12 +1208,31 @@ class DnsService
             $result[$ip] = ['reverse' => self::$ptrCache[$ip]];
         }
 
-        if (self::$ipApiUnavailable) {
-            return $result;
+        // ip-api.com allows 15 batch requests per minute and 100 IPs per batch, so only ask for IPs not seen this run
+        $pending = array_values(array_filter($unique, fn($ip) => !array_key_exists($ip, self::$ipApiCache)));
+        foreach (array_chunk($pending, 100) as $chunk) {
+            if (self::$ipApiUnavailable) {
+                break;
+            }
+            $this->fetchIpApiBatch($chunk);
         }
 
-        $requestBody = [];
         foreach ($unique as $ip) {
+            if (!empty(self::$ipApiCache[$ip])) {
+                $result[$ip] = array_merge($result[$ip], self::$ipApiCache[$ip]);
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Query ip-api.com for one batch of IPs and cache the answers for the rest of the run.
+     */
+    private function fetchIpApiBatch(array $ips): void
+    {
+        $requestBody = [];
+        foreach ($ips as $ip) {
             $requestBody[] = [
                 'query'  => $ip,
                 'fields' => 'status,query,as,asname,isp,org,country,countryCode,regionName,city,hosting',
@@ -1224,21 +1249,26 @@ class DnsService
         ]);
 
         $response = @file_get_contents('http://ip-api.com/batch', false, $context);
-        if ($response !== false) {
-            $data = json_decode($response, true);
-            if (is_array($data)) {
-                foreach ($data as $item) {
-                    if (($item['status'] ?? '') === 'success' && isset($item['query'])) {
-                        $result[$item['query']] = array_merge($result[$item['query']] ?? [], $item);
-                    }
-                }
-            }
-        } else {
+        if ($response === false) {
             self::$ipApiUnavailable = true;
             $this->logger->warning('ip-api.com batch request failed, skipping IP details for the rest of this run');
+            return;
         }
 
-        return $result;
+        $data = json_decode($response, true);
+        if (!is_array($data)) {
+            return;
+        }
+
+        // IPs ip-api.com has no data for (private ranges etc.) are cached as empty so they aren't asked again
+        foreach ($ips as $ip) {
+            self::$ipApiCache[$ip] = [];
+        }
+        foreach ($data as $item) {
+            if (($item['status'] ?? '') === 'success' && isset($item['query'])) {
+                self::$ipApiCache[$item['query']] = $item;
+            }
+        }
     }
 
     // ========================================================================
