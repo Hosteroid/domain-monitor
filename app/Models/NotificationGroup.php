@@ -114,5 +114,36 @@ class NotificationGroup extends Model
         $result = $stmt->fetch();
         return $result ?: null;
     }
+
+    /**
+     * Check whether a group sends a type of alert (expiration, status, dns, ssl).
+     * Domains without a group are not restricted.
+     */
+    public function allowsAlert(?int $groupId, string $type): bool
+    {
+        if (!$groupId) {
+            return true;
+        }
+
+        $group = $this->find($groupId);
+        $column = 'notify_' . $type;
+
+        // Missing group or column (migration not run yet): keep sending as before
+        return !$group || !array_key_exists($column, $group) || (bool)$group[$column];
+    }
+
+    /**
+     * Whether a group is a watchlist: domains someone wants to acquire rather than owns, so its
+     * alerts are about the domain approaching deletion or becoming available (#95)
+     */
+    public function isWatchlist(?int $groupId): bool
+    {
+        if (!$groupId) {
+            return false;
+        }
+
+        $group = $this->find($groupId);
+        return ($group['purpose'] ?? 'own') === 'watch';
+    }
 }
 

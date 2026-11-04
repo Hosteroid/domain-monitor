@@ -48,6 +48,17 @@ class DashboardController extends Controller
         }
         $expiringThisMonth = array_slice($allExpiringDomains, 0, 5);
         
+        // Get monitored SSL certificates (soonest expiry first) limited to top 5
+        $sslCertificateModel = new \App\Models\SslCertificate();
+        if ($isolationMode === 'isolated') {
+            $monitoredCertificates = $sslCertificateModel->getAllMonitored($userId);
+        } else {
+            $monitoredCertificates = $sslCertificateModel->getAllMonitored();
+        }
+        $monitoredCertificates = \App\Helpers\SslHelper::formatMultiple($monitoredCertificates);
+        $sslStats = \App\Helpers\SslHelper::buildStats($monitoredCertificates);
+        $expiringCertificates = array_slice($monitoredCertificates, 0, 5);
+        
         $recentLogs = $this->logModel->getRecent(10);
         
         // Check system status
@@ -92,6 +103,9 @@ class DashboardController extends Controller
             'recentDomains' => $formattedRecentDomains,
             'expiringThisMonth' => $formattedExpiringDomains,
             'expiringCount' => count($allExpiringDomains),
+            'expiringCertificates' => $expiringCertificates,
+            'sslStats' => $sslStats,
+            'sslExpiringDays' => $settingModel->getSslExpiringSoonDays(),
             'recentLogs' => $recentLogs,
             'groups' => $groups,
             'systemStatus' => $systemStatus,

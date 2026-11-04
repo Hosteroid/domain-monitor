@@ -53,7 +53,11 @@ class DiscordChannel implements NotificationChannelInterface
     private function createEmbed(string $message, array $data): array
     {
         $title = $data['subject'] ?? '🔔 Domain Monitor Alert';
-        $color = $this->getColorByDaysLeft($data['days_left'] ?? null);
+        $color = match (true) {
+            isset($data['hostname'], $data['new_status']) => $this->getColorBySslStatus($data['new_status'], $data['days_left'] ?? null),
+            isset($data['new_status']) => $this->getColorByDomainStatus($data['new_status']),
+            default => $this->getColorByDaysLeft($data['days_left'] ?? null),
+        };
 
         $embed = [
             'title' => $title,
@@ -70,15 +74,28 @@ class DiscordChannel implements NotificationChannelInterface
                 ['name' => 'Domain', 'value' => $data['domain'], 'inline' => true]
             ];
 
-            // Only add expiration fields for domain expiration alerts
-            if (array_key_exists('days_left', $data) || array_key_exists('expiration_date', $data)) {
+            if (isset($data['hostname'])) {
+                // SSL certificate alerts
+                if ($data['hostname'] !== $data['domain']) {
+                    $fields[] = ['name' => 'Hostname', 'value' => $data['hostname'], 'inline' => true];
+                }
+                if (isset($data['days_left'])) {
+                    $fields[] = ['name' => 'Days Left', 'value' => (string) $data['days_left'], 'inline' => true];
+                }
+                if (!empty($data['valid_to'])) {
+                    $fields[] = ['name' => 'Valid Until', 'value' => date('Y-m-d', strtotime($data['valid_to'])), 'inline' => true];
+                }
+            } elseif (array_key_exists('days_left', $data) || array_key_exists('expiration_date', $data)) {
+                // Only add expiration fields for domain expiration alerts
                 $fields[] = ['name' => 'Days Left', 'value' => (string) ($data['days_left'] ?? 'N/A'), 'inline' => true];
                 $fields[] = ['name' => 'Expiration Date', 'value' => $data['expiration_date'] ?? 'N/A', 'inline' => true];
-            } elseif (isset($data['hostname']) && $data['hostname'] !== $data['domain']) {
-                $fields[] = ['name' => 'Hostname', 'value' => $data['hostname'], 'inline' => true];
+                if (!empty($data['previous_expiration_date'])) {
+                    // Renewal alerts
+                    $fields[] = ['name' => 'Previous Expiration', 'value' => $data['previous_expiration_date'], 'inline' => true];
+                }
             }
             if (isset($data['new_status'])) {
-                $fields[] = ['name' => 'Status', 'value' => $data['new_status'], 'inline' => true];
+                $fields[] = ['name' => 'Status', 'value' => $data['status_label'] ?? $data['new_status'], 'inline' => true];
             }
 
             $embed['fields'] = $fields;
@@ -110,6 +127,26 @@ class DiscordChannel implements NotificationChannelInterface
         }
 
         return 0x00FF00; // Green
+    }
+
+    private function getColorByDomainStatus(string $status): int
+    {
+        return match ($status) {
+            'active' => 0x00FF00, // Green - registered
+            'available' => 0x3498DB, // Blue
+            'redemption_period' => 0xFFA500, // Orange
+            'expired', 'pending_delete' => 0xFF0000, // Red
+            default => 0x808080, // Gray
+        };
+    }
+
+    private function getColorBySslStatus(string $status, ?int $daysLeft): int
+    {
+        return match ($status) {
+            'valid' => 0x00FF00, // Green
+            'expiring' => ($daysLeft !== null && $daysLeft <= 3) ? 0xFF4500 : 0xFFA500, // Orange Red / Orange
+            default => 0xFF0000, // Red - expired or invalid
+        };
     }
 }
 

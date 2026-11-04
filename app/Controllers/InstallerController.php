@@ -60,6 +60,10 @@ class InstallerController extends Controller
             '027_add_dns_monitoring.sql',
             '028_add_ssl_monitoring.sql',
             '029_add_dns_record_source.sql',
+            '030_add_ssl_reminders_and_group_alert_types.sql',
+            '031_add_ct_log_sources.sql',
+            '032_add_renewal_notifications.sql',
+            '033_add_watchlist_groups.sql',
         ];
 
         try {
@@ -206,6 +210,10 @@ class InstallerController extends Controller
                     '027_add_dns_monitoring.sql',
                     '028_add_ssl_monitoring.sql',
                     '029_add_dns_record_source.sql',
+                    '030_add_ssl_reminders_and_group_alert_types.sql',
+                    '031_add_ct_log_sources.sql',
+                    '032_add_renewal_notifications.sql',
+                    '033_add_watchlist_groups.sql',
                 ];
             }
 
@@ -435,6 +443,10 @@ class InstallerController extends Controller
                     '027_add_dns_monitoring.sql',
                     '028_add_ssl_monitoring.sql',
                     '029_add_dns_record_source.sql',
+                    '030_add_ssl_reminders_and_group_alert_types.sql',
+                    '031_add_ct_log_sources.sql',
+                    '032_add_renewal_notifications.sql',
+                    '033_add_watchlist_groups.sql',
                 ];
 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");
@@ -673,7 +685,9 @@ class InstallerController extends Controller
                     
                     // Fallback: detect "to" version from which migrations were run
                     if ($toVersion === $fromVersion) {
-                        if (in_array('029_add_dns_record_source.sql', $executed)) {
+                        if (in_array('033_add_watchlist_groups.sql', $executed) || in_array('032_add_renewal_notifications.sql', $executed) || in_array('031_add_ct_log_sources.sql', $executed)) {
+                            $toVersion = '1.1.6';
+                        } elseif (in_array('029_add_dns_record_source.sql', $executed)) {
                             $toVersion = '1.1.5';
                         } elseif (in_array('026_update_app_version_v1.1.4.sql', $executed)) {
                             $toVersion = '1.1.4';

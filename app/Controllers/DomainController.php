@@ -100,6 +100,23 @@ class DomainController extends Controller
         // Format domains for display
         $formattedDomains = \App\Helpers\DomainHelper::formatMultiple($result['domains']);
 
+        // Live SSL status for the lock icon next to each domain the SSL cron checks
+        $sslDomainIds = array_column(
+            array_filter(
+                $formattedDomains,
+                fn(array $domain): bool => $this->isCheckedByCron($domain, 'ssl')
+            ),
+            'id'
+        );
+        $sslSummaries = \App\Helpers\SslHelper::summarizeByDomain(
+            $sslDomainIds,
+            $this->sslCertificateModel->getStatusByDomainIds($sslDomainIds)
+        );
+        foreach ($formattedDomains as &$formattedDomain) {
+            $formattedDomain['ssl_summary'] = $sslSummaries[(int)$formattedDomain['id']] ?? null;
+        }
+        unset($formattedDomain);
+
         // Get users for transfer functionality (admin only)
         $users = [];
         if (\Core\Auth::isAdmin()) {
@@ -303,6 +320,7 @@ class DomainController extends Controller
 
         $settingModel = new \App\Models\Setting();
         $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+        $sslMonitoringEnabled = $settingModel->isSslMonitoringOnForNewDomains() ? 1 : 0;
         $tagModel = new \App\Models\Tag();
 
         // Form-level notification group
@@ -372,6 +390,7 @@ class DomainController extends Controller
                     'notes' => trim($row['notes'] ?? ''),
                     'last_checked' => date('Y-m-d H:i:s'),
                     'notification_group_id' => $groupId,
+                    'ssl_monitoring_enabled' => $sslMonitoringEnabled,
                     'user_id' => $isolationMode === 'isolated' ? $userId : null
                 ]);
 
@@ -516,6 +535,7 @@ class DomainController extends Controller
             'status' => $status,
             'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE),
             'is_active' => 1,
+            'ssl_monitoring_enabled' => (new \App\Models\Setting())->isSslMonitoringOnForNewDomains() ? 1 : 0,
             'user_id' => $userId
         ]);
 
@@ -767,6 +787,7 @@ class DomainController extends Controller
 
         $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
         $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
+        $renewal = $this->whoisService->detectRenewal($domain, $whoisData, $status);
 
         $this->domainModel->update($id, [
             'registrar' => $whoisData['registrar'],
@@ -778,6 +799,8 @@ class DomainController extends Controller
             'status' => $status,
             'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE)
         ]);
+
+        $this->sendWhoisRefreshAlerts($id, $this->whoisService->getLastKnownStatus($domain), $status, $renewal);
 
         $logger->info('WHOIS refresh completed', [
             'domain_id' => $id,
@@ -792,6 +815,49 @@ class DomainController extends Controller
     }
 
     /**
+     * Whether the cron checks this domain's WHOIS, DNS or SSL, so a refresh started here sends the
+     * alerts the cron would have sent: domain monitoring is on and, for DNS and SSL, their own
+     * monitoring too, with a domain status those checks run for
+     */
+    private function isCheckedByCron(array $domain, string $check): bool
+    {
+        if (empty($domain['is_active'])) {
+            return false;
+        }
+
+        return $check === 'whois'
+            || (!empty($domain[$check . '_monitoring_enabled'])
+                && in_array($domain['status'] ?? '', Domain::DNS_SSL_CHECK_STATUSES, true));
+    }
+
+    /**
+     * Send the status change and renewal alerts for a WHOIS refresh. The cron compares against
+     * the saved data, so a change found here would otherwise never be alerted.
+     *
+     * @param string $oldStatus WhoisService::getLastKnownStatus() of the domain before the refresh
+     */
+    private function sendWhoisRefreshAlerts(int $id, string $oldStatus, string $status, ?array $renewal): void
+    {
+        if ($oldStatus === $status && $renewal === null) {
+            return;
+        }
+
+        $domain = $this->domainModel->find($id);
+        if (!$domain || !$this->isCheckedByCron($domain, 'whois')) {
+            return;
+        }
+
+        $notificationService = new \App\Services\NotificationService();
+
+        if ($oldStatus !== $status) {
+            $notificationService->alertDomainStatusChange($domain, $oldStatus, $status, $renewal !== null);
+        }
+        if ($renewal !== null) {
+            $notificationService->alertDomainRenewal($domain, $renewal);
+        }
+    }
+
+    /**
      * Perform DNS lookup and persist results.
      * @return string Status message (always returns, even on zero records).
      */
@@ -802,6 +868,7 @@ class DomainController extends Controller
         $dnsService = new \App\Services\DnsService();
         $dnsModel = new \App\Models\DnsRecord();
 
+        $previousRecords = $dnsModel->getPreviousSnapshot($id);
         $existingHosts = $dnsModel->getDistinctHosts($id);
         $records = $dnsService->refreshExisting($domain['domain_name'], $existingHosts);
         $totalRecords = array_sum(array_map('count', $records));
@@ -818,6 +885,11 @@ class DomainController extends Controller
         $stats = $dnsModel->saveSnapshot($id, $records);
         $this->domainModel->update($id, ['dns_last_checked' => date('Y-m-d H:i:s')]);
 
+        // A first check only saves a baseline, as in the cron
+        if (!empty($previousRecords)) {
+            $this->sendDnsRefreshAlerts($id, $dnsService->diffRecords($previousRecords, $records), $dnsService);
+        }
+
         $logger->info('DNS refresh completed', [
             'domain_name' => $domain['domain_name'],
             'total'       => $totalRecords,
@@ -830,24 +902,73 @@ class DomainController extends Controller
     }
 
     /**
-     * Fetch and persist the latest SSL certificate snapshot for a host.
+     * Send the alert for DNS changes found by a DNS refresh. The DNS cron compares against the
+     * saved records, so a change found here would otherwise never be alerted. The domain is read
+     * again, since Refresh All runs its WHOIS refresh first and that can change the status.
+     */
+    private function sendDnsRefreshAlerts(int $domainId, array $changes, \App\Services\DnsService $dnsService): void
+    {
+        if (empty($changes['added']) && empty($changes['removed']) && empty($changes['changed'])) {
+            return;
+        }
+
+        $domain = $this->domainModel->find($domainId);
+        if (!$domain || !$this->isCheckedByCron($domain, 'dns')) {
+            return;
+        }
+
+        $notificationService = new \App\Services\NotificationService();
+        $notificationService->alertDnsChanges(
+            $domain,
+            $dnsService->formatChangesSummary($changes, $domain['domain_name']),
+            $dnsService->formatChangesDetail($changes, $domain['domain_name'])
+        );
+    }
+
+    /**
+     * Fetch and persist the latest SSL certificate snapshot for a host, with the SSL cron's
+     * reminder bookkeeping and alerts.
      *
      * @return array{id:int,hostname:string,port:int,display_target:string,status:string,error:?string}
      */
     private function performSslRefreshForHost(int $domainId, string $hostname, int $port = 443): array
     {
-        $snapshot = $this->sslService->fetchCertificateSnapshot($hostname, $port);
-        $id = $this->sslCertificateModel->saveSnapshot($domainId, $hostname, $snapshot, $port);
+        $settingModel = new \App\Models\Setting();
+        $check = $this->sslService->checkEndpoint($domainId, $hostname, $port, $settingModel->getSslNotificationDays());
+        $snapshot = $check['snapshot'];
         $this->domainModel->update($domainId, ['ssl_last_checked' => $snapshot['last_checked']]);
 
+        $endpoint = $this->sslService->formatTargetLabel($hostname, $port);
+        $this->sendSslRefreshAlerts($domainId, $hostname, $endpoint, $check);
+
         return [
-            'id' => $id,
+            'id' => $check['id'],
             'hostname' => $hostname,
             'port' => $port,
-            'display_target' => $this->sslService->formatTargetLabel($hostname, $port),
+            'display_target' => $endpoint,
             'status' => $snapshot['status'],
             'error' => $snapshot['last_error'],
         ];
+    }
+
+    /**
+     * Send the alerts for an SSL check started here. The SSL cron compares against the saved
+     * status, so a change found here would otherwise never be alerted; like the cron, nothing
+     * is sent for a host that doesn't resolve.
+     */
+    private function sendSslRefreshAlerts(int $domainId, string $hostname, string $endpoint, array $check): void
+    {
+        if (!$check['status_alert'] && $check['reminder_days'] === null) {
+            return;
+        }
+
+        $domain = $this->domainModel->find($domainId);
+        if (!$domain || !$this->isCheckedByCron($domain, 'ssl') || !\App\Helpers\CronHelper::hostnameResolves($hostname)) {
+            return;
+        }
+
+        $notificationService = new \App\Services\NotificationService();
+        $notificationService->alertSslCheck($domain, $endpoint, $check);
     }
 
     /**
@@ -946,10 +1067,9 @@ class DomainController extends Controller
      */
     private function formatSslCertificate(array $certificate, string $rootDomain, int $rootTargetCount): array
     {
-        $certificate['hostname'] = strtolower($certificate['hostname']);
-        $certificate['port'] = (int)($certificate['port'] ?? 443);
+        // Same display fields as the dashboard: target label, live days left and status styling
+        $certificate = \App\Helpers\SslHelper::formatForDisplay($certificate, $this->sslService);
         $certificate['is_root'] = $this->isDefaultRootSslTarget($certificate, $rootDomain);
-        $certificate['display_target'] = $this->sslService->formatTargetLabel($certificate['hostname'], $certificate['port']);
         $certificate['can_delete'] = !$certificate['is_root'] || $rootTargetCount > 1;
         $certificate['san_list'] = !empty($certificate['san_list'])
             ? (json_decode($certificate['san_list'], true) ?: [])
@@ -965,13 +1085,10 @@ class DomainController extends Controller
             is_array($certificate['raw_data']['subject'] ?? null) ? $certificate['raw_data']['subject'] : [],
             'O'
         );
-        $certificate['days_remaining'] = $certificate['days_remaining'] !== null
-            ? (int)$certificate['days_remaining']
-            : null;
         $certificate['is_trusted'] = !empty($certificate['is_trusted']);
         $certificate['is_self_signed'] = !empty($certificate['is_self_signed']);
 
-        return array_merge($certificate, $this->getSslStatusMeta($certificate['status'] ?? 'invalid'));
+        return $certificate;
     }
 
     /**
@@ -1003,73 +1120,6 @@ class DomainController extends Controller
 
         $value = trim((string)$value);
         return $value !== '' ? $value : null;
-    }
-
-    /**
-     * Get CSS classes and labels for an SSL status.
-     */
-    private function getSslStatusMeta(string $status): array
-    {
-        return match ($status) {
-            'valid' => [
-                'status_label' => 'Valid & Trusted',
-                'status_icon' => 'fa-check-circle',
-                'status_badge_class' => 'bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 border-green-200 dark:border-green-800',
-                'card_border_class' => 'border-green-200 dark:border-green-800',
-                'header_class' => 'bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-800',
-                'accent_class' => 'text-green-600 dark:text-green-400',
-            ],
-            'expiring' => [
-                'status_label' => 'Expiring Soon',
-                'status_icon' => 'fa-exclamation-triangle',
-                'status_badge_class' => 'bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 border-amber-200 dark:border-amber-800',
-                'card_border_class' => 'border-amber-200 dark:border-amber-800',
-                'header_class' => 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-800',
-                'accent_class' => 'text-amber-600 dark:text-amber-400',
-            ],
-            'expired' => [
-                'status_label' => 'Expired',
-                'status_icon' => 'fa-times-circle',
-                'status_badge_class' => 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800',
-                'card_border_class' => 'border-red-200 dark:border-red-800',
-                'header_class' => 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-800',
-                'accent_class' => 'text-red-600 dark:text-red-400',
-            ],
-            default => [
-                'status_label' => 'Invalid / Untrusted',
-                'status_icon' => 'fa-ban',
-                'status_badge_class' => 'bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 border-red-200 dark:border-red-800',
-                'card_border_class' => 'border-red-200 dark:border-red-800',
-                'header_class' => 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-800',
-                'accent_class' => 'text-red-600 dark:text-red-400',
-            ],
-        };
-    }
-
-    /**
-     * Build SSL summary counts for the tab.
-     */
-    private function buildSslStats(array $certificates): array
-    {
-        $stats = [
-            'total' => count($certificates),
-            'valid' => 0,
-            'expiring' => 0,
-            'expired' => 0,
-            'invalid' => 0,
-        ];
-
-        foreach ($certificates as $certificate) {
-            $status = $certificate['status'] ?? 'invalid';
-            if (isset($stats[$status])) {
-                $stats[$status]++;
-            } else {
-                $stats['invalid']++;
-            }
-        }
-
-        $stats['issues'] = $stats['expired'] + $stats['invalid'];
-        return $stats;
     }
 
     /**
@@ -1283,8 +1333,9 @@ class DomainController extends Controller
         $dnsRecords = $dnsModel->getByDomainGrouped($id);
         $dnsRecordCount = $dnsModel->countByDomain($id);
         $dnsHasCloudflare = $dnsModel->hasCloudflare($id);
+        $dnsHasWildcard = $dnsModel->hasWildcard($id);
         $sslCertificates = $this->getFormattedSslCertificates($id, $domain['domain_name']);
-        $sslStats = $this->buildSslStats($sslCertificates);
+        $sslStats = \App\Helpers\SslHelper::buildStats($sslCertificates);
 
         // Extract cached IP details (PTR, ASN, geo) from stored raw_data
         $dnsIpDetails = [];
@@ -1312,6 +1363,7 @@ class DomainController extends Controller
             'dnsRecords' => $dnsRecords,
             'dnsRecordCount' => $dnsRecordCount,
             'dnsHasCloudflare' => $dnsHasCloudflare,
+            'dnsHasWildcard' => $dnsHasWildcard,
             'dnsIpDetails' => $dnsIpDetails,
             'sslCertificates' => $sslCertificates,
             'sslStats' => $sslStats,
@@ -1409,6 +1461,7 @@ class DomainController extends Controller
         $errors = [];
         $failureReasons = [];
         $userId = \Core\Auth::id();
+        $sslMonitoringEnabled = (new \App\Models\Setting())->isSslMonitoringOnForNewDomains() ? 1 : 0;
         
         // Log bulk add start
         $logger = new \App\Services\Logger();
@@ -1456,6 +1509,7 @@ class DomainController extends Controller
                     'status' => $status,
                     'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE),
                     'is_active' => 1,
+                    'ssl_monitoring_enabled' => $sslMonitoringEnabled,
                     'user_id' => \Core\Auth::id()
                 ]);
 
@@ -1613,6 +1667,7 @@ class DomainController extends Controller
             $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
             
             $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
+            $renewal = $this->whoisService->detectRenewal($domain, $whoisData, $status);
 
             $this->domainModel->update($id, [
                 'registrar' => $whoisData['registrar'],
@@ -1624,6 +1679,8 @@ class DomainController extends Controller
                 'status' => $status,
                 'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE)
             ]);
+
+            $this->sendWhoisRefreshAlerts((int)$id, $this->whoisService->getLastKnownStatus($domain), $status, $renewal);
 
             $refreshed++;
         }
@@ -1797,6 +1854,64 @@ class DomainController extends Controller
 
         $status = $isActive ? 'enabled' : 'disabled';
         $_SESSION['success'] = "Monitoring $status for $updated domain(s)";
+        $this->redirect('/domains');
+    }
+
+    /**
+     * Turn SSL monitoring on or off for the selected domains
+     */
+    public function bulkToggleSsl()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/domains');
+
+        $domainIds = $_POST['domain_ids'] ?? [];
+        $enabled = !empty($_POST['ssl_monitoring_enabled']) ? 1 : 0;
+
+        if (empty($domainIds) || !is_array($domainIds)) {
+            $_SESSION['error'] = 'No domains selected';
+            $this->redirect('/domains');
+            return;
+        }
+
+        // Validate bulk operation size
+        $sizeError = \App\Helpers\InputValidator::validateArraySize($domainIds, 1000, 'Domain selection');
+        if ($sizeError) {
+            $_SESSION['error'] = $sizeError;
+            $this->redirect('/domains');
+            return;
+        }
+
+        $changed = 0;
+        $unchanged = 0;
+        foreach ($domainIds as $id) {
+            $domain = $this->checkDomainAccess((int)$id);
+            if (!$domain) {
+                continue;
+            }
+
+            if ((int)($domain['ssl_monitoring_enabled'] ?? 0) === $enabled) {
+                $unchanged++;
+            } elseif ($this->domainModel->update($domain['id'], ['ssl_monitoring_enabled' => $enabled])) {
+                $changed++;
+            }
+        }
+
+        $state = $enabled ? 'enabled' : 'disabled';
+        $message = "SSL monitoring $state for $changed domain(s)";
+        if ($unchanged > 0) {
+            $message .= " ($unchanged already $state)";
+        }
+        if ($enabled && $changed > 0) {
+            $message .= '. Certificates are checked on the next SSL cron run, or right away with Check All on a domain\'s SSL tab.';
+        }
+
+        $_SESSION['success'] = $message;
         $this->redirect('/domains');
     }
 
@@ -2357,7 +2472,7 @@ class DomainController extends Controller
         $host     = trim($_POST['host'] ?? '@');
         $value    = trim($_POST['value'] ?? '');
         $ttl      = !empty($_POST['ttl']) ? (int)$_POST['ttl'] : 3600;
-        $priority = !empty($_POST['priority']) ? (int)$_POST['priority'] : null;
+        $priority = isset($_POST['priority']) && $_POST['priority'] !== '' ? (int)$_POST['priority'] : null;
 
         $validTypes = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA', 'SRV', 'CAA'];
         if (!in_array($type, $validTypes) || $value === '') {

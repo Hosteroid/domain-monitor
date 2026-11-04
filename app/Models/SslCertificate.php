@@ -21,6 +21,53 @@ class SslCertificate extends Model
     }
 
     /**
+     * Get SSL certificates of active domains with SSL monitoring enabled,
+     * soonest expiry first (certificates without an expiry date last).
+     */
+    public function getAllMonitored(?int $userId = null): array
+    {
+        $sql = "SELECT sc.id, sc.domain_id, sc.hostname, sc.port, sc.status, sc.is_trusted,
+                       sc.valid_to, sc.issuer_name, sc.last_checked, sc.last_error,
+                       JSON_UNQUOTE(JSON_EXTRACT(sc.raw_data, '$.issuer.O')) AS issuer_organization,
+                       d.domain_name
+                FROM ssl_certificates sc
+                JOIN domains d ON sc.domain_id = d.id
+                WHERE d.is_active = 1 AND d.ssl_monitoring_enabled = 1";
+
+        $params = [];
+
+        if ($userId) {
+            $sql .= " AND d.user_id = ?";
+            $params[] = $userId;
+        }
+
+        $sql .= " ORDER BY sc.valid_to IS NULL, sc.valid_to ASC, sc.hostname ASC, sc.port ASC";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Get the fields needed for a live SSL status for several domains at once.
+     */
+    public function getStatusByDomainIds(array $domainIds): array
+    {
+        if (empty($domainIds)) {
+            return [];
+        }
+
+        $domainIds = array_values(array_unique(array_map('intval', $domainIds)));
+        $placeholders = implode(',', array_fill(0, count($domainIds), '?'));
+        $stmt = $this->db->prepare(
+            "SELECT id, domain_id, hostname, port, is_trusted, valid_to
+             FROM ssl_certificates WHERE domain_id IN ({$placeholders})"
+        );
+        $stmt->execute($domainIds);
+        return $stmt->fetchAll();
+    }
+
+    /**
      * Count monitored SSL certificates for a domain.
      */
     public function countByDomain(int $domainId): int

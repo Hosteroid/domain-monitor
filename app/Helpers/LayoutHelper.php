@@ -21,7 +21,7 @@ class LayoutHelper
             foreach ($notifications as &$notif) {
                 $notif['time_ago'] = self::timeAgo($notif['created_at']);
                 $notif['icon'] = self::getNotificationIcon($notif['type']);
-                $notif['color'] = self::getNotificationColor($notif['type']);
+                $notif['color'] = self::getNotificationColor($notif['type'], $notif['title'] ?? '');
                 $notif['login_data'] = self::parseLoginData($notif);
             }
             
@@ -117,16 +117,19 @@ class LayoutHelper
     /**
      * Get notification icon based on type
      */
-    private static function getNotificationIcon(string $type): string
+    public static function getNotificationIcon(string $type): string
     {
         return match($type) {
             'domain_expiring' => 'exclamation-triangle',
             'domain_expired', 'domain_expired_status' => 'times-circle',
             'domain_available' => 'check-circle',
             'domain_registered' => 'globe',
+            'domain_renewed' => 'calendar-check',
             'domain_redemption' => 'hourglass-half',
             'domain_pending_delete' => 'trash-alt',
             'domain_updated' => 'sync-alt',
+            'dns_change' => 'network-wired',
+            'ssl_status_change' => 'lock',
             'session_new' => 'sign-in-alt',
             'session_failed' => 'shield-alt',
             'whois_failed' => 'exclamation-circle',
@@ -136,20 +139,31 @@ class LayoutHelper
             default => 'bell'
         };
     }
-    
+
     /**
-     * Get notification color based on type
+     * Get notification color based on type.
+     * Every SSL alert shares one type, so the title tells recovered, expiring and failed apart.
      */
-    private static function getNotificationColor(string $type): string
+    public static function getNotificationColor(string $type, string $title = ''): string
     {
+        if ($type === 'ssl_status_change') {
+            return match(true) {
+                str_contains($title, 'Recovered') => 'green',
+                str_contains($title, 'Expiring') => 'orange',
+                default => 'red'
+            };
+        }
+
         return match($type) {
             'domain_expiring' => 'orange',
             'domain_expired', 'domain_expired_status' => 'red',
             'domain_available' => 'blue',
             'domain_registered' => 'green',
+            'domain_renewed' => 'teal',
             'domain_redemption' => 'amber',
             'domain_pending_delete' => 'rose',
             'domain_updated' => 'green',
+            'dns_change' => 'indigo',
             'session_new' => 'blue',
             'session_failed' => 'red',
             'whois_failed' => 'gray',

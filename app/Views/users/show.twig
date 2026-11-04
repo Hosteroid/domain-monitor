@@ -256,14 +256,14 @@
                     {% if attentionPreview is not empty %}
                         <div class="p-4 space-y-2">
                             {% for ad in attentionPreview %}
-                                {% set isExpired = (ad.daysLeft|default(0)) < 0 %}
+                                {% set isExpired = (ad.daysLeft|default(0)) <= 0 %}
                                 <div class="flex items-center justify-between p-3 border border-gray-100 dark:border-slate-700 rounded-lg hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-sm transition-all duration-200">
                                     <div class="flex-1 min-w-0">
                                         <a href="/domains/{{ ad.id }}" class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary truncate block">{{ ad.domain_name }}</a>
                                         <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
                                             {{ ad.expiration_date ? ad.expiration_date|date('M d, Y') : 'Unknown' }}
                                             {% if isExpired %}
-                                                <span class="text-red-600 dark:text-red-400 font-semibold ml-2">Expired {{ ad.daysLeft|abs }} day{{ ad.daysLeft|abs != 1 ? 's' : '' }} ago</span>
+                                                <span class="text-red-600 dark:text-red-400 font-semibold ml-2">{{ ad.daysLeft == 0 ? 'Expired today' : 'Expired ' ~ ad.daysLeft|abs ~ ' day' ~ (ad.daysLeft|abs != 1 ? 's' : '') ~ ' ago' }}</span>
                                             {% else %}
                                                 <span class="{{ ad.daysLeft <= 7 ? 'text-red-600 dark:text-red-400' : 'text-orange-600 dark:text-orange-400' }} font-semibold ml-2">{{ ad.daysLeft }} day{{ ad.daysLeft != 1 ? 's' : '' }} left</span>
                                             {% endif %}

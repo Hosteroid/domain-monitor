@@ -11,9 +11,7 @@ class DomainHelper
     public static function formatForDisplay(array $domain): array
     {
         // Calculate days until expiry
-        $domain['daysLeft'] = !empty($domain['expiration_date']) 
-            ? floor((strtotime($domain['expiration_date']) - time()) / 86400) 
-            : null;
+        $domain['daysLeft'] = self::daysUntilExpiration($domain['expiration_date'] ?? null);
         
         // Determine expiry class for styling
         $domain['expiryClass'] = self::getExpiryClass($domain['daysLeft']);
@@ -36,6 +34,21 @@ class DomainHelper
         return $domain;
     }
     
+    /**
+     * Calendar days until a domain's expiration date: 1 the day before, 0 on the day itself (the
+     * domain counts as expired from then on), negative after. Null without a date.
+     * Counting whole days from now was a day short after midnight, so reminders went out a day early.
+     */
+    public static function daysUntilExpiration(?string $expirationDate): ?int
+    {
+        $expires = !empty($expirationDate) ? strtotime($expirationDate) : false;
+        if ($expires === false) {
+            return null;
+        }
+
+        return (int)round((strtotime(date('Y-m-d', $expires)) - strtotime('today')) / 86400);
+    }
+
     /**
      * Check if expiration date is manually set (not from WHOIS/RDAP)
      */
@@ -94,8 +107,8 @@ class DomainHelper
     private static function getExpiryClass(?int $daysLeft): string
     {
         if ($daysLeft === null) return '';
-        
-        if ($daysLeft < 0) return 'text-red-600 dark:text-red-400 font-semibold';
+
+        if ($daysLeft <= 0) return 'text-red-600 dark:text-red-400 font-semibold';
         if ($daysLeft <= 30) return 'text-orange-600 dark:text-orange-400 font-semibold';
         if ($daysLeft <= 90) return 'text-yellow-600 dark:text-yellow-400';
         
@@ -108,8 +121,8 @@ class DomainHelper
     private static function getExpiryColor(?int $daysLeft): string
     {
         if ($daysLeft === null) return 'gray';
-        
-        if ($daysLeft < 0) return 'red';
+
+        if ($daysLeft <= 0) return 'red';
         if ($daysLeft <= 30) return 'orange';
         if ($daysLeft <= 90) return 'yellow';
         
@@ -122,7 +135,7 @@ class DomainHelper
     private static function getStatusBadge(string $status, ?int $daysLeft): array
     {
         // Check for expiring soon override
-        if ($daysLeft !== null && $daysLeft <= 30 && $daysLeft >= 0) {
+        if ($daysLeft !== null && $daysLeft <= 30 && $daysLeft > 0) {
             return [
                 'class' => 'bg-orange-100 text-orange-700 border-orange-200',
                 'text' => 'Expiring Soon',

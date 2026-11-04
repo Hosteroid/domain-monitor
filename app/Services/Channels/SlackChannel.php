@@ -77,16 +77,29 @@ class SlackChannel implements NotificationChannelInterface
                 ['type' => 'mrkdwn', 'text' => "*Domain:*\n{$data['domain']}"]
             ];
 
-            // Only add expiration fields for domain expiration alerts
-            if (array_key_exists('days_left', $data) || array_key_exists('expiration_date', $data)) {
+            if (isset($data['hostname'])) {
+                // SSL certificate alerts
+                if ($data['hostname'] !== $data['domain']) {
+                    $fields[] = ['type' => 'mrkdwn', 'text' => "*Hostname:*\n{$data['hostname']}"];
+                }
+                if (isset($data['days_left'])) {
+                    $fields[] = ['type' => 'mrkdwn', 'text' => "*Days Left:*\n{$data['days_left']}"];
+                }
+                if (!empty($data['valid_to'])) {
+                    $fields[] = ['type' => 'mrkdwn', 'text' => "*Valid Until:*\n" . date('Y-m-d', strtotime($data['valid_to']))];
+                }
+            } elseif (array_key_exists('days_left', $data) || array_key_exists('expiration_date', $data)) {
+                // Only add expiration fields for domain expiration alerts
                 $fields[] = ['type' => 'mrkdwn', 'text' => "*Days Left:*\n" . ($data['days_left'] ?? 'N/A')];
                 $fields[] = ['type' => 'mrkdwn', 'text' => "*Expiration:*\n" . ($data['expiration_date'] ?? 'N/A')];
+                if (!empty($data['previous_expiration_date'])) {
+                    // Renewal alerts
+                    $fields[] = ['type' => 'mrkdwn', 'text' => "*Previous Expiration:*\n" . $data['previous_expiration_date']];
+                }
                 $fields[] = ['type' => 'mrkdwn', 'text' => "*Registrar:*\n" . ($data['registrar'] ?? 'N/A')];
-            } elseif (isset($data['hostname']) && $data['hostname'] !== $data['domain']) {
-                $fields[] = ['type' => 'mrkdwn', 'text' => "*Hostname:*\n{$data['hostname']}"];
             }
             if (isset($data['new_status'])) {
-                $fields[] = ['type' => 'mrkdwn', 'text' => "*Status:*\n{$data['new_status']}"];
+                $fields[] = ['type' => 'mrkdwn', 'text' => "*Status:*\n" . ($data['status_label'] ?? $data['new_status'])];
             }
 
             $blocks[] = [

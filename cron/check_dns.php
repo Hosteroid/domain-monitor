@@ -6,14 +6,15 @@
  *
  * Re-checks existing DNS records for all active domains and sends notifications
  * when changes are detected (new records, removed records, changed records).
- * No discovery (brute force / crt.sh) — use discover_dns.php for that.
+ * No discovery (brute force / certificate logs) — use discover_dns.php for that.
  *
- * Also serves as the crt.sh subprocess entry point (--crtsh) for
- * DnsService::fetchCrtshSubdomains() used by discover_dns.php.
+ * Also serves as the certificate transparency subprocess entry point (--ctlog) for
+ * DnsService::fetchCtLogSubdomains() used by discover_dns.php.
  *
  * Usage:
- *   php cron/check_dns.php                            — re-check existing records
- *   php cron/check_dns.php --crtsh <domain> [max]     — (internal) crt.sh subprocess
+ *   php cron/check_dns.php                                   — re-check existing records
+ *   php cron/check_dns.php --ctlog <source> <domain> [max]   — (internal) certificate log subprocess
+ *   php cron/check_dns.php --crtsh <domain> [max]            — (internal) same as --ctlog crtsh
  *
  * Crontab: 0 0,6,12,18 * * * /usr/bin/php /path/to/project/cron/check_dns.php
  */
@@ -23,11 +24,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use Dotenv\Dotenv;
 use App\Models\Domain;
 use App\Models\DnsRecord;
-use App\Models\NotificationChannel;
-use App\Models\NotificationGroup;
-use App\Models\NotificationLog;
 use App\Models\Setting;
-use App\Models\User;
 use App\Services\DnsService;
 use App\Services\NotificationService;
 use App\Services\Logger;
@@ -40,12 +37,12 @@ $dotenv = Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
 new Database();
 
-// ─── Crt.sh subprocess mode ─────────────────────────────────────────────────
-// When invoked with --crtsh, this script acts as its own subprocess for
-// crt.sh fetching. Outputs a JSON array of subdomains to stdout and exits.
+// ─── Certificate log subprocess mode ────────────────────────────────────────
+// When invoked with --ctlog, this script acts as its own subprocess for one
+// certificate transparency source. Outputs JSON to stdout and exits.
 
-if (isset($argv[1]) && $argv[1] === '--crtsh') {
-    runCrtshSubprocess($argv);
+if (isset($argv[1]) && ($argv[1] === '--ctlog' || $argv[1] === '--crtsh')) {
+    runCtLogSubprocess($argv[1] === '--crtsh' ? ['crtsh', ...array_slice($argv, 2)] : array_slice($argv, 2));
     exit(0);
 }
 
@@ -62,12 +59,7 @@ const INTER_DOMAIN_DELAY_US = 500000;
 // Initialize services and models
 $domainModel         = new Domain();
 $dnsModel            = new DnsRecord();
-$channelModel        = new NotificationChannel();
-$groupModel          = new NotificationGroup();
-$logModel            = new NotificationLog();
-$notificationModel   = new \App\Models\Notification();
 $settingModel        = new Setting();
-$userModel           = new User();
 $dnsService          = new DnsService();
 $notificationService = new NotificationService();
 $logger              = new Logger('dns-cron');
@@ -86,9 +78,11 @@ $startTime = microtime(true);
 
 logMessage("=== Starting DNS check cron job ===");
 
-// Only check domains that are registered and in use (active or expiring_soon).
-// Skip available, expired, error, redemption_period, pending_delete — they typically have no DNS.
-$checkableStatuses = ['active', 'expiring_soon'];
+// Only check domains that are registered and in use (active or expiring_soon), plus "error" ones:
+// that status means the WHOIS lookup failed, which says nothing about DNS. Domains that do not
+// resolve are skipped below.
+// Skip available, expired, redemption_period, pending_delete — they typically have no DNS.
+$checkableStatuses = Domain::DNS_SSL_CHECK_STATUSES;
 
 $allDnsEnabled = array_values(array_filter(
     $domainModel->where('is_active', 1),
@@ -99,9 +93,9 @@ $domains = array_values(array_filter($allDnsEnabled, static function ($d) use ($
     return in_array($status, $checkableStatuses, true);
 }));
 $skippedByStatus = count($allDnsEnabled) - count($domains);
-logMessage("Found " . count($domains) . " domain(s) with DNS monitoring enabled and checkable status (active/expiring_soon)");
+logMessage("Found " . count($domains) . " domain(s) with DNS monitoring enabled and checkable status (active/expiring_soon/error)");
 if ($skippedByStatus > 0) {
-    logMessage("Skipped " . $skippedByStatus . " domain(s) with non-checkable status (available/expired/error/redemption_period/pending_delete)");
+    logMessage("Skipped " . $skippedByStatus . " domain(s) with non-checkable status (available/expired/redemption_period/pending_delete)");
 }
 
 $stats = [
@@ -117,8 +111,6 @@ $stats = [
     'skipped_unresolved'   => 0,
     'domains_with_changes' => [],
 ];
-
-$isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
 
 foreach ($domains as $domain) {
     $domainName      = $domain['domain_name'];
@@ -159,8 +151,12 @@ foreach ($domains as $domain) {
         $stats['checked']++;
         logMessage("  ✓ $totalRecords record(s) (added: {$saveStats['added']}, updated: {$saveStats['updated']}, removed: {$saveStats['removed']})");
 
+        // Nothing to compare against yet, so every record would read as "added"
         if ($isFirstScan) {
-            logMessage("  → First scan — baseline saved");
+            logMessage("  → First scan — baseline saved, no alerts");
+            logTimeSince($domainStartTime);
+            usleep(INTER_DOMAIN_DELAY_US);
+            continue;
         }
 
         // Detect changes
@@ -190,22 +186,18 @@ foreach ($domains as $domain) {
             'changed' => count($changes['changed']),
         ];
 
-        // Send external notifications (channel alerts)
-        sendExternalNotifications(
-            $domain, $domainModel, $channelModel, $logModel,
-            $notificationService, $detail, $summary, $stats, $logger
-        );
-
-        // Create in-app notifications (bell icon)
-        sendInAppNotifications(
-            $domain, $domainName, $isolationMode, $userModel, $groupModel,
-            $notificationService, $summary, $stats
-        );
+        // Channel alerts and in-app notifications (bell icon)
+        $alerts = $notificationService->alertDnsChanges($domainModel->find($domain['id']), $summary, $detail);
+        if ($alerts['skipped'] !== null) {
+            logMessage("  → {$alerts['skipped']}");
+        } else {
+            logAlertResults($alerts, $stats);
+        }
 
         logTimeSince($domainStartTime);
         usleep(INTER_DOMAIN_DELAY_US);
 
-    } catch (\Exception $e) {
+    } catch (\Throwable $e) {
         logMessage("  ✗ Error: " . $e->getMessage());
         logTimeSince($domainStartTime);
         $logger->error("DNS check failed", [
@@ -222,73 +214,47 @@ exit(0);
 
 
 // ═════════════════════════════════════════════════════════════════════════════
-//  Crt.sh subprocess entry point (invoked by DnsService::fetchCrtshSubdomains)
+//  Certificate log subprocess entry point (invoked by DnsService::fetchCtLogSubdomains)
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
- * Internal crt.sh subprocess entry point.
- * Called when this script is invoked with: --crtsh <domain> [max_subdomains]
- * Outputs JSON to stdout. Uses DnsService for HTTP fetch and parsing.
- *
- * Wildcard query ?q=%.domain.com with 5 retry attempts.
- * All HTTP response details are written to stderr for real-time debugging.
+ * Internal certificate transparency subprocess entry point.
+ * Called when this script is invoked with: --ctlog <source> <domain> [max_subdomains]
+ * Outputs {"ok", "subs", "retry_after"} as JSON to stdout. Progress and all HTTP
+ * response details are written to stderr for real-time debugging.
  */
-function runCrtshSubprocess(array $argv): void
+function runCtLogSubprocess(array $args): void
 {
-    if (empty($argv[2])) {
-        fwrite(STDERR, "Usage: {$argv[0]} --crtsh <domain> [max_subdomains]\n");
-        echo '[]';
+    $failed        = ['ok' => false, 'subs' => [], 'retry_after' => null];
+    $sourceId      = $args[0] ?? '';
+    $domain        = $args[1] ?? '';
+    $maxSubdomains = isset($args[2]) ? max(0, (int) $args[2]) : 0;
+
+    $source = $domain !== '' ? (new DnsService())->createCtLogSource($sourceId) : null;
+    if (!$source) {
+        $sources = implode('|', array_keys(DnsService::CT_LOG_SOURCES));
+        fwrite(STDERR, "Usage: check_dns.php --ctlog <{$sources}> <domain> [max_subdomains]\n");
+        echo json_encode($failed);
         return;
     }
 
-    $domain        = $argv[2];
-    $maxSubdomains = isset($argv[3]) ? max(0, (int) $argv[3]) : 0;
-    $maxAttempts   = 5;
-    $retryDelay    = 10;
-    $httpTimeout   = 900;
-
-    $dnsService = new DnsService();
-    $url = 'https://crt.sh/?q=%25.' . urlencode($domain) . '&output=json';
-
     try {
-        $result  = [];
-        $gotHttp200 = false;
+        $result = $source->fetchSubdomains($domain, static function (string $line): void {
+            fwrite(STDERR, $line . "\n");
+        });
 
-        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-            fwrite(STDERR, "attempt $attempt/$maxAttempts: GET $url\n");
-
-            $response = $dnsService->fetchCrtshUrl($url, $httpTimeout, true);
-
-            if ($response['status'] === 200) {
-                $gotHttp200 = true;
-                if (!empty($response['data'])) {
-                    $result = $dnsService->extractCrtshSubdomains($response['data'], $domain);
-                    fwrite(STDERR, "attempt $attempt/$maxAttempts: " . count($result) . " subdomain(s) extracted\n");
-                } else {
-                    fwrite(STDERR, "attempt $attempt/$maxAttempts: 200 OK but no cert data (domain may have no CT entries)\n");
-                }
-                break;
-            }
-
-            if ($attempt < $maxAttempts) {
-                fwrite(STDERR, "attempt $attempt/$maxAttempts: retrying in {$retryDelay}s...\n");
-                sleep($retryDelay);
-            } else {
-                fwrite(STDERR, "all $maxAttempts attempts failed\n");
-            }
-        }
-
-        if ($maxSubdomains > 0 && count($result) > $maxSubdomains) {
-            fwrite(STDERR, "result: " . count($result) . " subdomain(s), capped to $maxSubdomains\n");
-            $result = array_slice(array_values($result), 0, $maxSubdomains);
+        $subs = array_values($result['subs']);
+        if ($maxSubdomains > 0 && count($subs) > $maxSubdomains) {
+            fwrite(STDERR, "result: " . count($subs) . " subdomain(s), capped to $maxSubdomains\n");
+            $subs = array_slice($subs, 0, $maxSubdomains);
         } else {
-            fwrite(STDERR, "result: " . count($result) . " subdomain(s)\n");
+            fwrite(STDERR, "result: " . count($subs) . " subdomain(s)\n");
         }
 
-        echo json_encode(['ok' => $gotHttp200, 'subs' => array_values($result)]);
+        echo json_encode(['ok' => $result['ok'], 'subs' => $subs, 'retry_after' => $result['retry_after']]);
     } catch (\Throwable $e) {
-        fwrite(STDERR, "crt.sh error: " . $e->getMessage() . "\n");
-        echo json_encode(['ok' => false, 'subs' => []]);
+        fwrite(STDERR, $source->getName() . " error: " . $e->getMessage() . "\n");
+        echo json_encode($failed);
     }
 }
 
@@ -335,39 +301,19 @@ function enrichIpDetails(array &$newRecords, DnsService $dnsService): void
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
- * Send external notifications via configured channels.
+ * Log what NotificationService::alertDnsChanges() sent and count it.
  */
-function sendExternalNotifications(
-    array $domain,
-    Domain $domainModel,
-    NotificationChannel $channelModel,
-    NotificationLog $logModel,
-    NotificationService $notificationService,
-    string $detail,
-    string $summary,
-    array &$stats,
-    Logger $logger
-): void {
-    if (empty($domain['notification_group_id'])) {
-        return;
-    }
-
-    if ($logModel->wasSentRecently($domain['id'], 'dns_change', 6)) {
+function logAlertResults(array $alerts, array &$stats): void
+{
+    if ($alerts['already_sent']) {
         logMessage("  → DNS change notification sent recently, skipping external");
-        return;
     }
 
-    $channels = $channelModel->getActiveByGroupId($domain['notification_group_id']);
-    if (empty($channels)) {
-        return;
+    if (!empty($alerts['channels'])) {
+        logMessage("  📤 Sending alerts to " . count($alerts['channels']) . " channel(s)");
     }
 
-    logMessage("  📤 Sending alerts to " . count($channels) . " channel(s)");
-
-    $domainData = $domainModel->find($domain['id']);
-    $results    = $notificationService->sendDnsChangeAlert($domainData, $channels, $detail);
-
-    foreach ($results as $result) {
+    foreach ($alerts['channels'] as $result) {
         $ok = $result['success'];
         logMessage($ok
             ? "    ✓ Sent to {$result['channel']}"
@@ -377,82 +323,11 @@ function sendExternalNotifications(
         if ($ok) {
             $stats['notifications_sent']++;
         }
-
-        $logModel->log(
-            $domain['id'],
-            'dns_change',
-            $result['channel'],
-            $summary,
-            $ok,
-            $ok ? null : 'Failed to send notification'
-        );
-    }
-}
-
-/**
- * Create in-app (bell icon) notifications for relevant users.
- */
-function sendInAppNotifications(
-    array $domain,
-    string $domainName,
-    string $isolationMode,
-    User $userModel,
-    NotificationGroup $groupModel,
-    NotificationService $notificationService,
-    string $summary,
-    array &$stats
-): void {
-    $usersToNotify = [];
-
-    if ($isolationMode === 'isolated') {
-        $userId = $domain['user_id'] ?? null;
-
-        if (!$userId && !empty($domain['notification_group_id'])) {
-            $group  = $groupModel->find($domain['notification_group_id']);
-            $userId = $group['user_id'] ?? null;
-        }
-
-        if ($userId) {
-            $usersToNotify[] = $userId;
-        }
-    } else {
-        foreach ($userModel->where('is_active', 1) as $user) {
-            $usersToNotify[] = $user['id'];
-        }
     }
 
-    if (empty($usersToNotify)) {
-        return;
-    }
-
-    $db            = Database::getConnection();
-    $notifiedCount = 0;
-
-    foreach ($usersToNotify as $userId) {
-        // Deduplicate: skip if already notified in the last 6 hours
-        $stmt = $db->prepare(
-            "SELECT COUNT(*) AS cnt FROM user_notifications
-             WHERE user_id = ? AND domain_id = ? AND type = 'dns_change'
-               AND created_at >= DATE_SUB(NOW(), INTERVAL 6 HOUR)"
-        );
-        $stmt->execute([$userId, $domain['id']]);
-        $row = $stmt->fetch();
-
-        if ($row && $row['cnt'] > 0) {
-            continue;
-        }
-
-        try {
-            $notificationService->notifyDnsChange($userId, $domainName, $domain['id'], $summary);
-            $notifiedCount++;
-        } catch (\Exception $e) {
-            logMessage("  ⚠ In-app notification failed for user $userId: " . $e->getMessage());
-        }
-    }
-
-    if ($notifiedCount > 0) {
-        logMessage("  🔔 Notified $notifiedCount user(s) in-app");
-        $stats['in_app_notifications'] += $notifiedCount;
+    if ($alerts['users'] > 0) {
+        logMessage("  🔔 Notified {$alerts['users']} user(s) in-app");
+        $stats['in_app_notifications'] += $alerts['users'];
     }
 }
 

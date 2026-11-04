@@ -40,6 +40,11 @@ If upgrading from v1.0.0, these incremental migrations will be applied:
 - `026_update_app_version_v1.1.4.sql` - Update version to 1.1.4
 - `027_add_dns_monitoring.sql` - DNS monitoring tables and settings
 - `028_add_ssl_monitoring.sql` - SSL certificate monitoring table, per-domain toggles, timestamps, and cron settings
+- `029_add_dns_record_source.sql` - DNS record source tracking (discovered, manual, imported)
+- `030_add_ssl_reminders_and_group_alert_types.sql` - SSL expiry reminder days and per-type alert switches on notification groups
+- `031_add_ct_log_sources.sql` - Certificate transparency sources for DNS deep scans (crt.sh, Cert Spotter), version 1.1.6
+- `032_add_renewal_notifications.sql` - Turns on the "Renewed" status change notification
+- `033_add_watchlist_groups.sql` - Notification group purpose (my domains or watchlist) and reminder days after expiry
 
 **Upgrade via:** Web updater at `/install/update`
 

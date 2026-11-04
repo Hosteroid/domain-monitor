@@ -109,11 +109,11 @@ class SearchController extends Controller
         // Calculate days left for each domain
         foreach ($results as &$domain) {
             if (!empty($domain['expiration_date'])) {
-                $daysLeft = floor((strtotime($domain['expiration_date']) - time()) / 86400);
+                $daysLeft = \App\Helpers\DomainHelper::daysUntilExpiration($domain['expiration_date']);
                 $domain['days_left'] = $daysLeft;
-                
+
                 // Color coding
-                if ($daysLeft < 0) {
+                if ($daysLeft <= 0) {
                     $domain['status_color'] = 'red';
                 } elseif ($daysLeft <= 30) {
                     $domain['status_color'] = 'orange';

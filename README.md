@@ -230,9 +230,10 @@ Payload example sent on domain alerts:
 
 ```json
 {
-  "event": "domain_expiration_alert",
+  "event": "domain_monitor_alert",
   "message": "⚠️ WARNING: Domain 'example.com' expires in 7 days (January 30, 2026)!\n\nRegistrar: Example Registrar\nPlease renew soon.",
   "data": {
+    "subject": "⚠️ Domain Expiration Alert: example.com (7 days)",
     "domain": "example.com",
     "domain_id": 123,
     "days_left": 7,
@@ -242,6 +243,8 @@ Payload example sent on domain alerts:
   "sent_at": "2025-10-17T12:34:56Z"
 }
 ```
+
+Status, renewal, SSL and DNS alerts use the same envelope with their own `data` fields, for example `new_status`, `status_label` and `old_status` when a domain's status changes, or `expiration_date` and `previous_expiration_date` when it is renewed.
 
 Use this with n8n's "Webhook" trigger to start flows.
 
@@ -307,6 +310,7 @@ The system will automatically fetch WHOIS information.
 The **Dashboard** shows:
 - Total domains and their status
 - Domains expiring soon
+- SSL certificates closest to expiry (for domains with SSL monitoring enabled)
 - Recent notifications sent
 
 ### Notification Schedule
@@ -321,7 +325,24 @@ By default, notifications are sent at these intervals before expiration:
 - 3 days
 - 2 days
 - 1 day (tomorrow!)
-- When expired (immediate alert)
+- On the day it expires (or at the first check in the week after, if no check ran that day)
+- 7, 14 and 30 days after it expired (**Settings → Monitoring → Reminders After Expiry**; an expired domain no longer alerts every day, and none go out once it is in redemption, pending delete or available)
+
+SSL monitoring is turned on per domain (**Edit**), for many domains at once (**Domains** → select → **SSL Monitoring**), or for every new domain (**Settings → Monitoring → SSL Certificates**).
+
+SSL certificates have their own reminder days (**Settings → Monitoring → SSL Certificates**, default `14,7,3,1`). Each reminder day is sent once per certificate, and the largest one is when a certificate counts as "Expiring Soon". Staying below 30 avoids alerts for certificates that renew automatically at 30 days left, such as Let's Encrypt.
+
+Status change alerts (available, registered, expired, redemption period, pending delete and renewed) are chosen under **Settings → Monitoring**. A **Renewed** alert goes out when the expiration date is at least a month later than before.
+
+Each notification group can also turn off whole alert types (domain expiration, status changes, DNS changes, SSL certificates) while monitoring continues.
+
+A notification group's purpose is **My domains** or **Watchlist**. Put domains you want to acquire in a watchlist group: it skips the reminders before expiry and the alert on the expiry date, gets a lifecycle update on the reminder days after expiry, and is told when a domain approaches deletion (redemption period), is pending delete, becomes available or is renewed, worded for buying it.
+
+Refreshing a domain's WHOIS, DNS or SSL yourself sends the same alerts the cron jobs would, by the same rules, so a change you find first is still announced.
+
+A DNS **Deep Scan** looks up subdomains in certificate transparency logs as well as trying common names. It asks crt.sh and Cert Spotter and merges what they find, so a new certificate shows up even while crt.sh is behind. Choose the sources and add an optional Cert Spotter API key under **Settings → Monitoring → DNS Discovery**.
+
+When a zone has a wildcard record, every name answers, so each refresh and scan probes a random name: subdomains that only get the wildcard's answers are not listed, the wildcard itself is listed as host `*`, and the DNS tab shows a **Wildcard DNS** badge. Subdomains with records of their own, and records you add or import, are kept.
 
 ### Configure Settings
 
@@ -372,6 +393,7 @@ Stay informed with the in-app notification system:
 - ⬆️ **System Upgrade** - Admins notified when system is updated (includes version & migration count)
 - 🔴 **Domain Expiring** - Alerts based on your configured thresholds
 - ⚠️ **Domain Expired** - Critical alerts for expired domains
+- 📅 **Domain Renewed** - The expiration date moved later after a renewal
 - 🔄 **Domain Updated** - WHOIS data changes detected
 - 🔐 **New Login** - Security alerts for new device logins
 - ❌ **WHOIS Failed** - Lookup errors and issues

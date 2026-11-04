@@ -123,6 +123,11 @@ CREATE TABLE IF NOT EXISTS notification_groups (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
+    purpose ENUM('own','watch') NOT NULL DEFAULT 'own' COMMENT 'own = domains I own, watch = domains I want to acquire',
+    notify_expiration TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=send domain expiration alerts',
+    notify_status TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=send domain status change alerts',
+    notify_dns TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=send DNS change alerts',
+    notify_ssl TINYINT(1) NOT NULL DEFAULT 1 COMMENT '1=send SSL certificate alerts',
     user_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -395,6 +400,8 @@ CREATE TABLE IF NOT EXISTS ssl_certificates (
     san_list JSON NULL,
     last_checked DATETIME NULL,
     last_error TEXT NULL,
+    last_reminder_days INT NULL COMMENT 'Reminder day last sent for this certificate',
+    last_reminder_valid_to DATETIME NULL COMMENT 'Expiry of the certificate the last reminder was sent for',
     raw_data JSON NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -426,7 +433,7 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('app_name', 'Domain Monitor', 'string', 'Application name'),
 ('app_url', 'http://localhost:8000', 'string', 'Application URL'),
 ('app_timezone', 'UTC', 'string', 'Application timezone'),
-('app_version', '1.1.5', 'string', 'Application version number'),
+('app_version', '1.1.6', 'string', 'Application version number'),
 
 -- Email settings
 ('mail_host', 'smtp.mailtrap.io', 'string', 'SMTP server host'),
@@ -439,7 +446,8 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 
 -- Monitoring settings
 ('notification_days_before', '60,30,21,14,7,5,3,2,1', 'string', 'Notification days before expiration'),
-('notification_status_triggers', 'available,registered,expired,redemption_period,pending_delete', 'string', 'Domain status changes that trigger notifications'),
+('post_expiry_notification_days', '7,14,30', 'string', 'Days after a domain expired to send a reminder (comma-separated)'),
+('notification_status_triggers', 'available,registered,expired,redemption_period,pending_delete,renewed', 'string', 'Domain status changes that trigger notifications'),
 ('check_interval_hours', '24', 'string', 'Domain check interval in hours'),
 ('last_check_run', NULL, 'datetime', 'Last time cron job ran'),
 
@@ -467,10 +475,14 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 -- DNS monitoring settings
 ('dns_check_interval_hours', '24', 'string', 'DNS record check interval in hours'),
 ('last_dns_check_run', NULL, 'datetime', 'Last time DNS cron job ran'),
+('ct_log_sources', 'crtsh,certspotter', 'string', 'Certificate transparency sources a DNS deep scan asks (comma-separated)'),
+('certspotter_api_key', '', 'encrypted', 'Cert Spotter API key (encrypted, optional)'),
 
 -- SSL monitoring settings
 ('ssl_check_interval_hours', '12', 'string', 'SSL certificate check interval in hours'),
 ('last_ssl_check_run', NULL, 'datetime', 'Last time SSL cron job ran'),
+('ssl_notification_days', '14,7,3,1', 'string', 'Days before SSL certificate expiry to send reminders (comma-separated)'),
+('ssl_monitoring_new_domains', '0', 'boolean', 'Turn on SSL monitoring for newly added domains'),
 
 -- Update system settings
 ('update_channel', 'stable', 'string', 'Update channel: stable (releases only) or latest (releases + hotfixes)'),

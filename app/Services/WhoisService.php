@@ -12,6 +12,10 @@ class WhoisService
     
     // Cache TTL in seconds (24 hours)
     private const CACHE_TTL = 86400;
+
+    // A renewal adds at least a month; a smaller move of the expiration date is a correction
+    private const RENEWAL_MIN_DAYS = 28;
+
     private TldRegistry $tldModel;
     
     // Track last error type for rate limit detection
@@ -1156,19 +1160,11 @@ class WhoisService
     }
 
     /**
-     * Calculate days until domain expiration
+     * Calculate days until domain expiration (calendar days, 0 on the day it expires)
      */
     public function daysUntilExpiration(?string $expirationDate): ?int
     {
-        if (!$expirationDate) {
-            return null;
-        }
-
-        $expiration = strtotime($expirationDate);
-        $now = time();
-        $diff = $expiration - $now;
-
-        return (int)floor($diff / 86400); // 86400 seconds in a day
+        return \App\Helpers\DomainHelper::daysUntilExpiration($expirationDate);
     }
 
     /**
@@ -1262,7 +1258,8 @@ class WhoisService
                 return 'error';
             }
 
-            if ($days < 0) {
+            // Expired from the expiration date itself
+            if ($days <= 0) {
                 return 'expired';
             }
 
@@ -1280,6 +1277,81 @@ class WhoisService
         }
         // Return error to avoid incorrectly marking registered domains as available
         return 'error';
+    }
+
+    /**
+     * The domain's status as its last successful lookup left it. A failed lookup saves "error"
+     * over the status of a domain that wasn't active, so the saved WHOIS data says what it was:
+     * a lookup that works again then doesn't announce the redemption period a second time, or
+     * take a dropped domain registered again for a renewal.
+     *
+     * @param array $domain Domain row as it was before this lookup
+     */
+    public function getLastKnownStatus(array $domain): string
+    {
+        $status = (string)($domain['status'] ?? '');
+        $whois = json_decode($domain['whois_data'] ?? '', true);
+        if ($status !== 'error' || !is_array($whois) || $whois === []) {
+            return $status;
+        }
+
+        return $this->getDomainStatus($domain['expiration_date'] ?? null, (array)($whois['status'] ?? []), $whois);
+    }
+
+    /**
+     * Check fresh WHOIS data for a renewal: the same registration now expires at least a month later
+     *
+     * @param array $domain Domain row as it was before this lookup
+     * @param array $whoisData Result of getDomainInfo()
+     * @param string $status Status worked out from the new data (getDomainStatus())
+     * @return array{old_expiration: string, new_expiration: string, auto_renew_period: bool}|null
+     */
+    public function detectRenewal(array $domain, array $whoisData, string $status): ?array
+    {
+        $oldExpiration = $domain['expiration_date'] ?? null;
+        $newExpiration = $whoisData['expiration_date'] ?? null;
+
+        if (!$oldExpiration || !$newExpiration || !in_array($status, ['active', 'expiring_soon'], true)) {
+            return null;
+        }
+
+        // A domain that was free or being deleted can only come back as a new registration
+        if (in_array($this->getLastKnownStatus($domain), ['available', 'pending_delete'], true)) {
+            return null;
+        }
+
+        $extendedBy = (int)round((strtotime($newExpiration) - strtotime($oldExpiration)) / 86400);
+        if ($extendedBy < self::RENEWAL_MIN_DAYS || strtotime($newExpiration) < time()) {
+            return null;
+        }
+
+        // A different creation date means it was deleted and registered again, and so does one
+        // after the old expiration date (the saved data of a free domain has no creation date)
+        $oldWhois = json_decode($domain['whois_data'] ?? '', true);
+        $oldCreated = is_array($oldWhois) ? ($oldWhois['creation_date'] ?? null) : null;
+        $newCreated = $whoisData['creation_date'] ?? null;
+        if ($oldCreated && $newCreated && $oldCreated !== $newCreated) {
+            return null;
+        }
+        $newCreatedTs = $newCreated ? strtotime((string)$newCreated) : false;
+        if ($newCreatedTs !== false && $newCreatedTs > strtotime($oldExpiration)) {
+            return null;
+        }
+
+        // gTLD registries renew an expired domain on their own; the registrar can still delete it
+        $autoRenewPeriod = false;
+        foreach ((array)($whoisData['status'] ?? []) as $eppStatus) {
+            if (preg_match('/auto[\s_-]*renew[\s_-]*period/i', (string)$eppStatus)) {
+                $autoRenewPeriod = true;
+                break;
+            }
+        }
+
+        return [
+            'old_expiration' => $oldExpiration,
+            'new_expiration' => $newExpiration,
+            'auto_renew_period' => $autoRenewPeriod,
+        ];
     }
 
     /**

@@ -1,0 +1,52 @@
+{# Purpose and alert type switches for a notification group (my domains, all on for a new group) #}
+{% set purposes = [
+    {value: 'own', label: 'My domains', hint: 'Reminders before and after a domain expires, renewals and status changes', icon: 'fa-user-shield'},
+    {value: 'watch', label: 'Watchlist', hint: 'Domains you want to acquire: no reminders before expiry, alerts when they approach deletion, are pending delete or become available', icon: 'fa-binoculars'}
+] %}
+{% set currentPurpose = group is defined ? group.purpose|default('own') : 'own' %}
+<div>
+    <span class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Purpose</span>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {% for purpose in purposes %}
+            <label class="flex items-start p-3 border border-gray-200 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                <input type="radio" name="purpose" value="{{ purpose.value }}"
+                       {{ currentPurpose == purpose.value ? 'checked' : '' }}
+                       class="w-4 h-4 text-primary border-gray-300 dark:border-slate-600 focus:ring-primary mt-0.5">
+                <div class="ml-3">
+                    <span class="text-sm font-medium text-gray-900 dark:text-white">
+                        <i class="fas {{ purpose.icon }} text-gray-400 dark:text-slate-500 mr-1"></i> {{ purpose.label }}
+                    </span>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{{ purpose.hint }}</p>
+                </div>
+            </label>
+        {% endfor %}
+    </div>
+</div>
+
+{% set alertTypes = [
+    {key: 'notify_expiration', label: 'Domain expiration', hint: 'Reminders before and after a domain expires', icon: 'fa-clock'},
+    {key: 'notify_status', label: 'Domain status changes', hint: 'Available, registered, renewed, expired, redemption, pending delete', icon: 'fa-exchange-alt'},
+    {key: 'notify_dns', label: 'DNS changes', hint: 'Records added, removed or changed', icon: 'fa-network-wired'},
+    {key: 'notify_ssl', label: 'SSL certificates', hint: 'Expiry reminders and certificate problems', icon: 'fa-lock'}
+] %}
+<div>
+    <span class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">Alert Types</span>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {% for alertType in alertTypes %}
+            <label class="flex items-start p-3 border border-gray-200 dark:border-slate-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                <input type="checkbox" name="{{ alertType.key }}" value="1"
+                       {{ group is not defined or group[alertType.key]|default(1) ? 'checked' : '' }}
+                       class="w-4 h-4 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary mt-0.5">
+                <div class="ml-3">
+                    <span class="text-sm font-medium text-gray-900 dark:text-white">
+                        <i class="fas {{ alertType.icon }} text-gray-400 dark:text-slate-500 mr-1"></i> {{ alertType.label }}
+                    </span>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{{ alertType.hint }}</p>
+                </div>
+            </label>
+        {% endfor %}
+    </div>
+    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+        Unchecked types are still monitored, but no alerts are sent for them (channels or in-app) for domains in this group
+    </p>
+</div>

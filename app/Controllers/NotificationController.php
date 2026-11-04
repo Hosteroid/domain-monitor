@@ -4,6 +4,7 @@ namespace App\Controllers;
 
 use Core\Controller;
 use Core\Auth;
+use App\Helpers\LayoutHelper;
 use App\Models\Notification;
 
 class NotificationController extends Controller
@@ -55,9 +56,9 @@ class NotificationController extends Controller
         // Format notifications for display
         foreach ($notifications as &$notification) {
             $notification['time_ago'] = $this->timeAgo($notification['created_at']);
-            $notification['icon'] = $this->getNotificationIcon($notification['type']);
-            $notification['color'] = $this->getNotificationColor($notification['type']);
-            $notification['login_data'] = \App\Helpers\LayoutHelper::parseLoginData($notification);
+            $notification['icon'] = LayoutHelper::getNotificationIcon($notification['type']);
+            $notification['color'] = LayoutHelper::getNotificationColor($notification['type'], $notification['title'] ?? '');
+            $notification['login_data'] = LayoutHelper::parseLoginData($notification);
         }
         
         $this->view('notifications/index', [
@@ -201,60 +202,14 @@ class NotificationController extends Controller
         // Format for display
         foreach ($notifications as &$notification) {
             $notification['time_ago'] = $this->timeAgo($notification['created_at']);
-            $notification['icon'] = $this->getNotificationIcon($notification['type']);
-            $notification['color'] = $this->getNotificationColor($notification['type']);
+            $notification['icon'] = LayoutHelper::getNotificationIcon($notification['type']);
+            $notification['color'] = LayoutHelper::getNotificationColor($notification['type'], $notification['title'] ?? '');
         }
         
         $this->json([
             'notifications' => $notifications,
             'unread_count' => count($notifications)
         ]);
-    }
-    
-    /**
-     * Get notification icon based on type
-     */
-    private function getNotificationIcon(string $type): string
-    {
-        return match($type) {
-            'domain_expiring' => 'exclamation-triangle',
-            'domain_expired', 'domain_expired_status' => 'times-circle',
-            'domain_available' => 'check-circle',
-            'domain_registered' => 'globe',
-            'domain_redemption' => 'hourglass-half',
-            'domain_pending_delete' => 'trash-alt',
-            'domain_updated' => 'sync-alt',
-            'session_new' => 'sign-in-alt',
-            'session_failed' => 'shield-alt',
-            'whois_failed' => 'exclamation-circle',
-            'system_welcome' => 'hand-sparkles',
-            'system_upgrade' => 'arrow-up',
-            'update_available' => 'cloud-download-alt',
-            default => 'bell'
-        };
-    }
-    
-    /**
-     * Get notification color based on type
-     */
-    private function getNotificationColor(string $type): string
-    {
-        return match($type) {
-            'domain_expiring' => 'orange',
-            'domain_expired', 'domain_expired_status' => 'red',
-            'domain_available' => 'blue',
-            'domain_registered' => 'green',
-            'domain_redemption' => 'amber',
-            'domain_pending_delete' => 'rose',
-            'domain_updated' => 'green',
-            'session_new' => 'blue',
-            'session_failed' => 'red',
-            'whois_failed' => 'gray',
-            'system_welcome' => 'purple',
-            'system_upgrade' => 'indigo',
-            'update_available' => 'blue',
-            default => 'gray'
-        };
     }
     
     /**

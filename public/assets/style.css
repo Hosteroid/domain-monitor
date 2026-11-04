@@ -90,32 +90,153 @@
     animation: fadeIn 0.3s ease-in;
 }
 
-/* Tooltips */
-.tooltip {
-    position: relative;
-    display: inline-block;
-}
+/* Tooltips: see tooltip.css and tooltip.js */
 
-.tooltip .tooltiptext {
-    visibility: hidden;
-    width: 200px;
-    background-color: #555;
-    color: #fff;
-    text-align: center;
-    border-radius: 6px;
-    padding: 5px;
-    position: absolute;
-    z-index: 1;
-    bottom: 125%;
-    left: 50%;
-    margin-left: -100px;
-    opacity: 0;
-    transition: opacity 0.3s;
-}
+/* ================================
+   Dropdown menus (select elements)
+   In browsers that support customizable selects (Chrome/Edge 135+), the open
+   list is drawn in the app's style instead of the operating system menu.
+   Other browsers keep their native menu.
+   ================================ */
+@supports (appearance: base-select) {
+    /* :where() keeps the specificity at zero, so Tailwind classes on a select still win */
+    :where(select:not([multiple]):not([size])),
+    :where(select:not([multiple]):not([size]))::picker(select) {
+        appearance: base-select;
+    }
 
-.tooltip:hover .tooltiptext {
-    visibility: visible;
-    opacity: 1;
+    :where(select:not([multiple]):not([size])) {
+        gap: 0.5rem;
+        cursor: pointer;
+    }
+
+    /* Arrow at the right edge, turned up while the list is open */
+    select::picker-icon {
+        content: '';
+        flex-shrink: 0;
+        width: 1rem;
+        height: 1rem;
+        margin-inline-start: auto;
+        background-color: currentColor;
+        opacity: 0.55;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 7.75 10 12.25l4.5-4.5' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 7.75 10 12.25l4.5-4.5' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+        transition: rotate 150ms ease;
+    }
+
+    select:open::picker-icon {
+        rotate: 180deg;
+    }
+
+    /* The open list */
+    select::picker(select) {
+        margin-block: 4px;
+        padding: 4px;
+        border: 1px solid #e5e7eb;
+        border-radius: 0.5rem;
+        background-color: #ffffff;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+        max-block-size: min(20rem, 60vh);
+        overflow-y: auto;
+    }
+
+    select option {
+        padding: 0.375rem 0.625rem;
+        border-radius: 0.375rem;
+        color: #374151;
+        font-weight: 400;
+        cursor: pointer;
+    }
+
+    /* Group labels as small section headings; options inside are set back to normal text */
+    select optgroup {
+        padding-block-start: 0.375rem;
+        color: #6b7280;
+        font-size: 0.75em;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+
+    select optgroup option {
+        font-size: 1.3333em;
+        letter-spacing: normal;
+        text-transform: none;
+    }
+
+    select option:hover,
+    select option:focus-visible {
+        background-color: #f3f4f6;
+        outline: none;
+    }
+
+    select option:checked {
+        background-color: #eff6ff;
+        color: #1d4ed8;
+        font-weight: 500;
+    }
+
+    select option:checked:hover,
+    select option:checked:focus-visible {
+        background-color: #dbeafe;
+    }
+
+    select option:disabled {
+        color: #9ca3af;
+        cursor: not-allowed;
+    }
+
+    /* Check mark on the selected option, at the end of the row */
+    select option::checkmark {
+        order: 1;
+        margin-inline-start: auto;
+        padding-inline-start: 0.75rem;
+        content: '';
+        width: 0.875rem;
+        height: 0.875rem;
+        background-color: currentColor;
+        -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4.5 10.5 8.25 14 15.5 6.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+        mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4.5 10.5 8.25 14 15.5 6.5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+
+    html.dark select::picker(select) {
+        border-color: #334155;
+        background-color: #1e293b;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+    }
+
+    html.dark select option {
+        color: #e2e8f0;
+    }
+
+    html.dark select option:hover,
+    html.dark select option:focus-visible {
+        background-color: #334155;
+    }
+
+    html.dark select option:checked {
+        background-color: rgba(59, 130, 246, 0.15);
+        color: #93c5fd;
+    }
+
+    html.dark select option:checked:hover,
+    html.dark select option:checked:focus-visible {
+        background-color: rgba(59, 130, 246, 0.25);
+    }
+
+    html.dark select option:disabled {
+        color: #64748b;
+    }
+
+    html.dark select optgroup {
+        color: #94a3b8;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        select::picker-icon {
+            transition: none;
+        }
+    }
 }
 
 /* Custom Scrollbar */

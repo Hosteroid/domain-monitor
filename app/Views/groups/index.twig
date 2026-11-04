@@ -57,24 +57,25 @@
 {# Groups List #}
 <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
     {# Bulk Actions Bar (shown when groups are selected) #}
-    <div id="bulk-actions" class="hidden px-6 py-3 bg-blue-50 dark:bg-blue-500/10 border-b border-blue-200 dark:border-blue-500/30 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <span id="selected-count" class="text-sm font-medium text-gray-700 dark:text-slate-300"></span>
-            <div class="flex items-center gap-3 flex-wrap">
-                <div class="flex items-center gap-2">
+    <div id="bulk-actions" class="hidden px-4 sm:px-6 py-2.5 bg-blue-50 dark:bg-blue-500/10 border-b border-blue-200 dark:border-blue-500/30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div class="contents sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
+            <span id="selected-count" class="whitespace-nowrap text-sm font-semibold text-gray-900 dark:text-white"></span>
+            <div class="order-last w-full sm:order-none sm:w-auto flex flex-wrap items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                     {% if auth.isAdmin %}
-                    <button type="button" onclick="bulkTransfer()" class="inline-flex items-center px-4 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
-                        <i class="fas fa-exchange-alt mr-1"></i> Transfer Selected
+                    <button type="button" onclick="bulkTransfer()" class="inline-flex items-center gap-2 whitespace-nowrap px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                        <i class="fas fa-exchange-alt text-blue-500 dark:text-blue-400"></i> Transfer
                     </button>
+                    <span class="hidden sm:block w-px h-6 mx-1 bg-blue-200 dark:bg-slate-600"></span>
                     {% endif %}
-                    <button type="button" onclick="bulkDelete()" class="inline-flex items-center px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
-                        <i class="fas fa-trash mr-1"></i> Delete Selected
+                    <button type="button" onclick="bulkDelete()" class="inline-flex items-center gap-2 whitespace-nowrap px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-500/40 bg-white dark:bg-slate-800 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
+                        <i class="fas fa-trash"></i> Delete
                     </button>
                 </div>
             </div>
         </div>
-        <button type="button" onclick="clearSelection()" class="inline-flex items-center text-sm font-medium text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-blue-100 dark:hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors">
-            <i class="fas fa-times mr-1.5"></i> Clear Selection
+        <button type="button" onclick="clearSelection()" class="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-medium text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-blue-100 dark:hover:bg-blue-500/20 px-2.5 py-1.5 rounded-lg transition-colors">
+            <i class="fas fa-times"></i> Clear
         </button>
     </div>
     {% if groups is not empty %}
@@ -102,10 +103,13 @@
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="flex items-center">
                                     <div class="flex-shrink-0 h-10 w-10 bg-primary bg-opacity-10 rounded-lg flex items-center justify-center">
-                                        <i class="fas fa-bell text-primary"></i>
+                                        <i class="fas {{ group.purpose|default('own') == 'watch' ? 'fa-binoculars' : 'fa-bell' }} text-primary"></i>
                                     </div>
                                     <div class="ml-4">
                                         <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ group.name }}</div>
+                                        {% if group.purpose|default('own') == 'watch' %}
+                                            <span class="inline-flex items-center mt-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400" title="Domains you want to acquire: no reminders before expiry, alerts when they approach deletion or become available">Watchlist</span>
+                                        {% endif %}
                                     </div>
                                 </div>
                             </td>
@@ -160,10 +164,10 @@
                     <div class="flex items-start justify-between mb-3">
                         <div class="flex items-center">
                             <div class="flex-shrink-0 h-10 w-10 bg-primary bg-opacity-10 rounded-lg flex items-center justify-center">
-                                <i class="fas fa-bell text-primary"></i>
+                                <i class="fas {{ group.purpose|default('own') == 'watch' ? 'fa-binoculars' : 'fa-bell' }} text-primary"></i>
                             </div>
                             <div class="ml-3">
-                                <h3 class="font-semibold text-gray-900 dark:text-white">{{ group.name }}</h3>
+                                <h3 class="font-semibold text-gray-900 dark:text-white">{{ group.name }}{% if group.purpose|default('own') == 'watch' %} <span class="ml-1 px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400">Watchlist</span>{% endif %}</h3>
                                 <p class="text-sm text-gray-500 dark:text-slate-400">{{ group.description|default('No description') }}</p>
                             </div>
                         </div>
@@ -226,7 +230,7 @@ function updateBulkActions() {
 
     if (checkboxes.length > 0) {
         bulkActions.classList.remove('hidden');
-        selectedCount.textContent = checkboxes.length + ' group(s) selected';
+        selectedCount.textContent = checkboxes.length + ' selected';
     } else {
         bulkActions.classList.add('hidden');
     }
@@ -330,7 +334,7 @@ document.getElementById('groupImportModal')?.addEventListener('click', function(
     prefix: 'group',
     title: 'Import Notification Groups',
     action: '/groups/import',
-    format_html: '<p class="text-xs text-gray-600 dark:text-slate-400">CSV: <code class="bg-white dark:bg-slate-700 px-1 rounded">group_name, group_description, channel_type, channel_config, is_active</code></p><p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">JSON: array of group objects with nested channels array</p><p class="text-xs text-gray-500 dark:text-slate-400 mt-1.5"><i class="fas fa-exclamation-triangle text-amber-500 mr-1"></i>Channels with masked secrets will be imported as <strong>disabled</strong>. Update the credentials and enable them manually.</p>'
+    format_html: '<p class="text-xs text-gray-600 dark:text-slate-400">CSV: <code class="bg-white dark:bg-slate-700 px-1 rounded">group_name, group_description, channel_type, channel_config, is_active</code></p><p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">Optional alert switches: <code class="bg-white dark:bg-slate-700 px-1 rounded">notify_expiration, notify_status, notify_dns, notify_ssl</code> (1 or 0, on when left out), and <code class="bg-white dark:bg-slate-700 px-1 rounded">purpose</code> (own or watch)</p><p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">JSON: array of group objects with nested channels array</p><p class="text-xs text-gray-500 dark:text-slate-400 mt-1.5"><i class="fas fa-exclamation-triangle text-amber-500 mr-1"></i>Channels with masked secrets will be imported as <strong>disabled</strong>. Update the credentials and enable them manually.</p>'
 } %}
 {% include 'partials/transfer-modal.twig' %}
 {% endblock %}

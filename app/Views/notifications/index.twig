@@ -56,10 +56,15 @@
                         <option value="domain_expired" {{ filterType == 'domain_expired' ? 'selected' : '' }}>Domain Expired</option>
                         <option value="domain_available" {{ filterType == 'domain_available' ? 'selected' : '' }}>Domain Available</option>
                         <option value="domain_registered" {{ filterType == 'domain_registered' ? 'selected' : '' }}>Domain Registered</option>
+                        <option value="domain_renewed" {{ filterType == 'domain_renewed' ? 'selected' : '' }}>Domain Renewed</option>
                         <option value="domain_redemption" {{ filterType == 'domain_redemption' ? 'selected' : '' }}>Redemption Period</option>
                         <option value="domain_pending_delete" {{ filterType == 'domain_pending_delete' ? 'selected' : '' }}>Pending Delete</option>
                         <option value="domain_updated" {{ filterType == 'domain_updated' ? 'selected' : '' }}>Domain Updated</option>
                         <option value="whois_failed" {{ filterType == 'whois_failed' ? 'selected' : '' }}>WHOIS Failed</option>
+                    </optgroup>
+                    <optgroup label="Monitoring">
+                        <option value="dns_change" {{ filterType == 'dns_change' ? 'selected' : '' }}>DNS Changes</option>
+                        <option value="ssl_status_change" {{ filterType == 'ssl_status_change' ? 'selected' : '' }}>SSL Certificates</option>
                     </optgroup>
                     <optgroup label="System">
                         <option value="session_new" {{ filterType == 'session_new' ? 'selected' : '' }}>New Login</option>
@@ -129,8 +134,8 @@
         <div class="divide-y divide-gray-100 dark:divide-slate-700">
             {% for notification in notifications %}
                 {% set bgClass = notification.is_read ? '' : 'bg-blue-50 dark:bg-blue-500/10' %}
-                {% set iconBgClass = 'bg-' ~ notification.color ~ '-100' %}
-                {% set iconTextClass = 'text-' ~ notification.color ~ '-600' %}
+                {% set iconBgClass = 'bg-' ~ notification.color ~ '-100 dark:bg-' ~ notification.color ~ '-500/10' %}
+                {% set iconTextClass = 'text-' ~ notification.color ~ '-600 dark:text-' ~ notification.color ~ '-400' %}
                 {% set hasDomain = notification.domain_id is not empty %}
                 {% set domainUrl = hasDomain ? '/domains/' ~ notification.domain_id : null %}
                 {% set clickUrl = null %}

@@ -260,6 +260,110 @@
     </div>
 </div>
 
+{# Expiring SSL Certificates #}
+{% set sslSummary = [
+    {key: 'valid', label: 'Valid', dot: 'bg-green-500', text: 'text-green-600 dark:text-green-400'},
+    {key: 'expiring', label: 'Expiring', dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400'},
+    {key: 'expired', label: 'Expired', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400'},
+    {key: 'invalid', label: 'Invalid', dot: 'bg-red-500', text: 'text-red-600 dark:text-red-400'}
+] %}
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mb-4">
+    <div class="px-5 py-3 border-b border-gray-200 dark:border-slate-700">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-lock text-gray-400 dark:text-slate-500 mr-2 text-xs"></i>
+                Expiring SSL Certificates
+            </h2>
+            {% if sslStats.total|default(0) > 0 %}
+                <div class="flex flex-wrap items-center gap-3 text-xs">
+                    {% for item in sslSummary %}
+                        {% set statusCount = sslStats[item.key]|default(0) %}
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full {{ statusCount > 0 ? item.dot : 'bg-gray-300 dark:bg-slate-600' }}"></span>
+                            <span class="text-gray-500 dark:text-slate-400">{{ item.label }}</span>
+                            <span class="font-semibold {{ statusCount > 0 ? item.text : 'text-gray-400 dark:text-slate-500' }}">{{ statusCount }}</span>
+                        </span>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    {% if expiringCertificates is not empty %}
+        <div class="hidden sm:flex items-center gap-4 px-5 py-2 bg-gray-50 dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700 text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">
+            <span class="flex-1 min-w-0">Certificate</span>
+            <span class="w-32 flex-shrink-0">Expires</span>
+            <span class="hidden lg:block w-40 flex-shrink-0">Status</span>
+            <span class="w-4 flex-shrink-0"></span>
+        </div>
+        {% set expiringDays = sslExpiringDays|default(30) %}
+        <div class="divide-y divide-gray-100 dark:divide-slate-700">
+            {% for certificate in expiringCertificates %}
+                {% set daysLeft = certificate.days_left %}
+                {% if daysLeft is null %}
+                    {% set urgencyClass = 'text-gray-400 dark:text-slate-500' %}
+                {% elseif daysLeft <= min(7, expiringDays) %}
+                    {% set urgencyClass = 'text-red-600 dark:text-red-400' %}
+                {% elseif daysLeft <= expiringDays %}
+                    {% set urgencyClass = 'text-amber-600 dark:text-amber-400' %}
+                {% else %}
+                    {% set urgencyClass = 'text-green-600 dark:text-green-400' %}
+                {% endif %}
+                {% set issuerLabel = certificate.issuer_organization ?: certificate.issuer_name %}
+                {% if certificate.issuer_organization and certificate.issuer_name and certificate.issuer_name != certificate.issuer_organization %}
+                    {% set issuerLabel = certificate.issuer_organization ~ ' (' ~ certificate.issuer_name ~ ')' %}
+                {% endif %}
+                <a href="/domains/{{ certificate.domain_id }}#ssl" class="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors duration-150">
+                    <div class="flex-1 min-w-0 flex items-center gap-3">
+                        <div class="hidden sm:flex w-8 h-8 rounded-lg border items-center justify-center flex-shrink-0 {{ certificate.header_class }}">
+                            <i class="fas fa-lock {{ certificate.accent_class }} text-xs"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ certificate.display_target }}</p>
+                            {% if certificate.last_error %}
+                                <p class="text-xs text-red-600 dark:text-red-400 truncate" title="{{ certificate.last_error }}">{{ certificate.last_error }}</p>
+                            {% else %}
+                                <p class="text-xs text-gray-500 dark:text-slate-400 truncate">Issued by {{ issuerLabel|default('unknown issuer') }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="w-32 flex-shrink-0 whitespace-nowrap">
+                        {% if certificate.valid_to %}
+                            <p class="text-sm text-gray-900 dark:text-white">{{ certificate.valid_to|date('M d, Y') }}</p>
+                            <p class="text-xs font-semibold {{ urgencyClass }}">
+                                {% if certificate.days_expired is not null %}
+                                    {{ certificate.days_expired == 0 ? 'Expired < 1 day ago' : 'Expired ' ~ certificate.days_expired ~ ' day' ~ (certificate.days_expired != 1 ? 's' : '') ~ ' ago' }}
+                                {% else %}
+                                    {{ daysLeft == 0 ? '< 1 day left' : daysLeft ~ ' day' ~ (daysLeft != 1 ? 's' : '') ~ ' left' }}
+                                {% endif %}
+                            </p>
+                        {% else %}
+                            <p class="text-sm text-gray-400 dark:text-slate-500">Unknown</p>
+                        {% endif %}
+                    </div>
+                    <div class="hidden lg:block w-40 flex-shrink-0">
+                        <span class="inline-flex items-center px-2 py-1 text-xs font-semibold rounded border {{ certificate.status_badge_class }}">
+                            <i class="fas {{ certificate.status_icon }} mr-1" style="font-size: 9px;"></i>
+                            {{ certificate.status_label }}
+                        </span>
+                    </div>
+                    <i class="fas fa-chevron-right text-sm text-gray-400 dark:text-slate-500 w-4 flex-shrink-0"></i>
+                </a>
+            {% endfor %}
+        </div>
+        {% if sslStats.total > expiringCertificates|length %}
+            <div class="px-5 py-2.5 border-t border-gray-200 dark:border-slate-700 text-xs text-gray-500 dark:text-slate-400">
+                Showing {{ expiringCertificates|length }} of {{ sslStats.total }} monitored certificates, soonest expiry first
+            </div>
+        {% endif %}
+    {% else %}
+        <div class="p-6 text-center">
+            <i class="fas fa-lock text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>
+            <p class="text-sm text-gray-600 dark:text-slate-400">No SSL certificates monitored yet</p>
+            <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">Enable SSL monitoring when editing a domain to track its certificates here</p>
+        </div>
+    {% endif %}
+</div>
+
 {# Insights Row #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
     {# Registrar Distribution #}

@@ -164,7 +164,35 @@ class Notification extends Model
             'created_at' => date('Y-m-d H:i:s') // Use PHP timezone, not database timezone
         ]);
     }
-    
+
+    /**
+     * Check if the user already got this type of notification for the domain recently
+     */
+    public function wasCreatedRecently(int $userId, int $domainId, string $type, int $hoursAgo = 24): bool
+    {
+        // created_at is written in PHP's timezone, so the cutoff is worked out in PHP too
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM user_notifications
+             WHERE user_id = ? AND domain_id = ? AND type = ? AND created_at >= ?"
+        );
+        $stmt->execute([$userId, $domainId, $type, date('Y-m-d H:i:s', time() - $hoursAgo * 3600)]);
+
+        return (int)$stmt->fetchColumn() > 0;
+    }
+
+    /**
+     * Whether any user got a notification of this type for the domain since a date (PHP's timezone)
+     */
+    public function wasCreatedForDomainSince(int $domainId, string $type, string $since): bool
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM user_notifications WHERE domain_id = ? AND type = ? AND created_at >= ?"
+        );
+        $stmt->execute([$domainId, $type, $since]);
+
+        return (int)$stmt->fetchColumn() > 0;
+    }
+
     /**
      * Get recent unread notifications for dropdown (limit 5)
      */

@@ -56,20 +56,41 @@ class NotificationLog extends Model
 
     /**
      * Check if notification was sent recently
+     *
+     * @param string|string[] $type One type, or several that announce the same thing
      */
-    public function wasSentRecently(int $domainId, string $type, int $hoursAgo = 24): bool
+    public function wasSentRecently(int $domainId, string|array $type, int $hoursAgo = 24): bool
     {
-        $sql = "SELECT COUNT(*) as count FROM notification_logs 
-                WHERE domain_id = ? 
-                AND notification_type = ? 
+        $types = (array)$type;
+        $placeholders = implode(',', array_fill(0, count($types), '?'));
+        $sql = "SELECT COUNT(*) as count FROM notification_logs
+                WHERE domain_id = ?
+                AND notification_type IN ({$placeholders})
                 AND status = 'sent'
                 AND sent_at >= DATE_SUB(NOW(), INTERVAL ? HOUR)";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([$domainId, $type, $hoursAgo]);
+        $stmt->execute([$domainId, ...$types, $hoursAgo]);
         $result = $stmt->fetch();
 
         return $result['count'] > 0;
+    }
+
+    /**
+     * Check if one of these notification types was sent since a date
+     *
+     * @param string[] $types
+     */
+    public function wasSentSince(int $domainId, array $types, string $since): bool
+    {
+        $placeholders = implode(',', array_fill(0, count($types), '?'));
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM notification_logs
+             WHERE domain_id = ? AND notification_type IN ({$placeholders}) AND status = 'sent' AND sent_at >= ?"
+        );
+        $stmt->execute([$domainId, ...$types, $since]);
+
+        return (int)$stmt->fetchColumn() > 0;
     }
 }
 

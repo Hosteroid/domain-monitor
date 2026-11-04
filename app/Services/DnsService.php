@@ -2,8 +2,18 @@
 
 namespace App\Services;
 
+use App\Services\CtLogs\CertSpotterSource;
+use App\Services\CtLogs\CrtshSource;
+use App\Services\CtLogs\CtLogSourceInterface;
+
 class DnsService
 {
+    /** Certificate transparency sources a deep scan can ask, by the id stored in ct_log_sources */
+    public const CT_LOG_SOURCES = [
+        'crtsh' => 'crt.sh',
+        'certspotter' => 'Cert Spotter',
+    ];
+
     private Logger $logger;
 
     // https://www.cloudflare.com/ips-v4/ and /ips-v6/
@@ -68,6 +78,7 @@ class DnsService
         '_mta-sts',
     ];
 
+    // CAA is added in queryRootDomain() when available: Windows builds of PHP do not define DNS_CAA
     private const ROOT_RECORD_TYPES = [
         DNS_A     => 'A',
         DNS_AAAA  => 'AAAA',
@@ -77,7 +88,6 @@ class DnsService
         DNS_CNAME => 'CNAME',
         DNS_SOA   => 'SOA',
         DNS_SRV   => 'SRV',
-        DNS_CAA   => 'CAA',
     ];
 
     public function __construct()
@@ -98,35 +108,30 @@ class DnsService
     /**
      * Re-check only records that already exist in the database.
      * Queries root domain for all types + known subdomain hosts.
-     * No wordlist brute force, no crt.sh. Used by the cron and Refresh button.
+     * No wordlist brute force, no certificate logs. Used by the cron and Refresh button.
      */
     public function refreshExisting(string $domain, array $existingHosts = []): array
     {
         $this->logger->info("DNS refresh started", ['domain' => $domain, 'known_hosts' => count($existingHosts)]);
 
         [$records, $seen] = $this->queryRootDomain($domain);
+        $wildcard = $this->probeWildcard($domain);
+        $this->mergeRecords($wildcard, $records, $seen);
 
         // Query known subdomain hosts directly (no existence probe needed)
+        $wildcardHosts = 0;
         foreach ($existingHosts as $sub) {
-            $fqdn = "{$sub}.{$domain}";
-            // Underscore names hold TXT, SRV or a CNAME (e.g. delegated _acme-challenge), never A/AAAA/MX
-            if (str_starts_with($sub, '_')) {
-                $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
-                $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
-                $this->queryAndCollect($fqdn, DNS_SRV, 'SRV', $domain, $records, $seen);
-                continue;
+            if ($sub === '*') {
+                continue; // listed from the wildcard probe
             }
-            $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_MX, 'MX', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+            if (!$this->collectHost($sub, $domain, $wildcard, $records, $seen)) {
+                $wildcardHosts++;
+            }
         }
 
         // Known hosts above already covered these when they exist
         foreach (array_diff(self::SPECIAL_TXT_SUBDOMAINS, $existingHosts) as $sub) {
-            $fqdn = "{$sub}.{$domain}";
-            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+            $this->collectHost($sub, $domain, $wildcard, $records, $seen, [DNS_TXT => 'TXT']);
         }
 
         $this->resolveMxTargets($domain, $records, $seen);
@@ -135,8 +140,9 @@ class DnsService
 
         $totalRecords = array_sum(array_map('count', $records));
         $this->logger->info("DNS refresh completed", [
-            'domain'        => $domain,
-            'total_records' => $totalRecords,
+            'domain'         => $domain,
+            'total_records'  => $totalRecords,
+            'wildcard_hosts' => $wildcardHosts,
         ]);
 
         return $records;
@@ -144,7 +150,7 @@ class DnsService
 
     /**
      * Standard DNS lookup: root domain + resolve targets + special TXT.
-     * No subdomain brute force, no crt.sh. Like running nslookup/dig.
+     * No subdomain brute force, no certificate logs. Like running nslookup/dig.
      * Used by Discover > Quick Scan.
      */
     public function quickScan(string $domain): array
@@ -152,21 +158,17 @@ class DnsService
         $this->logger->info("DNS quick scan started", ['domain' => $domain]);
 
         [$records, $seen] = $this->queryRootDomain($domain);
+        $wildcard = $this->probeWildcard($domain);
+        $this->mergeRecords($wildcard, $records, $seen);
 
         // Add subdomains found as NS/MX/CNAME/SRV targets
         $targetSubs = $this->extractTargetSubdomains($domain, $records);
         foreach ($targetSubs as $sub) {
-            $fqdn = "{$sub}.{$domain}";
-            $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_MX, 'MX', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+            $this->collectHost($sub, $domain, $wildcard, $records, $seen);
         }
 
         foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
-            $fqdn = "{$sub}.{$domain}";
-            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+            $this->collectHost($sub, $domain, $wildcard, $records, $seen, [DNS_TXT => 'TXT']);
         }
 
         $this->resolveMxTargets($domain, $records, $seen);
@@ -183,11 +185,11 @@ class DnsService
     }
 
     /**
-     * Full discovery: root + wordlist brute force + crt.sh extras + wildcard detection.
+     * Full discovery: root + wordlist brute force + certificate log extras + wildcard detection.
      * Used by Discover > Deep Scan and the discover_dns.php script.
      *
      * @param string        $domain          The domain to scan
-     * @param array         $extraSubdomains Additional candidates (e.g. from crt.sh or previous scans)
+     * @param array         $extraSubdomains Additional candidates (e.g. from certificate logs or previous scans)
      * @param callable|null $onProgress      Optional callback for progress messages: fn(string $msg)
      */
     public function lookup(string $domain, array $extraSubdomains = [], ?callable $onProgress = null): array
@@ -207,15 +209,15 @@ class DnsService
         $candidates = array_unique(array_merge($candidates, $targetSubs));
 
         // Wildcard detection: probe a random nonsense subdomain
-        $wildcardDetected = false;
-        $probeHost = '_dm-wc-' . bin2hex(random_bytes(4)) . '.' . $domain;
         $log("Wildcard detection: probing random subdomain...");
-        if ($this->subdomainExists($probeHost)) {
-            $wildcardDetected = true;
+        $wildcard = $this->probeWildcard($domain);
+        $wildcardDetected = !empty($wildcard);
+        if ($wildcardDetected) {
             $this->logger->info("Wildcard DNS detected, skipping brute force", ['domain' => $domain]);
-            $log("⚠ Wildcard DNS detected — brute force skipped, using only crt.sh/known hosts");
-            // Only use crt.sh/extra candidates + DB hosts (real subdomains), not wordlist
-            $candidates = array_values(array_unique($extraSubdomains));
+            $log("⚠ Wildcard DNS detected — brute force skipped, using only certificate log/known hosts");
+            $this->mergeRecords($wildcard, $records, $seen);
+            // Only use certificate log/extra candidates + DB hosts (real subdomains), not wordlist
+            $candidates = array_values(array_unique(array_diff($extraSubdomains, ['*'])));
         } else {
             $log("No wildcard detected");
         }
@@ -241,19 +243,19 @@ class DnsService
         if (!empty($discovered)) {
             $log("Querying " . count($discovered) . " discovered subdomain(s)...");
         }
+        $wildcardHosts = 0;
         foreach ($discovered as $sub) {
-            $fqdn = "{$sub}.{$domain}";
-            $this->queryAndCollect($fqdn, DNS_A, 'A', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_AAAA, 'AAAA', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_CNAME, 'CNAME', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_MX, 'MX', $domain, $records, $seen);
-            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+            if (!$this->collectHost($sub, $domain, $wildcard, $records, $seen)) {
+                $wildcardHosts++;
+            }
+        }
+        if ($wildcardHosts > 0) {
+            $log("{$wildcardHosts} subdomain(s) only answer through the wildcard, not listed");
         }
 
         $log("Querying special TXT subdomains...");
         foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
-            $fqdn = "{$sub}.{$domain}";
-            $this->queryAndCollect($fqdn, DNS_TXT, 'TXT', $domain, $records, $seen);
+            $this->collectHost($sub, $domain, $wildcard, $records, $seen, [DNS_TXT => 'TXT']);
         }
 
         $log("Resolving MX/NS targets...");
@@ -338,6 +340,98 @@ class DnsService
     }
 
     /**
+     * Add records collected for one host to the domain's records (dedup).
+     */
+    private function mergeRecords(array $hostRecords, array &$records, array &$seen): void
+    {
+        foreach ($hostRecords as $type => $typeRecords) {
+            foreach ($typeRecords as $record) {
+                $this->addIfNew($type, $record, $records, $seen);
+            }
+        }
+    }
+
+    /**
+     * Check the zone for a wildcard record: what a random, unused name gets back, listed as host
+     * "*" (the literal "*" can't be queried on every platform). Empty when there is no wildcard.
+     *
+     * @return array Records by type
+     */
+    private function probeWildcard(string $domain): array
+    {
+        $probe = 'dm-wc-' . bin2hex(random_bytes(4)) . '.' . $domain;
+        $records = [];
+        $seen = [];
+        foreach ([DNS_A => 'A', DNS_AAAA => 'AAAA', DNS_CNAME => 'CNAME', DNS_MX => 'MX', DNS_TXT => 'TXT'] as $dnsConst => $typeName) {
+            $this->queryAndCollect($probe, $dnsConst, $typeName, $domain, $records, $seen);
+        }
+
+        foreach ($records as &$typeRecords) {
+            foreach ($typeRecords as &$record) {
+                $record['host'] = '*';
+                $record['raw']['host'] = "*.{$domain}";
+            }
+            unset($record);
+        }
+        unset($typeRecords);
+
+        return $records;
+    }
+
+    /**
+     * Query one subdomain and add its records, unless they are just the zone's wildcard answering
+     * for it: a wildcard answers for every name, so such a host has no records of its own (#76).
+     *
+     * @param array      $wildcard probeWildcard() result
+     * @param array|null $types    Record types to ask for (DNS_* => name); by default the ones the host can hold
+     * @return bool False when the host only answers through the wildcard (nothing is added)
+     */
+    private function collectHost(
+        string $sub, string $domain, array $wildcard,
+        array &$records, array &$seen, ?array $types = null
+    ): bool {
+        // Underscore names hold TXT, SRV or a CNAME (e.g. delegated _acme-challenge), never A/AAAA/MX
+        $types ??= str_starts_with($sub, '_')
+            ? [DNS_CNAME => 'CNAME', DNS_TXT => 'TXT', DNS_SRV => 'SRV']
+            : [DNS_A => 'A', DNS_AAAA => 'AAAA', DNS_CNAME => 'CNAME', DNS_MX => 'MX', DNS_TXT => 'TXT'];
+
+        $hostRecords = [];
+        $hostSeen = [];
+        foreach ($types as $dnsConst => $typeName) {
+            $this->queryAndCollect("{$sub}.{$domain}", $dnsConst, $typeName, $domain, $hostRecords, $hostSeen);
+        }
+
+        if (!empty($wildcard) && !empty($hostRecords)) {
+            $sameAsWildcard = true;
+            foreach ($types as $typeName) {
+                if ($this->recordValues($hostRecords[$typeName] ?? []) !== $this->recordValues($wildcard[$typeName] ?? [])) {
+                    $sameAsWildcard = false;
+                    break;
+                }
+            }
+            if ($sameAsWildcard) {
+                return false;
+            }
+        }
+
+        $this->mergeRecords($hostRecords, $records, $seen);
+        return true;
+    }
+
+    /**
+     * Values of one type of a host's records, for comparing hosts
+     */
+    private function recordValues(array $records): array
+    {
+        $values = array_map(
+            static fn(array $record): string => $record['value'] . '|' . ($record['priority'] ?? ''),
+            $records
+        );
+        sort($values);
+        return $values;
+    }
+
+    /**
      * Fast existence check for a subdomain.
      */
     private function subdomainExists(string $fqdn): bool
@@ -395,7 +489,12 @@ class DnsService
         ];
         $seen = [];
 
-        foreach (self::ROOT_RECORD_TYPES as $dnsConst => $typeName) {
+        $recordTypes = self::ROOT_RECORD_TYPES;
+        if (defined('DNS_CAA')) {
+            $recordTypes[DNS_CAA] = 'CAA';
+        }
+
+        foreach ($recordTypes as $dnsConst => $typeName) {
             $this->queryAndCollect($domain, $dnsConst, $typeName, $domain, $records, $seen);
         }
 
@@ -700,31 +799,47 @@ class DnsService
     }
 
     // ========================================================================
-    // CERTIFICATE TRANSPARENCY (crt.sh)
+    // CERTIFICATE TRANSPARENCY (crt.sh, Cert Spotter)
     // ========================================================================
 
     /**
-     * Discover subdomains via crt.sh Certificate Transparency logs.
+     * Build the certificate transparency source with this id, or null for an unknown id
+     */
+    public function createCtLogSource(string $id): ?CtLogSourceInterface
+    {
+        return match ($id) {
+            'crtsh' => new CrtshSource(),
+            'certspotter' => new CertSpotterSource((new \App\Models\Setting())->getCertSpotterApiKey()),
+            default => null,
+        };
+    }
+
+    /**
+     * Discover subdomains in one certificate transparency source.
      *
-     * Spawns check_dns.php --crtsh as a subprocess with a hard timeout to
-     * protect against crt.sh hangs. The subprocess handles HTTP retries and
-     * streams debug output to stderr, relayed via the $onStderrLine callback.
+     * Spawns check_dns.php --ctlog as a subprocess with a hard timeout to
+     * protect against a source that hangs (crt.sh can). The subprocess handles HTTP
+     * retries and streams debug output to stderr, relayed via the $onStderrLine callback.
      *
+     * @param  string        $sourceId        Key of self::CT_LOG_SOURCES
      * @param  string        $domain          The domain to scan
      * @param  int           $maxSubdomains   Cap on returned subdomains (0 = no limit)
      * @param  int           $timeoutSeconds  Hard kill timeout for the subprocess
      * @param  callable|null $onStderrLine    fn(string $line) for real-time stderr relay
-     * @return array{0: string[], 1: bool}    [subdomains, serverResponded]
+     * @return array{subs: string[], ok: bool, retry_after: ?int}
+     *         ok: the source answered; retry_after: seconds to leave it alone after a rate limit
      */
-    public function fetchCrtshSubdomains(
+    public function fetchCtLogSubdomains(
+        string $sourceId,
         string $domain,
         int $maxSubdomains = 100,
         int $timeoutSeconds = 1800,
         ?callable $onStderrLine = null
     ): array {
+        $failed     = ['subs' => [], 'ok' => false, 'retry_after' => null];
         $phpBin     = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
         $scriptPath = dirname(__DIR__, 2) . '/cron/check_dns.php';
-        $cmd        = [$phpBin, $scriptPath, '--crtsh', $domain];
+        $cmd        = [$phpBin, $scriptPath, '--ctlog', $sourceId, $domain];
 
         if ($maxSubdomains > 0) {
             $cmd[] = (string) $maxSubdomains;
@@ -738,8 +853,8 @@ class DnsService
         ], $pipes, $projectRoot);
 
         if (!is_resource($proc)) {
-            $this->logger->error('Failed to spawn crt.sh subprocess', ['domain' => $domain]);
-            return [[], false];
+            $this->logger->error('Failed to spawn certificate log subprocess', ['source' => $sourceId, 'domain' => $domain]);
+            return $failed;
         }
 
         fclose($pipes[0]);
@@ -762,11 +877,11 @@ class DnsService
             if ($elapsed >= $timeoutSeconds) {
                 $stdout .= self::drainStream($pipes[1]);
                 $stderrBuffer .= self::drainStream($pipes[2]);
-                $this->flushCrtshStderrLines($stderrBuffer, $onStderrLine);
+                $this->flushStderrLines($stderrBuffer, $onStderrLine);
                 proc_terminate($proc, 9);
                 proc_close($proc);
-                $this->logger->warning("crt.sh subprocess killed after {$elapsed}s", ['domain' => $domain]);
-                return [[], false];
+                $this->logger->warning("Certificate log subprocess killed after {$elapsed}s", ['source' => $sourceId, 'domain' => $domain]);
+                return $failed;
             }
 
             $readable = [$pipes[1], $pipes[2]];
@@ -778,7 +893,7 @@ class DnsService
                         $stdout .= $chunk;
                     } else {
                         $stderrBuffer .= $chunk;
-                        $this->flushCrtshStderrLines($stderrBuffer, $onStderrLine);
+                        $this->flushStderrLines($stderrBuffer, $onStderrLine);
                     }
                 }
             }
@@ -787,149 +902,62 @@ class DnsService
 
         $stdout .= stream_get_contents($pipes[1]);
         $stderrBuffer .= stream_get_contents($pipes[2]);
-        $this->flushCrtshStderrLines($stderrBuffer, $onStderrLine);
+        $this->flushStderrLines($stderrBuffer, $onStderrLine);
         fclose($pipes[1]);
         fclose($pipes[2]);
         proc_close($proc);
 
         $decoded = json_decode($stdout, true);
-        $ok   = is_array($decoded) && !empty($decoded['ok']);
-        $subs = is_array($decoded) && isset($decoded['subs']) ? $decoded['subs'] : [];
-
-        $this->logger->info('crt.sh discovery completed', [
-            'domain'           => $domain,
-            'subdomains_found' => count($subs),
-            'server_ok'        => $ok,
-        ]);
-
-        return [$subs, $ok];
-    }
-
-    /**
-     * Fetch a crt.sh URL with optional debug output to stderr.
-     *
-     * Called from the crt.sh subprocess where stderr is relayed to the parent
-     * in real-time. Pass $debug = true in subprocess context.
-     *
-     * @return array{status: int, body_length: int, data: array, time: float}
-     */
-    public function fetchCrtshUrl(string $url, int $timeout = 900, bool $debug = false): array
-    {
-        $ctx = stream_context_create([
-            'http' => [
-                'timeout' => $timeout,
-                'ignore_errors' => true,
-                'header' => implode("\r\n", [
-                    'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept: application/json, text/plain, */*',
-                    'Accept-Language: en-US,en;q=0.9',
-                    'Connection: keep-alive',
-                ]),
-            ],
-        ]);
-
-        $start = microtime(true);
-        $http_response_header = null;
-        $body = @file_get_contents($url, false, $ctx);
-        $elapsed = microtime(true) - $start;
-
-        $bodyLen = is_string($body) ? strlen($body) : 0;
-
-        if ($debug) {
-            fwrite(STDERR, "--- response ---\n");
-            fwrite(STDERR, "Time: " . sprintf('%.1f', $elapsed) . "s\n");
-
-            if (isset($http_response_header) && is_array($http_response_header)) {
-                foreach ($http_response_header as $h) {
-                    fwrite(STDERR, "$h\n");
-                }
-            } else {
-                fwrite(STDERR, "(no response headers — connection failed or timeout)\n");
-            }
-
-            fwrite(STDERR, "Body: $bodyLen bytes\n");
-
-            if (is_string($body) && $bodyLen > 0) {
-                $preview = $bodyLen > 2000 ? substr($body, 0, 2000) . "\n... [truncated, $bodyLen total]" : $body;
-                fwrite(STDERR, $preview . "\n");
-            }
-
-            fwrite(STDERR, "--- end response ---\n");
+        if (!is_array($decoded)) {
+            return $failed;
         }
 
-        $status = 0;
-        if (isset($http_response_header[0]) && preg_match('/\d{3}/', $http_response_header[0], $m)) {
-            $status = (int) $m[0];
-        }
-
-        $data = [];
-        if ($status === 200 && is_string($body) && $bodyLen > 2) {
-            $decoded = json_decode($body, true);
-            if (is_array($decoded)) {
-                $data = $decoded;
-            }
-        }
-
-        return [
-            'status'      => $status,
-            'body_length' => $bodyLen,
-            'data'        => $data,
-            'time'        => $elapsed,
+        $result = [
+            'subs'        => array_map('strval', (array)($decoded['subs'] ?? [])),
+            'ok'          => !empty($decoded['ok']),
+            'retry_after' => isset($decoded['retry_after']) ? (int)$decoded['retry_after'] : null,
         ];
+
+        $this->logger->info('Certificate log discovery completed', [
+            'source'           => $sourceId,
+            'domain'           => $domain,
+            'subdomains_found' => count($result['subs']),
+            'server_ok'        => $result['ok'],
+        ]);
+
+        return $result;
     }
 
     /**
-     * Extract unique subdomain prefixes from raw crt.sh JSON response.
+     * Merge the subdomain lists of several sources, taking one name from each in turn,
+     * so a capped result still holds names from every source.
      *
-     * Each entry has a name_value field that may contain multiple newline-separated
-     * names, including wildcards. Returns only the subdomain prefixes
-     * (e.g. "www", "mail", "api").
-     *
-     * @param  array  $crtshData  Decoded JSON array from crt.sh
-     * @param  string $domain     The base domain (e.g. "example.com")
-     * @return string[]           Unique subdomain prefixes
+     * @param  string[][] $lists
+     * @param  int        $max   Cap on the merged list (0 = no limit)
+     * @return string[]
      */
-    public function extractCrtshSubdomains(array $crtshData, string $domain): array
+    public static function mergeSubdomainLists(array $lists, int $max = 0): array
     {
-        $domainLower = strtolower($domain);
-        $suffix      = '.' . $domainLower;
-        $suffixLen   = strlen($suffix);
-        $subs        = [];
+        $lists = array_map('array_values', $lists);
+        $longest = $lists ? max(array_map('count', $lists)) : 0;
+        $merged = [];
 
-        foreach ($crtshData as $entry) {
-            if (empty($entry['name_value'])) {
-                continue;
-            }
-
-            foreach (explode("\n", $entry['name_value']) as $name) {
-                $name = strtolower(trim($name));
-
-                if (strpos($name, '*.') === 0) {
-                    $name = substr($name, 2);
-                }
-
-                if ($name === $domainLower) {
-                    continue;
-                }
-
-                if (substr($name, -$suffixLen) !== $suffix) {
-                    continue;
-                }
-
-                $sub = substr($name, 0, strlen($name) - $suffixLen);
-                if (!empty($sub)) {
-                    $subs[$sub] = true;
+        for ($i = 0; $i < $longest; $i++) {
+            foreach ($lists as $list) {
+                if (isset($list[$i])) {
+                    $merged[(string)$list[$i]] = true;
                 }
             }
         }
 
-        return array_keys($subs);
+        $merged = array_map('strval', array_keys($merged));
+        return $max > 0 ? array_slice($merged, 0, $max) : $merged;
     }
 
     /**
      * Flush complete stderr lines from buffer via callback.
      */
-    private function flushCrtshStderrLines(string &$buffer, ?callable $onLine): void
+    private function flushStderrLines(string &$buffer, ?callable $onLine): void
     {
         while (($pos = strpos($buffer, "\n")) !== false) {
             $line = trim(substr($buffer, 0, $pos));
@@ -1350,8 +1378,32 @@ class DnsService
             }
         }
 
+        // A host that now only answers through the zone's wildcard is no longer listed, but it still
+        // resolves to the same thing, so that is not a removal (#76). A host still listed has records
+        // of its own, which the wildcard doesn't answer for, so what it lost is a removal.
+        $wildcardValues = [];
+        $newHosts = [];
+        foreach ($newFlat as $record) {
+            $newHosts[$record['host'] ?? '@'] = true;
+            if (($record['host'] ?? '') === '*') {
+                $wildcardValues["{$record['record_type']}:{$record['value']}:" . ($record['priority'] ?? '')] = true;
+            }
+        }
+
         foreach ($oldFlat as $key => $record) {
             if (!isset($newFlat[$key])) {
+                // Manual and imported records stay saved whether the lookup finds them or not
+                // (a relative name or a split TXT may not read back the same), so only records
+                // the lookups found can be removed
+                if (($record['source'] ?? 'discovered') !== 'discovered') {
+                    continue;
+                }
+
+                $host = $record['host'] ?? '@';
+                $value = "{$record['record_type']}:{$record['value']}:" . ($record['priority'] ?? '');
+                if ($host !== '@' && $host !== '*' && !isset($newHosts[$host]) && isset($wildcardValues[$value])) {
+                    continue;
+                }
                 $changes['removed'][] = $record;
             }
         }

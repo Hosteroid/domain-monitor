@@ -10,6 +10,7 @@
 {% set lastCheckRun = settings.last_check_run|default(null) %}
 {% set lastDnsCheckRun = settings.last_dns_check_run|default(null) %}
 {% set currentSslCheckInterval = settings.ssl_check_interval_hours|default('12') %}
+{% set currentSslNotificationDays = settings.ssl_notification_days|default('14,7,3,1') %}
 {% set lastSslCheckRun = settings.last_ssl_check_run|default(null) %}
 {% set currentVer = appSettings.app_version|default('0') %}
 {% set updateChannel = updateSettings.update_channel|default('stable') %}
@@ -378,6 +379,20 @@
                             Alerts at: <span id="days_preview" class="font-semibold text-primary">{{ currentNotificationDays }}</span> days
                         </p>
                     </div>
+
+                    <!-- After expiry -->
+                    <div>
+                        <label for="post_expiry_notification_days" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                            Reminders After Expiry
+                        </label>
+                        <input type="text"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white"
+                               id="post_expiry_notification_days"
+                               name="post_expiry_notification_days"
+                               value="{{ settings.post_expiry_notification_days ?? '7,14,30' }}"
+                               placeholder="e.g., 7,14,30">
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">An expired domain alerts once when it expires, then on these days after, comma-separated. Leave empty for none. Watchlist groups only get these.</p>
+                    </div>
                 </div>
             </div>
 
@@ -456,15 +471,125 @@
                             <p class="text-xs text-rose-600 dark:text-rose-400 mt-0.5">Domain is scheduled for deletion</p>
                         </div>
                     </label>
+
+                    <!-- Renewed -->
+                    <label class="flex items-start p-3 bg-teal-50 dark:bg-teal-500/10 border border-teal-200 dark:border-teal-500/20 rounded-lg cursor-pointer hover:bg-teal-100 dark:hover:bg-teal-500/20 transition-colors">
+                        <input type="checkbox" name="notification_status_triggers[]" value="renewed"
+                               {{ 'renewed' in statusTriggers ? 'checked' : '' }}
+                               class="w-4 h-4 text-teal-600 border-gray-300 dark:border-slate-600 rounded focus:ring-teal-500 mt-0.5">
+                        <div class="ml-3">
+                            <span class="text-sm font-medium text-teal-800 dark:text-teal-400">
+                                <i class="fas fa-calendar-check mr-1"></i> Renewed
+                            </span>
+                            <p class="text-xs text-teal-600 dark:text-teal-400 mt-0.5">Domain is renewed (expiration date moves later)</p>
+                        </div>
+                    </label>
                 </div>
 
                 <div class="bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg p-3 mt-3">
                     <p class="text-xs text-gray-600 dark:text-slate-400">
                         <i class="fas fa-info-circle text-gray-400 dark:text-slate-500 mr-1"></i>
-                        <strong>Note:</strong> These notifications are triggered when a domain's status changes during a WHOIS check. 
-                        Redemption Period and Pending Delete detection depends on the TLD registry reporting EPP statuses. 
+                        <strong>Note:</strong> These notifications are triggered when a WHOIS check finds a domain's status has changed, including a refresh you start yourself.
+                        Renewed is triggered when the expiration date moves at least a month later.
+                        Redemption Period and Pending Delete detection depends on the TLD registry reporting EPP statuses.
                         Most gTLDs (.com, .net, .org) support this, but some ccTLDs may not.
                     </p>
+                </div>
+            </div>
+
+            <div class="border-t border-gray-200 dark:border-slate-700 my-6"></div>
+
+            <!-- SSL Certificates -->
+            <div class="mb-6">
+                <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <i class="fas fa-lock text-primary mr-2"></i>
+                    SSL Certificates
+                </h4>
+
+                <label class="flex items-start cursor-pointer mb-4">
+                    <input type="checkbox"
+                           name="ssl_monitoring_new_domains"
+                           value="1"
+                           {{ settings.ssl_monitoring_new_domains|default('0') == '1' ? 'checked' : '' }}
+                           class="w-4 h-4 mt-0.5 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
+                    <div class="ml-3">
+                        <span class="text-sm font-medium text-gray-900 dark:text-white">Turn on SSL monitoring for new domains</span>
+                        <p class="text-xs text-gray-600 dark:text-slate-400 mt-1">Applies when adding, bulk adding or importing domains. For existing domains, select them on the Domains page and use SSL Monitoring → Enable for selected.</p>
+                    </div>
+                </label>
+
+                <div>
+                    <label for="ssl_notification_days" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Reminder Days
+                    </label>
+                    <input type="text"
+                           class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white"
+                           id="ssl_notification_days"
+                           name="ssl_notification_days"
+                           value="{{ currentSslNotificationDays }}"
+                           placeholder="e.g., 14,7,3,1">
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Days before a monitored certificate expires to send a reminder, comma-separated. The largest value is also when a certificate counts as "Expiring Soon".</p>
+                </div>
+
+                <div class="bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg p-3 mt-3">
+                    <p class="text-xs text-gray-600 dark:text-slate-400">
+                        <i class="fas fa-info-circle text-gray-400 dark:text-slate-500 mr-1"></i>
+                        <strong>Tip:</strong> Certbot and most other ACME clients renew Let's Encrypt certificates about 30 days before they expire.
+                        Values below 30, like the default 14,7,3,1, only alert you when a renewal has failed.
+                    </p>
+                </div>
+            </div>
+
+            <div class="border-t border-gray-200 dark:border-slate-700 my-6"></div>
+
+            <!-- DNS Discovery -->
+            {% set ctSourceHints = {
+                crtsh: 'Free, no key needed. Can be a day or more behind on new certificates, and slow to answer.',
+                certspotter: 'Lists new certificates within minutes. Works without a key for a few lookups an hour.'
+            } %}
+            <div class="mb-6">
+                <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+                    <i class="fas fa-network-wired text-primary mr-2"></i>
+                    DNS Discovery
+                </h4>
+                <p class="text-sm text-gray-600 dark:text-slate-400 mb-4">A deep scan also looks up subdomains in certificate transparency logs. Every source turned on here is asked, and their results are merged.</p>
+
+                <div class="space-y-3 mb-4">
+                    {% for source in ctLogSources %}
+                        <label class="flex items-start cursor-pointer">
+                            <input type="checkbox"
+                                   name="ct_log_sources[]"
+                                   value="{{ source.id }}"
+                                   {{ source.enabled ? 'checked' : '' }}
+                                   class="w-4 h-4 mt-0.5 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
+                            <div class="ml-3">
+                                <span class="text-sm font-medium text-gray-900 dark:text-white">{{ source.name }}</span>
+                                <p class="text-xs text-gray-600 dark:text-slate-400 mt-1">{{ ctSourceHints[source.id]|default('') }}</p>
+                            </div>
+                        </label>
+                    {% endfor %}
+                </div>
+
+                <div>
+                    <label for="certspotter_api_key" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                        Cert Spotter API Key <span class="font-normal text-gray-500 dark:text-slate-400">(optional)</span>
+                    </label>
+                    <input type="password"
+                           class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white"
+                           id="certspotter_api_key"
+                           name="certspotter_api_key"
+                           autocomplete="off"
+                           placeholder="{{ hasCertSpotterApiKey ? 'A key is saved. Leave blank to keep it' : 'Leave blank to use Cert Spotter without a key' }}">
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">From your <a href="https://sslmate.com/account/api_keys" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">SSLMate account</a>. With a key, your plan sets how many lookups an hour Cert Spotter allows. Stored encrypted.</p>
+                    {% if hasCertSpotterApiKey %}
+                        <label class="inline-flex items-center mt-2 cursor-pointer">
+                            <input type="checkbox"
+                                   name="certspotter_api_key_remove"
+                                   value="1"
+                                   class="w-4 h-4 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
+                            <span class="ml-2 text-xs text-gray-700 dark:text-slate-300">Remove the saved key</span>
+                        </label>
+                    {% endif %}
                 </div>
             </div>
 

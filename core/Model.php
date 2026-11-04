@@ -9,9 +9,31 @@ abstract class Model
     protected static string $table;
     protected PDO $db;
 
+    /** @var array<string,bool> Columns looked up by hasColumn(), keyed by "table.column" */
+    private static array $columns = [];
+
     public function __construct()
     {
         $this->db = Database::getConnection();
+    }
+
+    /**
+     * Whether the table has a column: one a migration that hasn't run yet adds is missing until
+     * the update is run, so code writing it can leave it out in between
+     */
+    public function hasColumn(string $column): bool
+    {
+        $key = static::$table . '.' . $column;
+        if (!isset(self::$columns[$key])) {
+            $stmt = $this->db->prepare(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?"
+            );
+            $stmt->execute([static::$table, $column]);
+            self::$columns[$key] = (int)$stmt->fetchColumn() > 0;
+        }
+
+        return self::$columns[$key];
     }
 
     public function all(): array

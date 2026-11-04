@@ -29,8 +29,9 @@ class PushoverChannel implements NotificationChannelInterface
         }
 
         try {
-            // Determine priority based on days left
-            $priority = $this->getPriorityByDaysLeft($data['days_left'] ?? null);
+            // Determine priority based on days left; a watchlist update about a domain someone
+            // wants to buy has no deadline for the reader, so it is never an emergency
+            $priority = !empty($data['watchlist']) ? 0 : $this->getPriorityByDaysLeft($data['days_left'] ?? null);
             
             // Build request payload
             $payload = [

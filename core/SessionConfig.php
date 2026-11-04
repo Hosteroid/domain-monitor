@@ -43,19 +43,8 @@ class SessionConfig
                 return false;
             }
 
-            // Create PDO connection
-            $pdo = new \PDO(
-                "mysql:host={$_ENV['DB_HOST']};dbname={$_ENV['DB_DATABASE']}",
-                $_ENV['DB_USERNAME'],
-                $_ENV['DB_PASSWORD'],
-                [
-                    \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
-                    \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC
-                ]
-            );
-            
-            // Check if sessions table exists
-            $stmt = $pdo->query("SHOW TABLES LIKE 'sessions'");
+            // Check if sessions table exists (shared app connection, so DB_PORT etc. are honored)
+            $stmt = Database::getConnection()->query("SHOW TABLES LIKE 'sessions'");
             return $stmt->rowCount() > 0;
 
         } catch (\Exception $e) {

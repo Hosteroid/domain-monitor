@@ -5,6 +5,115 @@ All notable changes to Domain Monitor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.6] - 2026-11-04
+
+### Upgrade Notes
+- **Run the updater** - After updating the files, open `/install/update` to apply migrations 029–033
+- **Reminders arrive on the right day** - Domain expiry reminders go out one day later than in 1.1.5: "expires in 7 days" is now sent 7 days before, not 8. A domain's days left is one higher everywhere in the app, for the same reason
+- **Expired domains stop alerting daily** - An expired domain alerts once, on its expiration date (or on the first check in the week after it, when no check ran that day), and then on the Reminders After Expiry days (Settings → Monitoring, default 7, 14, 30). Leave that setting empty for no reminders after expiry
+- **More domains get reminders** - Domains with an expiration date set by hand (.nl, .de, .eu and others), and domains whose WHOIS lookup fails, now get expiry reminders from the saved date
+- **SSL "Expiring Soon" at 14 days** - It now starts at the largest SSL reminder day, which upgraded installs set to 14,7,3,1 (Settings → Monitoring → SSL Certificates), instead of a fixed 30 days. Certificates that were Expiring Soon under the old 30 days go back to Valid without a "Recovered" alert
+- **Renewed alerts are on** - The new "Renewed" status alert is switched on for existing installs; turn it off under Settings → Monitoring → Status Change Notifications
+- **Manual refreshes send alerts** - Refreshing WHOIS, DNS or SSL by hand now sends the same alerts as the cron jobs, so a change you find yourself still reaches the group
+- **Wildcard DNS zones are tidied** - The first DNS refresh of a zone with a wildcard drops the subdomains that only answered through it and lists the wildcard as `*`, which is reported once as an added record
+- **Cert Spotter is on** - DNS Deep Scans also ask SSLMate's Cert Spotter, so domain names go to SSLMate as they already go to crt.sh. Turn it off, or add an API key for more lookups an hour, under Settings → Monitoring → DNS Discovery
+
+### Added
+- **Watchlist Notification Groups** - A group's purpose is "My domains" or "Watchlist" (domains you want to acquire). A watchlist skips the reminders before expiry and the alert on the expiry date, gets a lifecycle update on the reminder days after expiry, and is told when a domain approaches deletion (redemption period), is pending delete, becomes available or is renewed, worded for buying it and never as an urgent alert (normal Pushover priority). Carried in group export and import (#95)
+- **Reminders After Expiry** - Days after a domain expired to send a reminder, in Settings → Monitoring → Notification Schedule (default 7, 14, 30). None go out once WHOIS reports the domain in redemption, pending delete or available, which its status alerts announce
+- **Domain Renewal Alerts** - A "Domain Renewed" alert when a WHOIS check finds the expiration date at least a month later for the same registration, also after a manual or bulk refresh; sent in-app and to the group's channels with the new and previous expiration dates. Switched on under Settings → Monitoring → Status Change Notifications and follows each group's status alert switch. A domain the registry renewed on its own at expiry is flagged, since the registrar can still delete it (#74)
+- **SSL Certificates on the Dashboard** - Widget with the five certificates closest to expiry (days left, issuer, link to the domain's SSL tab) and counts of valid, expiring, expired and invalid certificates (#77)
+- **SSL Expiry Reminders** - Reminder days for SSL certificates in Settings → Monitoring → SSL Certificates (default 14, 7, 3, 1); each reminder day is sent once per certificate, also when a check failed in between, and starts over after a renewal (#72)
+- **Alert Types per Notification Group** - Turn domain expiration, status change, DNS change or SSL alerts on or off for each group; carried in group export and import (#88)
+- **Second Certificate Transparency Source** - DNS deep scans ask Cert Spotter as well as crt.sh and merge the results, so new certificates are found while crt.sh is behind. Sources and an optional, encrypted Cert Spotter API key in Settings → Monitoring → DNS Discovery; a rate-limited source is skipped for the rest of the run (#100)
+- **Bulk SSL Monitoring** - Enable or disable SSL monitoring for the selected domains from the Domains list
+- **SSL Monitoring for New Domains** - Setting to turn SSL monitoring on for domains that are added, bulk added or imported (off by default)
+- **SSL Status on the Domains List** - Lock next to each domain the SSL cron checks, coloured by its worst certificate, with a summary on hover and a link to the SSL tab
+- **Readable SSL Errors** - A failed check names the cause (hostname mismatch, self-signed, incomplete chain, untrusted authority, refused or timed out); the raw error is under "Technical details" on the SSL tab
+- **DNS Record Management** - Add, delete and bulk delete records, import BIND zone files, Quick Scan and background Deep Scan; manual and imported records are kept by refreshes and marked with a source badge
+- **MX and TXT for Subdomains** - Subdomains are queried for MX and TXT too; MX, TXT and CAA tables show the host
+- **WHOIS Failure Reasons** - When a WHOIS lookup fails, the server, port and error are shown when adding or refreshing a domain, in bulk add and bulk refresh, on the WHOIS Lookup page and in the cron log; a registry refusing this server's queries no longer saves an empty record (#90, #46)
+- **Notification Icons for SSL and DNS** - SSL alerts show a lock coloured by outcome and DNS changes their own icon; new "Monitoring" group in the notifications type filter, and an SSL option in a domain's Notifications tab
+- **Styled Tooltips** - Themed tooltips replace the browser's native ones, with keyboard focus and dark mode support
+
+### Changed
+- **Expired Domain Alerts** - An expired domain alerts once, on its expiration date, and then on the reminder days after expiry. Before, the alert started the day before the expiration date and repeated every day (#95). When no check ran on the day, the first check in the week after sends it; the status change to Expired and the expiry-day alert count as one alert, so a manual refresh and the cron don't both send it
+- **Wildcard DNS** - Zones with a wildcard record are detected on every refresh and scan: subdomains that only answer through the wildcard are no longer listed or kept (a wildcard zone could collect hundreds), the wildcard is listed as host `*`, and the DNS tab shows a Wildcard DNS badge. Subdomains with records of their own, and records you add or import, stay; dropping wildcard-only hosts is not reported as a DNS change, while a subdomain that keeps records of its own still reports what it lost (#76)
+- **SSL "Expiring Soon"** - Starts at the largest SSL reminder day (14 by default) instead of a fixed 30 days, and the status and days left are worked out live instead of from the last check
+- **Alert Titles and Colours** - Domain status and expiry alerts get a proper title in email, Pushover, Discord, Slack and Mattermost (a status change email was titled "Domain Expiration Alert"), a readable status, and a bar colour that matches it; SSL alerts show hostname, days left and valid-until date
+- **Renewed Expired Domains** - An expired domain that is renewed gets "Domain Renewed" instead of "Domain Registered"; a domain that was dropped and registered again (new creation date) still gets "Domain Registered", also when a failed lookup came in between
+- **First DNS Scan** - A domain's first DNS check saves a baseline instead of alerting that every record was added
+- **Cron Domain Selection** - DNS and SSL crons skip domains that are available, expired, in redemption or pending delete; domains whose WHOIS lookup failed are still checked
+- **Faster SSL Failures** - A connection that is refused or times out is no longer tried a second time without verification
+- **DNS Lookups** - Names are queried as absolute names so the resolver's search domains can't fake answers; the DNS_ALL fallback only runs when the typed queries found nothing; underscore hosts are queried for CNAME, TXT and SRV only (#98)
+- **IP Details** - PTR answers and ip-api.com results are cached for the run, batches hold at most 100 IPs, the CLI waits out ip-api.com's rate limit and retries a refused batch once, and stored ASN/geo details are kept when a lookup returns nothing (#98, #107)
+- **SOA Records** - Imported SOA records store the primary nameserver as their value, a name keeps a single SOA, and the SOA card shows its source and a delete button (#97, #99)
+- **Dropdowns** - Select menus get a themed list in Chrome and Edge 135+; other browsers keep their native menus
+- **Bulk Action Bars** - Redesigned on Domains, Tags, Notification Groups, Users, Error Logs and TLD Registry
+- **Transfers** - Changing a domain's owner unlinks groups and tags that belong to other users, with audit logging
+- **Root Domain Validation** - Subdomains are rejected when adding or importing domains; .com.br, .co.uk, .gob.mx, .me.uk and other second-level ccTLD domains are accepted (#91)
+- **Mattermost** - Rich attachments only for expiration, status and SSL alerts; DNS changes stay plain text
+
+### Fixed
+- **Expiry Reminders a Day Early** - Days left were counted in whole days from the current time, which came out one short after midnight: reminders went out a day early ("expires in 7 days" eight days before, "expires TOMORROW" two days before) and every days-left figure was one low. Days left are now calendar days everywhere: alerts, the Domains list, domain pages, the dashboard and search
+- **Reminders for Expiration Dates Set by Hand** - A domain whose WHOIS has no expiration date (.nl, .de, .eu and others) got no expiry reminders even with an expiration date set on the domain; that date is now used for reminders, as the edit form already said
+- **Reminders When WHOIS Fails** - A domain whose lookup failed, or whose rate-limited retries gave up, got no expiry reminder that day; the reminder due now goes out from the saved expiration date, with a line saying WHOIS couldn't be checked
+- **Updater with open_basedir** - The backup before an update stopped with "is_executable(): open_basedir restriction in effect" when mysqldump was outside the allowed paths. A mysqldump found on the PATH is still used, otherwise the built-in database backup (#73)
+- **Notifications Tab Filter** - Expiry reminders in a domain's Notifications tab are listed under Expiration instead of Other
+- **Alerts After a Manual Refresh** - Refreshing WHOIS, DNS or SSL by hand (single, bulk, Refresh All, adding an SSL host) sends the alerts the crons would have sent, by the same rules: status changes, renewals, DNS changes, SSL status changes and SSL expiry reminders. A change found by hand used to be saved without an alert, so the cron never saw it. Domains with monitoring paused, or DNS or SSL monitoring off, send none. The domain cron's retry queue for rate-limited lookups sends status alerts too
+- **SSL Reminders After a Manual Check** - Checking a renewed certificate by hand kept the old certificate's reminder state, so the new certificate's first reminders were skipped
+- **Retry Summary in the Cron Log** - After WHOIS retries the domain cron reported "still failed" when every retry had worked, and "All retries completed successfully" when some had failed; it now names the domains that still failed
+- **Manual and Imported DNS Records** - Records you add or import that the lookups don't return the same way (a relative MX target, a TXT split into strings, a delegated subdomain's NS) were reported as removed on every DNS check; only records the lookups found are reported as removed now. A manual record with priority 0 is saved as 0
+- **Domain Cron and Deleted Domains** - Deleting a domain while the domain cron ran could stop the run, so the remaining domains weren't checked that day; the cron now skips it and carries on
+- **Status Alerts After a Failed Lookup** - A domain in redemption, pending delete or available is saved as Error when its lookup fails; the next lookup that worked announced its status again. Status changes are now judged against the last successful lookup
+- **Login with a Custom Database Port** - With `DB_PORT` other than 3306, database sessions were never enabled and every login ended with "Your session was terminated remotely"
+- **DNS Crons on Windows** - Stopped failing on `DNS_CAA`, which Windows builds of PHP don't define
+- **.com.br and Other Non-UTF-8 WHOIS Responses** - Converted from Latin-1, and a stray byte can no longer fail the save; the parent TLD's RDAP server is used when a second-level suffix has none (#91)
+- **"Remember me" with 2FA** - The choice is kept through the two-factor step
+- **.sk Expiration Dates** - "Valid until" dates are recognised (#105)
+- **DNS Cron Example** - The cron line shown for the DNS check was missing a `*` (#79)
+- **Expired Certificate Days** - The number of days since a certificate expired was one too high
+- **Notifications Page in Dark Mode** - Icon backgrounds use the dark palette
+- **Webhook Payload Docs** - The README example now shows the event name the app sends (`domain_monitor_alert`)
+
+### Security
+- **Sessions** - The session ID is regenerated on login and after 2FA; session cookies are Secure, HttpOnly and SameSite=Lax
+- **Installer** - CSRF checks on install and update; admin credentials are quoted before going into the SQL
+- **Templates** - `safe_url` and `safe_mailto` Twig filters, escaped tag names in JavaScript, `rel="noopener noreferrer"` on external links
+- **Access Checks** - Referrers are validated to prevent open redirects; isolation mode is enforced when finding, updating, deleting and grouping domains; channels are checked to belong to the group before they are deleted or toggled; error log sorting only accepts known columns; the debug WHOIS route requires an admin
+
+### Technical
+- **Services** - `App\Services\CtLogs` (`CtLogSourceInterface`, `CrtshSource`, `CertSpotterSource`); `DnsService::fetchCtLogSubdomains()` and `mergeSubdomainLists()`; `check_dns.php --ctlog <source> <domain>` subprocess (`--crtsh` still works); `WhoisService::detectRenewal()` and `getLastKnownStatus()`; `NotificationService::alertDomainStatusChange()`, `alertDomainRenewal()`, `alertDnsChanges()` and `alertSslCheck()` (alert rules moved out of the crons so manual refreshes use them too), `sendDomainRenewalAlert()` and `notifyDomainRenewed()`; `SslService::checkEndpoint()` and `resolveReminder()`; `NotificationService::alertDomainExpiry()` and `getExpiryAlertType()`; wildcard probing in `DnsService` refreshes and scans
+- **Helpers** - `SslHelper` (display formatting, stats, per-domain summary); notification icons and colours live in `LayoutHelper` only; `CronHelper` for cron scripts
+- **Models** - `Model::hasColumn()` (code that writes a column a pending migration adds leaves it out until the update has run), `SslCertificate::getAllMonitored()` and `getStatusByDomainIds()`, `NotificationGroup::allowsAlert()`, `Notification::wasCreatedRecently()` and `wasCreatedForDomainSince()`, `NotificationLog::wasSentSince()`, `Domain::DNS_SSL_CHECK_STATUSES`, `NotificationGroup::isWatchlist()`, `DnsRecord::hasWildcard()`, Setting getters for SSL reminder days, new-domain SSL, certificate log sources, the Cert Spotter key and the reminder days after expiry
+- **Routes** - `POST /domains/bulk-toggle-ssl`, DNS record add/delete/bulk delete, zone import and discovery
+- **Assets** - `public/assets/tooltip.css` and `tooltip.js`
+- **Database** - `dns_records.source`; `ssl_certificates.last_reminder_days` and `last_reminder_valid_to`; `notification_groups.notify_expiration`, `notify_status`, `notify_dns`, `notify_ssl`, `purpose`; settings `ssl_notification_days`, `post_expiry_notification_days`, `ssl_monitoring_new_domains`, `ct_log_sources`, `certspotter_api_key`; `renewed` in `notification_status_triggers`; notification type `domain_renewed`
+
+### Migrations
+- `029_add_dns_record_source.sql` - DNS record source (discovered, manual, imported)
+- `030_add_ssl_reminders_and_group_alert_types.sql` - SSL reminder days, new-domain SSL setting, last reminder per certificate, alert type switches on notification groups
+- `031_add_ct_log_sources.sql` - Certificate transparency sources, Cert Spotter API key, app version 1.1.6
+- `032_add_renewal_notifications.sql` - Turns on the "Renewed" status change notification
+- `033_add_watchlist_groups.sql` - Notification group purpose (my domains or watchlist) and reminder days after expiry
+
+### Contributors
+- **@mews-se** - DNS lookup efficiency (#98), imported SOA fixes (#99), ip-api.com rate limiting (#107), and the Cert Spotter proposal (#100)
+- **@dodog** - .sk expiration date report (#104) and fix (#105)
+- **@delsassergh** - DNS cron example fix (#79)
+- **@artyomtsybulkin** - Second-level ccTLD suggestion (#91)
+- **@celebrion** - Separate SSL alert days (#72) and renewal notifications (#74) requests
+- **@stevelacey** - Granular notification controls (#88) and watchlist lifecycle notifications (#95) requests
+- **@Mellowlynx** - Wildcard DNS request (#76)
+- **@Margedion** - SSL certificates on the dashboard request (#77)
+- **@manalshaikh** - open_basedir updater report (#73)
+- **@insxa** - .es WHOIS connection report (#46)
+- **@WTMike24** - .hr WHOIS report (#90)
+- **@evandroks** - .com.br domain report (#91)
+- **@N-Storm** - Stale SOA records with imported zones report (#97)
+
+---
+
 ## [1.1.5] - 2026-03-08
 
 ### Added
@@ -526,6 +635,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 ## Version History
+
+### 1.1.6 (2026-11-04)
+- **Renewal Alerts** - "Domain Renewed" when the expiration date moves later (#74)
+- **Watchlists** - Notification groups for domains you want to acquire, reminders after expiry instead of a daily "expired" alert (#95)
+- **Wildcard DNS** - Subdomains that only answer through a wildcard are no longer listed (#76)
+- **SSL on the Dashboard** - Five certificates closest to expiry, with status counts (#77)
+- **SSL Expiry Reminders** - Configurable reminder days, default 14, 7, 3, 1 (#72)
+- **Alert Types per Group** - Expiration, status, DNS and SSL alerts switch on or off per notification group (#88)
+- **Cert Spotter** - DNS deep scans ask Cert Spotter as well as crt.sh and merge the results (#100)
+- **SSL Tools** - Bulk enable/disable, new-domain default, lock on the Domains list, readable errors
+- **DNS Records** - Add, delete, import zone files, background deep scans; quieter first scan
+- **WHOIS** - Failure reasons shown, second-level ccTLDs such as .com.br accepted (#90, #46, #91)
+- **Alerts** - Proper titles, readable statuses and colours in every channel
+- **UI** - Themed tooltips and dropdowns, redesigned bulk action bars
+- **Security** - Session fixation, installer CSRF, open redirect and isolation fixes
+- **Fixes** - Expiry reminders a day early, reminders for expiration dates set by hand, updater with open_basedir (#73), alerts after a manual refresh, SSL reminders after a manual check, login with a custom `DB_PORT`, DNS crons on Windows, "remember me" with 2FA, .sk dates
+- Migrations: `029_add_dns_record_source.sql`, `030_add_ssl_reminders_and_group_alert_types.sql`, `031_add_ct_log_sources.sql`, `032_add_renewal_notifications.sql`, `033_add_watchlist_groups.sql`
 
 ### 1.1.5 (2026-03-08)
 - **Twig Templating** - All PHP views migrated to Twig; Twig-only rendering with safe error fallback

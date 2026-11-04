@@ -133,24 +133,27 @@
 
 {# Domains List #}
 <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
-    {# Bulk Actions Bar #}
-    <div id="bulk-actions" class="hidden px-6 py-3 bg-blue-50 dark:bg-blue-500/10 border-b border-blue-200 dark:border-blue-500/30 flex items-center justify-between">
-        <div class="flex items-center gap-4">
-            <span id="selected-count" class="text-sm font-medium text-gray-700 dark:text-slate-300"></span>
-            <div class="flex items-center gap-3 flex-wrap">
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="bulkRefresh()" class="inline-flex items-center px-4 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium">
-                        <i class="fas fa-sync-alt mr-1"></i> Refresh Selected
+    {# Bulk Actions Bar: neutral toolbar buttons, a coloured icon per action, Delete set apart #}
+    {% set bulkButton = 'inline-flex items-center gap-2 whitespace-nowrap px-3 py-1.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm font-medium text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors' %}
+    <div id="bulk-actions" class="hidden px-4 sm:px-6 py-2.5 bg-blue-50 dark:bg-blue-500/10 border-b border-blue-200 dark:border-blue-500/30 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        {# On phones the count and Clear share the first row and the actions get their own row #}
+        <div class="contents sm:flex sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
+            <span id="selected-count" class="whitespace-nowrap text-sm font-semibold text-gray-900 dark:text-white"></span>
+            <div class="order-last w-full sm:order-none sm:w-auto flex flex-wrap items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    {# Labels show from xl up; below that the buttons are icon-only (label kept for screen readers, title as tooltip) #}
+                    <button type="button" onclick="bulkRefresh()" class="{{ bulkButton }}" title="Refresh WHOIS for the selected domains">
+                        <i class="fas fa-sync-alt text-green-600 dark:text-green-400"></i> <span class="sr-only xl:not-sr-only">Refresh</span>
                     </button>
                     {% if auth.isAdmin %}
-                    <button type="button" onclick="bulkTransfer()" class="inline-flex items-center px-4 py-1.5 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
-                        <i class="fas fa-exchange-alt mr-1"></i> Transfer Selected
+                    <button type="button" onclick="bulkTransfer()" class="{{ bulkButton }}" title="Transfer the selected domains to another user">
+                        <i class="fas fa-exchange-alt text-blue-500 dark:text-blue-400"></i> <span class="sr-only xl:not-sr-only">Transfer</span>
                     </button>
                     {% endif %}
                     <div class="relative inline-block">
-                        <button type="button" onclick="toggleAssignTagsDropdown()" class="inline-flex items-center px-4 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium">
-                            <i class="fas fa-tags mr-1"></i> Manage Tags
-                            <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                        <button type="button" onclick="toggleAssignTagsDropdown()" class="{{ bulkButton }}" title="Add or remove tags">
+                            <i class="fas fa-tags text-purple-500 dark:text-purple-400"></i> <span class="sr-only xl:not-sr-only">Tags</span>
+                            <i class="fas fa-chevron-down text-gray-400 dark:text-slate-500" style="font-size: 10px;"></i>
                         </button>
                         <div id="assign-tags-dropdown" class="hidden absolute left-0 mt-2 w-72 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-10">
                             <div class="p-3">
@@ -201,9 +204,9 @@
                         </div>
                     </div>
                     <div class="relative inline-block">
-                        <button type="button" onclick="toggleAssignGroupDropdown()" class="inline-flex items-center px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium">
-                            <i class="fas fa-bell mr-1"></i> Assign Group
-                            <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                        <button type="button" onclick="toggleAssignGroupDropdown()" class="{{ bulkButton }}" title="Assign a notification group">
+                            <i class="fas fa-bell text-blue-600 dark:text-blue-400"></i> <span class="sr-only xl:not-sr-only">Assign Group</span>
+                            <i class="fas fa-chevron-down text-gray-400 dark:text-slate-500" style="font-size: 10px;"></i>
                         </button>
                         <div id="assign-group-dropdown" class="hidden absolute left-0 mt-2 w-64 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-10">
                             <form method="POST" action="/domains/bulk-assign-group" id="bulk-assign-form">
@@ -227,14 +230,33 @@
                             </form>
                         </div>
                     </div>
-                    <button type="button" onclick="bulkDelete()" class="inline-flex items-center px-4 py-1.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium">
-                        <i class="fas fa-trash mr-1"></i> Delete Selected
+                    <div class="relative inline-block">
+                        <button type="button" onclick="toggleSslMonitoringDropdown()" class="{{ bulkButton }}" title="Turn SSL monitoring on or off">
+                            <i class="fas fa-lock text-teal-600 dark:text-teal-400"></i> <span class="sr-only xl:not-sr-only">SSL Monitoring</span>
+                            <i class="fas fa-chevron-down text-gray-400 dark:text-slate-500" style="font-size: 10px;"></i>
+                        </button>
+                        <div id="ssl-monitoring-dropdown" class="hidden absolute left-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 z-10">
+                            <div class="p-2 space-y-1">
+                                <button type="button" onclick="bulkToggleSsl(true)" class="w-full flex items-center px-3 py-2 text-sm text-gray-700 dark:text-slate-300 rounded hover:bg-gray-100 dark:hover:bg-slate-700">
+                                    <i class="fas fa-check-circle text-green-600 dark:text-green-400 mr-2"></i>
+                                    Enable for selected
+                                </button>
+                                <button type="button" onclick="bulkToggleSsl(false)" class="w-full flex items-center px-3 py-2 text-sm text-gray-700 dark:text-slate-300 rounded hover:bg-gray-100 dark:hover:bg-slate-700">
+                                    <i class="fas fa-pause-circle text-amber-500 dark:text-amber-400 mr-2"></i>
+                                    Disable for selected
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="hidden sm:block w-px h-6 mx-1 bg-blue-200 dark:bg-slate-600"></span>
+                    <button type="button" onclick="bulkDelete()" class="inline-flex items-center gap-2 whitespace-nowrap px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-500/40 bg-white dark:bg-slate-800 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
+                        <i class="fas fa-trash"></i> Delete
                     </button>
                 </div>
             </div>
         </div>
-        <button type="button" onclick="clearSelection()" class="inline-flex items-center text-sm font-medium text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-blue-100 dark:hover:bg-blue-500/20 px-3 py-1.5 rounded-lg transition-colors">
-            <i class="fas fa-times mr-1.5"></i> Clear Selection
+        <button type="button" onclick="clearSelection()" class="inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-medium text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-blue-100 dark:hover:bg-blue-500/20 px-2.5 py-1.5 rounded-lg transition-colors">
+            <i class="fas fa-times"></i> Clear
         </button>
     </div>
     {% if domains is not empty %}
@@ -291,7 +313,13 @@
                                         <i class="fas fa-globe text-primary"></i>
                                     </div>
                                     <div class="ml-4">
-                                        <a href="/domains/{{ domain.id }}" class="text-sm font-semibold text-gray-900 dark:text-white hover:text-primary">{{ domain.domain_name }}</a>
+                                        <div>
+                                            <a href="/domains/{{ domain.id }}" class="text-sm font-semibold text-gray-900 dark:text-white hover:text-primary">{{ domain.domain_name }}</a>
+                                            {#- The no-break space keeps the lock on the same line as the end of the name -#}
+                                            {%- if domain.ssl_summary -%}
+                                                &nbsp;<a href="/domains/{{ domain.id }}#ssl" class="text-xs {{ domain.ssl_summary.accent_class }} hover:opacity-75" title="{{ domain.ssl_summary.label }}"><i class="fas {{ domain.ssl_summary.icon }}"></i></a>
+                                            {%- endif %}
+                                        </div>
                                         <div class="flex items-center gap-1.5 mt-1">
                                             {% set domainTags = domain.tags ? domain.tags|split(',') : [] %}
                                             {% set tagColors = domain.tag_colors ? domain.tag_colors|split('|') : [] %}
@@ -404,7 +432,12 @@
                 <div class="p-6 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors duration-150">
                     <div class="flex items-center mb-3">
                         <input type="checkbox" class="domain-checkbox-mobile rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary mr-3" value="{{ domain.id }}" onchange="updateBulkActions()">
-                        <a href="/domains/{{ domain.id }}" class="flex-1 text-lg font-semibold text-gray-900 dark:text-white hover:text-primary">{{ domain.domain_name }}</a>
+                        <div class="flex-1 min-w-0 break-words">
+                            <a href="/domains/{{ domain.id }}" class="text-lg font-semibold text-gray-900 dark:text-white hover:text-primary">{{ domain.domain_name }}</a>
+                            {%- if domain.ssl_summary -%}
+                                &nbsp;<a href="/domains/{{ domain.id }}#ssl" class="p-1 text-sm {{ domain.ssl_summary.accent_class }} hover:opacity-75" title="{{ domain.ssl_summary.label }}"><i class="fas {{ domain.ssl_summary.icon }}"></i></a>
+                            {%- endif %}
+                        </div>
                         <div class="flex items-center space-x-2">
                             <a href="/domains/{{ domain.id }}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" title="View">
                                 <i class="fas fa-eye"></i>
@@ -529,7 +562,7 @@ function updateBulkActions() {
 
     if (count > 0) {
         bulkActions.classList.remove('hidden');
-        selectedCount.textContent = count + ' domain(s) selected';
+        selectedCount.textContent = count + ' selected';
     } else {
         bulkActions.classList.add('hidden');
     }
@@ -620,6 +653,43 @@ function toggleAssignTagsDropdown() {
 function toggleAssignGroupDropdown() {
     const dropdown = document.getElementById('assign-group-dropdown');
     dropdown.classList.toggle('hidden');
+}
+
+function toggleSslMonitoringDropdown() {
+    const dropdown = document.getElementById('ssl-monitoring-dropdown');
+    dropdown.classList.toggle('hidden');
+}
+
+function bulkToggleSsl(enabled) {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/domains/bulk-toggle-ssl';
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = '{{ csrf_token() }}';
+    form.appendChild(csrfInput);
+
+    const enabledInput = document.createElement('input');
+    enabledInput.type = 'hidden';
+    enabledInput.name = 'ssl_monitoring_enabled';
+    enabledInput.value = enabled ? '1' : '0';
+    form.appendChild(enabledInput);
+
+    ids.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'domain_ids[]';
+        input.value = id;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
 }
 
 function bulkAddTag(tagName) {
@@ -724,8 +794,10 @@ document.getElementById('bulk-assign-form')?.addEventListener('submit', function
 document.addEventListener('click', function(event) {
     const groupDropdown = document.getElementById('assign-group-dropdown');
     const tagsDropdown = document.getElementById('assign-tags-dropdown');
+    const sslDropdown = document.getElementById('ssl-monitoring-dropdown');
     const groupButton = event.target.closest('button[onclick="toggleAssignGroupDropdown()"]');
     const tagsButton = event.target.closest('button[onclick="toggleAssignTagsDropdown()"]');
+    const sslButton = event.target.closest('button[onclick="toggleSslMonitoringDropdown()"]');
 
     if (!groupButton && !groupDropdown.contains(event.target)) {
         groupDropdown?.classList.add('hidden');
@@ -733,6 +805,10 @@ document.addEventListener('click', function(event) {
 
     if (!tagsButton && !tagsDropdown.contains(event.target)) {
         tagsDropdown?.classList.add('hidden');
+    }
+
+    if (sslDropdown && !sslButton && !sslDropdown.contains(event.target)) {
+        sslDropdown.classList.add('hidden');
     }
 });
 

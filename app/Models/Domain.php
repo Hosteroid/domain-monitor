@@ -9,6 +9,13 @@ class Domain extends Model
     protected static string $table = 'domains';
 
     /**
+     * Statuses the DNS and SSL checks run for: registered and in use, plus "error" (a failed WHOIS
+     * lookup says nothing about DNS or the website). Available, expired, redemption and pending
+     * delete domains typically have no DNS or SSL.
+     */
+    public const DNS_SSL_CHECK_STATUSES = ['active', 'expiring_soon', 'error'];
+
+    /**
      * Get User model instance
      */
     private function getUserModel(): \App\Models\User
@@ -53,7 +60,7 @@ class Domain extends Model
                 LEFT JOIN notification_groups ng ON d.notification_group_id = ng.id 
                 WHERE d.is_active = 1 
                 AND d.expiration_date IS NOT NULL 
-                AND d.expiration_date <= DATE_ADD(CURDATE(), INTERVAL ?+1 DAY)
+                AND d.expiration_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
                 AND d.expiration_date > CURDATE()";
         
         $params = [$days];
@@ -243,7 +250,7 @@ class Domain extends Model
         $threshold = !empty($notificationDays) ? max($notificationDays) : 30;
         $stats['expiring_threshold'] = $threshold;
 
-        $expiringWhereClause = "WHERE is_active = 1 AND expiration_date IS NOT NULL AND expiration_date <= DATE_ADD(NOW(), INTERVAL ?+1 DAY) AND expiration_date > NOW()";
+        $expiringWhereClause = "WHERE is_active = 1 AND expiration_date IS NOT NULL AND expiration_date <= DATE_ADD(CURDATE(), INTERVAL ? DAY) AND expiration_date > CURDATE()";
         $expiringParams = [$threshold];
         
         if ($userId) {
@@ -269,8 +276,8 @@ class Domain extends Model
             return 'inactive';
         }
         if ($status === 'active' && !empty($domain['expiration_date'])) {
-            $daysLeft = (int) floor((strtotime($domain['expiration_date']) - time()) / 86400);
-            if ($daysLeft <= $expiringThreshold && $daysLeft >= 0) {
+            $daysLeft = \App\Helpers\DomainHelper::daysUntilExpiration($domain['expiration_date']);
+            if ($daysLeft !== null && $daysLeft <= $expiringThreshold && $daysLeft > 0) {
                 return 'expiring_soon';
             }
         }
@@ -299,8 +306,8 @@ class Domain extends Model
                 if ($filters['status'] === 'expiring_soon') {
                     // Check if domain expires within configured threshold
                     if (!empty($domain['expiration_date'])) {
-                        $daysLeft = floor((strtotime($domain['expiration_date']) - time()) / 86400);
-                        return $daysLeft <= $expiringThreshold && $daysLeft >= 0;
+                        $daysLeft = \App\Helpers\DomainHelper::daysUntilExpiration($domain['expiration_date']);
+                        return $daysLeft !== null && $daysLeft <= $expiringThreshold && $daysLeft > 0;
                     }
                     return false;
                 }

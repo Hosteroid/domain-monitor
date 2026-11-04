@@ -4,9 +4,9 @@
 /**
  * DNS Discovery Script
  *
- * Performs DNS subdomain discovery via brute force wordlist, crt.sh Certificate
- * Transparency logs, and wildcard detection. Separate from check_dns.php which
- * only re-checks existing records.
+ * Performs DNS subdomain discovery via brute force wordlist, Certificate
+ * Transparency logs (crt.sh, Cert Spotter), and wildcard detection. Separate from
+ * check_dns.php which only re-checks existing records.
  *
  * Usage:
  *   php cron/discover_dns.php                                 — deep scan all domains
@@ -80,7 +80,8 @@ if ($targetDomain) {
     }
     $domains = [$domainRow];
 } else {
-    $checkableStatuses = ['active', 'expiring_soon'];
+    // Same set as check_dns.php: "error" only means the WHOIS lookup failed
+    $checkableStatuses = ['active', 'expiring_soon', 'error'];
     $allDnsEnabled = array_values(array_filter(
         $domainModel->where('is_active', 1),
         static fn($d): bool => ($d['dns_monitoring_enabled'] ?? 1) == 1
@@ -104,10 +105,14 @@ $stats = [
     'errors'    => 0,
 ];
 
-// ─── crt.sh settings (deep scan only) ──────────────────────────────────────
+// ─── Certificate log settings (deep scan only) ──────────────────────────────
 
-const CRTSH_TIMEOUT_SECONDS = 1800;
-const CRTSH_MAX_SUBDOMAINS  = 100;
+const CT_TIMEOUT_SECONDS = 1800;
+const CT_MAX_SUBDOMAINS  = 100;
+
+$ctSourceIds = $settingModel->getCtLogSources();
+// Source id => time it may be asked again, after it rate limited this run
+$ctPausedUntil = [];
 
 // ─── Scan loop ───────────────────────────────────────────────────────────────
 
@@ -127,20 +132,49 @@ foreach ($domains as $domain) {
         if ($quickMode) {
             $newRecords = $dnsService->quickScan($domainName);
         } else {
-            // Deep scan: gather crt.sh subdomains + existing hosts, then full lookup
+            // Deep scan: gather certificate log subdomains + existing hosts, then full lookup
             $existingHosts = $dnsModel->getDistinctHosts($domain['id']);
-            $ctSubs = [];
+            $ctLists = [];
+            $ctAnswered = false;
 
-            $cron->log("  🔍 crt.sh: fetching subdomains...");
-            [$ctSubs, $crtshOk] = $dnsService->fetchCrtshSubdomains(
-                $domainName,
-                CRTSH_MAX_SUBDOMAINS,
-                CRTSH_TIMEOUT_SECONDS,
-                fn(string $line) => $cron->log("  ↳ $line")
-            );
-            $cron->log("  🔍 crt.sh: " . count($ctSubs) . " subdomain(s) found");
+            if (empty($ctSourceIds)) {
+                $cron->log("  🔍 Certificate logs: none turned on (Settings → Monitoring → DNS Discovery)");
+            }
 
-            if ($crtshOk) {
+            // Every source is asked: one that answers with nothing (crt.sh can lag a day behind) doesn't end the lookup
+            foreach ($ctSourceIds as $sourceId) {
+                $sourceName = DnsService::CT_LOG_SOURCES[$sourceId];
+
+                if (($ctPausedUntil[$sourceId] ?? 0) > time()) {
+                    $cron->log("  ⏭ {$sourceName}: rate limited, skipped until " . date('H:i', $ctPausedUntil[$sourceId]));
+                    continue;
+                }
+
+                $cron->log("  🔍 {$sourceName}: fetching subdomains...");
+                $ctResult = $dnsService->fetchCtLogSubdomains(
+                    $sourceId,
+                    $domainName,
+                    CT_MAX_SUBDOMAINS,
+                    CT_TIMEOUT_SECONDS,
+                    fn(string $line) => $cron->log("  ↳ $line")
+                );
+                $cron->log("  🔍 {$sourceName}: " . count($ctResult['subs']) . " subdomain(s) found");
+
+                if ($ctResult['retry_after'] !== null) {
+                    $ctPausedUntil[$sourceId] = time() + $ctResult['retry_after'];
+                }
+
+                $ctAnswered = $ctAnswered || $ctResult['ok'];
+                $ctLists[] = $ctResult['subs'];
+            }
+
+            $ctSubs = DnsService::mergeSubdomainLists($ctLists, CT_MAX_SUBDOMAINS);
+            if (count($ctLists) > 1) {
+                $cron->log("  🔍 Certificate logs: " . count($ctSubs) . " unique subdomain(s) in total");
+            }
+
+            // crtsh_last_fetched records the last deep scan that any certificate log answered
+            if ($ctAnswered) {
                 $domainModel->update($domain['id'], [
                     'crtsh_last_fetched' => date('Y-m-d H:i:s'),
                 ]);

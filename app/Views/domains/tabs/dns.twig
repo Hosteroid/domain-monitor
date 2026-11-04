@@ -59,6 +59,13 @@
             Cloudflare Detected
         </span>
         {% endif %}
+        {% if dnsHasWildcard|default(false) %}
+        <span class="inline-flex items-center px-2 py-1 bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400 text-xs font-semibold rounded border border-purple-200 dark:border-purple-800"
+              title="*.{{ domain.domain_name }} answers for every name, so subdomains that only get its answers are not listed. Subdomains with records of their own, and records you add or import, still are.">
+            <i class="fas fa-asterisk mr-1" style="font-size: 10px;"></i>
+            Wildcard DNS
+        </span>
+        {% endif %}
     </div>
     {% if domain and dnsMonitoringEnabled %}
     <div class="flex items-center gap-2 flex-wrap">
@@ -93,7 +100,7 @@
                     <input type="hidden" name="mode" value="deep">
                     <button type="submit" class="w-full text-left px-4 py-2.5 text-xs hover:bg-gray-50 dark:hover:bg-slate-700 rounded-b-lg border-t border-gray-100 dark:border-slate-700 transition-colors">
                         <div class="font-semibold text-gray-900 dark:text-white"><i class="fas fa-microscope text-purple-500 mr-1.5"></i>Deep Scan</div>
-                        <p class="text-gray-500 dark:text-slate-400 mt-0.5">Brute force + crt.sh (background)</p>
+                        <p class="text-gray-500 dark:text-slate-400 mt-0.5">Brute force + certificate logs (background)</p>
                     </button>
                 </form>
             </div>

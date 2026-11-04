@@ -8,6 +8,9 @@ use App\Models\NotificationChannel;
 
 class NotificationGroupController extends Controller
 {
+    /** Per-group switches for which kinds of alerts are sent */
+    private const ALERT_TYPE_COLUMNS = ['notify_expiration', 'notify_status', 'notify_dns', 'notify_ssl'];
+
     private NotificationGroup $groupModel;
     private NotificationChannel $channelModel;
 
@@ -102,11 +105,16 @@ class NotificationGroupController extends Controller
                     ];
                 }
 
-                $exportData[] = [
+                $groupExport = [
                     'group_name' => $group['name'],
                     'group_description' => $group['description'] ?? '',
-                    'channels' => $maskedChannels
+                    'purpose' => $group['purpose'] ?? 'own'
                 ];
+                foreach (self::ALERT_TYPE_COLUMNS as $column) {
+                    $groupExport[$column] = (bool)($group[$column] ?? 1);
+                }
+                $groupExport['channels'] = $maskedChannels;
+                $exportData[] = $groupExport;
             }
 
             $date = date('Y-m-d');
@@ -127,13 +135,20 @@ class NotificationGroupController extends Controller
                 // Build CSV in memory — flatten groups with channels into rows
                 $csvRows = [];
                 foreach ($exportData as $group) {
+                    $groupColumns = [
+                        'group_name' => $group['group_name'],
+                        'group_description' => $group['group_description'],
+                        'purpose' => $group['purpose']
+                    ];
+                    foreach (self::ALERT_TYPE_COLUMNS as $column) {
+                        $groupColumns[$column] = $group[$column] ? '1' : '0';
+                    }
+
                     if (empty($group['channels'])) {
-                        $csvRows[] = ['group_name' => $group['group_name'], 'group_description' => $group['group_description'], 'channel_type' => '', 'channel_config' => '', 'is_active' => ''];
+                        $csvRows[] = $groupColumns + ['channel_type' => '', 'channel_config' => '', 'is_active' => ''];
                     } else {
                         foreach ($group['channels'] as $ch) {
-                            $csvRows[] = [
-                                'group_name' => $group['group_name'],
-                                'group_description' => $group['group_description'],
+                            $csvRows[] = $groupColumns + [
                                 'channel_type' => $ch['channel_type'],
                                 'channel_config' => json_encode($ch['channel_config']),
                                 'is_active' => $ch['is_active'] ? '1' : '0'
@@ -142,7 +157,7 @@ class NotificationGroupController extends Controller
                     }
                 }
 
-                $csvContent = $this->buildCsv($csvRows, ['group_name', 'group_description', 'channel_type', 'channel_config', 'is_active']);
+                $csvContent = $this->buildCsv($csvRows, array_merge(['group_name', 'group_description', 'purpose'], self::ALERT_TYPE_COLUMNS, ['channel_type', 'channel_config', 'is_active']));
                 $logger->info("CSV content built", ['bytes' => strlen($csvContent)]);
 
                 header('Content-Type: text/csv; charset=utf-8');
@@ -262,7 +277,7 @@ class NotificationGroupController extends Controller
                     'name' => $groupName,
                     'description' => trim($groupData['group_description'] ?? ''),
                     'user_id' => $isolationMode === 'isolated' ? $userId : null
-                ]);
+                ] + $this->getImportedAlertSettings($groupData));
 
                 if ($groupId && !empty($groupData['channels'])) {
                     foreach ($groupData['channels'] as $ch) {
@@ -306,6 +321,7 @@ class NotificationGroupController extends Controller
                 if (!isset($csvGroups[$gName])) {
                     $csvGroups[$gName] = [
                         'description' => trim($item['group_description'] ?? ''),
+                        'alert_types' => $this->getImportedAlertSettings($item),
                         'channels' => []
                     ];
                 }
@@ -331,7 +347,7 @@ class NotificationGroupController extends Controller
                     'name' => $gName,
                     'description' => $gData['description'],
                     'user_id' => $isolationMode === 'isolated' ? $userId : null
-                ]);
+                ] + $gData['alert_types']);
 
                 if ($groupId) {
                     foreach ($gData['channels'] as $ch) {
@@ -406,6 +422,41 @@ class NotificationGroupController extends Controller
         return false;
     }
 
+    /**
+     * Read the purpose and the alert type checkboxes from the group form
+     */
+    private function getAlertSettings(): array
+    {
+        $settings = ['purpose' => ($_POST['purpose'] ?? '') === 'watch' ? 'watch' : 'own'];
+        foreach (self::ALERT_TYPE_COLUMNS as $column) {
+            $settings[$column] = isset($_POST[$column]) ? 1 : 0;
+        }
+        return $this->withExistingColumns($settings);
+    }
+
+    /**
+     * Read the purpose and the alert type switches from an imported group.
+     * A missing or blank switch (files exported before these switches existed) means on.
+     */
+    private function getImportedAlertSettings(array $data): array
+    {
+        $settings = ['purpose' => ($data['purpose'] ?? '') === 'watch' ? 'watch' : 'own'];
+        foreach (self::ALERT_TYPE_COLUMNS as $column) {
+            $value = $data[$column] ?? '';
+            $settings[$column] = ($value === '' || filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) !== false) ? 1 : 0;
+        }
+        return $this->withExistingColumns($settings);
+    }
+
+    /**
+     * Leave out the settings whose columns the update hasn't added yet, so groups can still be
+     * saved and imported in between (their alerts go out as before until then)
+     */
+    private function withExistingColumns(array $settings): array
+    {
+        return array_filter($settings, fn(string $column): bool => $this->groupModel->hasColumn($column), ARRAY_FILTER_USE_KEY);
+    }
+
     public function create()
     {
         $this->view('groups/create', [
@@ -456,8 +507,8 @@ class NotificationGroupController extends Controller
             $groupData = [
                 'name' => $name,
                 'description' => $description
-            ];
-            
+            ] + $this->getAlertSettings();
+
             // Assign to current user if in isolated mode
             if ($isolationMode === 'isolated') {
                 $groupData['user_id'] = $userId;
@@ -550,7 +601,7 @@ class NotificationGroupController extends Controller
             $this->groupModel->update($id, [
                 'name' => $name,
                 'description' => $description
-            ]);
+            ] + $this->getAlertSettings());
 
             // Log group update
             $logger = new \App\Services\Logger();

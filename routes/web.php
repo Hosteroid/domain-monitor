@@ -72,6 +72,7 @@ $router->post('/domains/bulk-refresh', [DomainController::class, 'bulkRefresh'])
 $router->post('/domains/bulk-delete', [DomainController::class, 'bulkDelete']);
 $router->post('/domains/bulk-assign-group', [DomainController::class, 'bulkAssignGroup']);
 $router->post('/domains/bulk-toggle-status', [DomainController::class, 'bulkToggleStatus']);
+$router->post('/domains/bulk-toggle-ssl', [DomainController::class, 'bulkToggleSsl']);
 $router->post('/domains/bulk-add-tags', [DomainController::class, 'bulkAddTags']);
 $router->post('/domains/bulk-remove-tags', [DomainController::class, 'bulkRemoveTags']);
 $router->post('/domains/bulk-remove-specific-tag', [DomainController::class, 'bulkRemoveSpecificTag']);

@@ -79,6 +79,18 @@ class DnsRecord extends Model
     }
 
     /**
+     * Check if a domain's zone has a wildcard (records saved for host "*")
+     */
+    public function hasWildcard(int $domainId): bool
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM dns_records WHERE domain_id = ? AND host = '*'"
+        );
+        $stmt->execute([$domainId]);
+        return (int)$stmt->fetchColumn() > 0;
+    }
+
+    /**
      * Save a snapshot of DNS records for a domain.
      * Updates existing records, inserts new ones.
      * Only auto-removes stale records whose source is 'discovered' — manual and imported records are preserved.
@@ -301,9 +313,10 @@ class DnsRecord extends Model
             $grouped[$type] = [];
             foreach ($rows as $row) {
                 $entry = [
-                    'host'  => $row['host'],
-                    'value' => $row['value'],
-                    'ttl'   => $row['ttl'] ? (int)$row['ttl'] : null,
+                    'host'   => $row['host'],
+                    'value'  => $row['value'],
+                    'ttl'    => $row['ttl'] ? (int)$row['ttl'] : null,
+                    'source' => $row['source'] ?? 'discovered',
                 ];
                 if ($row['priority'] !== null) {
                     $entry['priority'] = (int)$row['priority'];

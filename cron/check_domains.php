@@ -15,11 +15,8 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Dotenv\Dotenv;
 use App\Models\Domain;
-use App\Models\NotificationChannel;
 use App\Models\NotificationGroup;
-use App\Models\NotificationLog;
 use App\Models\Setting;
-use App\Models\User;
 use App\Services\WhoisService;
 use App\Services\NotificationService;
 use App\Services\UpdateService;
@@ -35,12 +32,8 @@ new Database();
 
 // Initialize services
 $domainModel = new Domain();
-$channelModel = new NotificationChannel();
 $groupModel = new NotificationGroup();
-$logModel = new NotificationLog();
-$notificationModel = new \App\Models\Notification();
 $settingModel = new Setting();
-$userModel = new User();
 $whoisService = new WhoisService();
 $notificationService = new NotificationService();
 
@@ -64,6 +57,170 @@ function logMessage(string $message): void {
     $cron->log($message);
 }
 
+/**
+ * Log a status change found by the WHOIS refresh and send its alerts (the ones turned on in Settings)
+ */
+function sendStatusChangeAlerts(array $domain, string $oldStatus, string $status, bool $renewed, NotificationService $notificationService, array &$stats): void {
+    $stats['status_changes']++;
+    logMessage("  🔄 Status changed: $oldStatus → $status");
+
+    $alerts = $notificationService->alertDomainStatusChange($domain, $oldStatus, $status, $renewed);
+    if ($alerts['skipped'] !== null) {
+        logMessage("  → {$alerts['skipped']}");
+        return;
+    }
+    if ($alerts['type'] === null) {
+        return;
+    }
+
+    logMessage("  📢 Status notification triggered: {$alerts['type']}");
+    if ($alerts['already_sent']) {
+        logMessage("  → Status notification already sent recently (skipping external alerts)");
+    }
+
+    if (!empty($alerts['channels'])) {
+        logMessage("  📤 Sending status change alerts to " . count($alerts['channels']) . " channel(s)");
+    }
+    foreach ($alerts['channels'] as $sent) {
+        if ($sent['success']) {
+            logMessage("    ✓ Sent to {$sent['channel']}");
+            $stats['status_notifications_sent']++;
+            $stats['notifications_sent']++;
+        } else {
+            logMessage("    ✗ Failed to send to {$sent['channel']}");
+        }
+    }
+
+    if ($alerts['users'] > 0) {
+        logMessage("  🔔 Created status change notifications for {$alerts['users']} user(s)");
+        $stats['in_app_notifications_created'] += $alerts['users'];
+        $stats['domains_with_notifications']++;
+
+        $stats['domains_notified'][] = [
+            'domain' => $domain['domain_name'],
+            'days_left' => null,
+            'users_notified' => $alerts['users'],
+            'has_group' => !empty($domain['notification_group_id']),
+            'group_id' => $domain['notification_group_id'] ?? null,
+            'status_change' => "$oldStatus → $status"
+        ];
+
+        if (!empty($domain['notification_group_id'])) {
+            $groupId = $domain['notification_group_id'];
+            if (!isset($stats['notification_groups_used'][$groupId])) {
+                $stats['notification_groups_used'][$groupId] = 0;
+            }
+            $stats['notification_groups_used'][$groupId]++;
+        }
+    }
+}
+
+/**
+ * Log a renewal found by the WHOIS refresh and send its alerts
+ */
+function sendRenewalAlerts(array $domain, array $renewal, NotificationService $notificationService, array &$stats): void {
+    $stats['renewals']++;
+    logMessage("  🔁 Renewed: expiration moved from {$renewal['old_expiration']} to {$renewal['new_expiration']}"
+        . ($renewal['auto_renew_period'] ? ' (registry auto-renew period)' : ''));
+
+    $alerts = $notificationService->alertDomainRenewal($domain, $renewal);
+    if ($alerts['skipped'] !== null) {
+        logMessage("  → {$alerts['skipped']}");
+        return;
+    }
+    if ($alerts['already_sent']) {
+        logMessage("  → Renewal alert already sent recently (skipping external alerts)");
+    }
+
+    if (!empty($alerts['channels'])) {
+        logMessage("  📤 Sending renewal alerts to " . count($alerts['channels']) . " channel(s)");
+    }
+    foreach ($alerts['channels'] as $sent) {
+        if ($sent['success']) {
+            logMessage("    ✓ Sent to {$sent['channel']}");
+            $stats['notifications_sent']++;
+        } else {
+            logMessage("    ✗ Failed to send to {$sent['channel']}");
+        }
+    }
+
+    if ($alerts['users'] > 0) {
+        logMessage("  🔔 Created renewal notifications for {$alerts['users']} user(s)");
+        $stats['in_app_notifications_created'] += $alerts['users'];
+    }
+}
+
+/**
+ * Send the expiry alert due today for a domain (a reminder before or after it expires, or
+ * "expired" on the day) and log it
+ *
+ * @param array $domain       Domain row after the WHOIS refresh: its date is the manual one when WHOIS has none
+ * @param bool  $lookupFailed WHOIS couldn't be checked this run, so the alert uses the saved date as it was
+ */
+function sendExpiryAlerts(array $domain, NotificationService $notificationService, array &$stats, bool $lookupFailed = false): void {
+    $alerts = $notificationService->alertDomainExpiry($domain, $lookupFailed);
+    $daysLeft = $alerts['days_left'];
+    if ($daysLeft === null) {
+        return; // No expiration date, from WHOIS or set by hand
+    }
+    if ($alerts['skipped'] !== null) {
+        logMessage("  → {$alerts['skipped']}");
+        return;
+    }
+    if ($alerts['type'] === null) {
+        logMessage("  → No expiration notification needed ($daysLeft days left)");
+        return;
+    }
+
+    $statusText = match (true) {
+        $alerts['type'] === 'expired' => 'Domain expired',
+        str_starts_with($alerts['type'], 'expired_') => 'Domain expired ' . (int)substr($alerts['type'], 8) . ' days ago',
+        default => "Domain expiring in $daysLeft days",
+    };
+
+    if ($alerts['already_sent']) {
+        logMessage("  → External notification already sent recently (skipping external alerts)");
+    } elseif (empty($domain['notification_group_id'])) {
+        logMessage("  → No notification group assigned (skipping external alerts, but will create in-app notification)");
+    } elseif (empty($alerts['channels'])) {
+        logMessage("  → No active notification channels configured in group");
+    } else {
+        logMessage("  📤 Sending external notifications to " . count($alerts['channels']) . " channel(s)");
+    }
+    foreach ($alerts['channels'] as $sent) {
+        if ($sent['success']) {
+            logMessage("    ✓ Sent to {$sent['channel']}");
+            $stats['notifications_sent']++;
+        } else {
+            logMessage("    ✗ Failed to send to {$sent['channel']}");
+        }
+    }
+
+    if ($alerts['users'] === 0) {
+        logMessage("  → In-app notifications already exist for all users (skipping duplicates)");
+        return;
+    }
+
+    logMessage("  🔔 Created in-app notifications for {$alerts['users']} user(s): $statusText");
+    $stats['in_app_notifications_created'] += $alerts['users'];
+    $stats['domains_with_notifications']++;
+    $stats['domains_notified'][] = [
+        'domain' => $domain['domain_name'],
+        'days_left' => $daysLeft,
+        'users_notified' => $alerts['users'],
+        'has_group' => !empty($domain['notification_group_id']),
+        'group_id' => $domain['notification_group_id'] ?? null
+    ];
+
+    if (!empty($domain['notification_group_id'])) {
+        $groupId = $domain['notification_group_id'];
+        if (!isset($stats['notification_groups_used'][$groupId])) {
+            $stats['notification_groups_used'][$groupId] = 0;
+        }
+        $stats['notification_groups_used'][$groupId]++;
+    }
+}
+
 // Record start time
 $startTime = microtime(true);
 
@@ -73,6 +230,7 @@ logMessage("=== Starting domain check cron job ===");
 $notificationDays = $settingModel->getNotificationDays();
 
 logMessage("Notification thresholds (days): " . implode(', ', $notificationDays));
+logMessage("Reminders after expiry (days): " . (implode(', ', $settingModel->getPostExpiryNotificationDays()) ?: 'none'));
 
 // Get all active domains
 $domains = $domainModel->where('is_active', 1);
@@ -90,11 +248,9 @@ $stats = [
     'notification_groups_used' => [],
     'domains_notified' => [],
     'status_changes' => 0,
-    'status_notifications_sent' => 0
+    'status_notifications_sent' => 0,
+    'renewals' => 0
 ];
-
-// Get notification status triggers from settings
-$statusTriggers = $settingModel->getNotificationStatusTriggers();
 
 // Retry queue: domains that failed due to rate limiting
 $retryQueue = [];
@@ -146,7 +302,13 @@ foreach ($domains as $domain) {
                     'last_checked' => date('Y-m-d H:i:s')
                 ]);
             }
-            
+
+            // The saved expiration date still says which reminder is due, e.g. one set by hand
+            // for a TLD whose lookups never work. A domain queued for a retry gets them there.
+            if (!($wasRateLimited && $wasActive)) {
+                sendExpiryAlerts($domain, $notificationService, $stats, true);
+            }
+
             // Add a small delay after errors to avoid overwhelming rate-limited servers
             usleep(500000); // 0.5 seconds delay
             
@@ -159,6 +321,7 @@ foreach ($domains as $domain) {
         
         // Update domain information
         $status = $whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
+        $renewal = $whoisService->detectRenewal($domain, $whoisData, $status);
         $domainModel->update($domain['id'], [
             'registrar' => $whoisData['registrar'],
             'registrar_url' => $whoisData['registrar_url'] ?? null,
@@ -176,353 +339,44 @@ foreach ($domains as $domain) {
         // Detect status change
         $oldStatus = $domain['status'];
         logMessage("  ✓ Updated WHOIS data for $domainName");
-        logMessage("    Expiration: " . ($whoisData['expiration_date'] ?? 'N/A') . ", Status: $status" . ($oldStatus !== $status ? " (was: $oldStatus)" : ""));
+        logMessage("    Expiration: " . ($whoisData['expiration_date'] ?? ($expirationDate ? "$expirationDate (set by hand)" : 'N/A')) . ", Status: $status" . ($oldStatus !== $status ? " (was: $oldStatus)" : ""));
 
         // Add a small delay between domain checks to avoid rate limiting
         // This helps especially with .nl and other TLDs that have strict rate limits
         usleep(1000000); // 1 second delay between checks
 
+        // The alerts read the saved row; a domain deleted since the run started has none
+        $refreshed = $domainModel->find($domain['id']);
+        if (!$refreshed) {
+            logMessage("  → Domain was deleted during this run (skipping its alerts)");
+            continue;
+        }
+
         // ============================================================
         // STATUS CHANGE NOTIFICATIONS
         // ============================================================
-        // Check if the domain status has changed and if the new status
-        // is in the configured notification triggers
-        $statusChanged = ($oldStatus !== $status);
-        $statusNotificationType = null;
-
-        if ($statusChanged) {
-            $stats['status_changes']++;
-            logMessage("  🔄 Status changed: $oldStatus → $status");
-            
-            // Determine the notification trigger type for this status change
-            // 'registered' trigger fires when status changes TO 'active' FROM certain statuses
-            if ($status === 'available' && in_array('available', $statusTriggers)) {
-                $statusNotificationType = 'domain_available';
-            } elseif ($status === 'active' && in_array($oldStatus, ['available', 'expired', 'pending_delete', 'redemption_period', 'error']) && in_array('registered', $statusTriggers)) {
-                $statusNotificationType = 'domain_registered';
-            } elseif ($status === 'expired' && $oldStatus !== 'error' && in_array('expired', $statusTriggers)) {
-                $statusNotificationType = 'domain_expired_status';
-            } elseif ($status === 'redemption_period' && in_array('redemption_period', $statusTriggers)) {
-                $statusNotificationType = 'domain_redemption';
-            } elseif ($status === 'pending_delete' && in_array('pending_delete', $statusTriggers)) {
-                $statusNotificationType = 'domain_pending_delete';
-            }
-        }
-
-        // Send status change notifications (both external and in-app)
-        if ($statusNotificationType) {
-            logMessage("  📢 Status notification triggered: $statusNotificationType");
-            
-            $domainData = $domainModel->find($domain['id']);
-            
-            // --- External notifications (channels) ---
-            if ($domain['notification_group_id']) {
-                if (!$logModel->wasSentRecently($domain['id'], $statusNotificationType, 23)) {
-                    $channels = $channelModel->getActiveByGroupId($domain['notification_group_id']);
-                    
-                    if (!empty($channels)) {
-                        logMessage("  📤 Sending status change alerts to " . count($channels) . " channel(s)");
-                        
-                        $results = $notificationService->sendDomainStatusAlert($domainData, $channels, $status, $oldStatus);
-                        
-                        foreach ($results as $result) {
-                            $success = $result['success'];
-                            $channel = $result['channel'];
-                            
-                            if ($success) {
-                                logMessage("    ✓ Sent to $channel");
-                                $stats['status_notifications_sent']++;
-                                $stats['notifications_sent']++;
-                            } else {
-                                logMessage("    ✗ Failed to send to $channel");
-                            }
-                            
-                            $logModel->log(
-                                $domain['id'],
-                                $statusNotificationType,
-                                $channel,
-                                "Domain $domainName status changed: $oldStatus → $status",
-                                $success,
-                                $success ? null : "Failed to send notification"
-                            );
-                        }
-                    }
-                } else {
-                    logMessage("  → Status notification already sent recently (skipping external alerts)");
-                }
-            }
-            
-            // --- In-app notifications (bell icon) ---
-            $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
-            $usersToNotify = [];
-            
-            if ($isolationMode === 'isolated') {
-                $notificationUserId = null;
-                if (!empty($domainData['user_id'])) {
-                    $notificationUserId = $domainData['user_id'];
-                } elseif (!empty($domain['notification_group_id'])) {
-                    $group = $groupModel->find($domain['notification_group_id']);
-                    if ($group && !empty($group['user_id'])) {
-                        $notificationUserId = $group['user_id'];
-                    }
-                }
-                if ($notificationUserId) {
-                    $usersToNotify[] = $notificationUserId;
-                }
-            } else {
-                $allUsers = $userModel->where('is_active', 1);
-                foreach ($allUsers as $user) {
-                    $usersToNotify[] = $user['id'];
-                }
-            }
-            
-            if (!empty($usersToNotify)) {
-                $notifiedCount = 0;
-                
-                foreach ($usersToNotify as $userId) {
-                    // Check for duplicate in-app notification
-                    $db = \Core\Database::getConnection();
-                    $stmt = $db->prepare(
-                        "SELECT COUNT(*) as count FROM user_notifications 
-                         WHERE user_id = ? AND domain_id = ? AND type = ?
-                         AND created_at >= DATE_SUB(NOW(), INTERVAL 23 HOUR)"
-                    );
-                    $stmt->execute([$userId, $domain['id'], $statusNotificationType]);
-                    $result = $stmt->fetch();
-                    
-                    if ($result && $result['count'] > 0) {
-                        continue;
-                    }
-                    
-                    try {
-                        match($statusNotificationType) {
-                            'domain_available' => $notificationService->notifyDomainAvailable($userId, $domainName, $domain['id']),
-                            'domain_registered' => $notificationService->notifyDomainRegistered($userId, $domainName, $domain['id']),
-                            'domain_expired_status' => $notificationService->notifyDomainExpired($userId, $domainName, $domain['id']),
-                            'domain_redemption' => $notificationService->notifyDomainRedemption($userId, $domainName, $domain['id']),
-                            'domain_pending_delete' => $notificationService->notifyDomainPendingDelete($userId, $domainName, $domain['id']),
-                            default => null
-                        };
-                        $notifiedCount++;
-                    } catch (Exception $e) {
-                        logMessage("  ⚠ Failed to create status notification for user $userId: " . $e->getMessage());
-                    }
-                }
-                
-                if ($notifiedCount > 0) {
-                    logMessage("  🔔 Created status change notifications for $notifiedCount user(s)");
-                    $stats['in_app_notifications_created'] += $notifiedCount;
-                    $stats['domains_with_notifications']++;
-                    
-                    $stats['domains_notified'][] = [
-                        'domain' => $domainName,
-                        'days_left' => null,
-                        'users_notified' => $notifiedCount,
-                        'has_group' => !empty($domain['notification_group_id']),
-                        'group_id' => $domain['notification_group_id'] ?? null,
-                        'status_change' => "$oldStatus → $status"
-                    ];
-                    
-                    if (!empty($domain['notification_group_id'])) {
-                        $groupId = $domain['notification_group_id'];
-                        if (!isset($stats['notification_groups_used'][$groupId])) {
-                            $stats['notification_groups_used'][$groupId] = 0;
-                        }
-                        $stats['notification_groups_used'][$groupId]++;
-                    }
-                }
-            }
+        // Settings choose which status changes send alerts (both external and in-app). A failed
+        // lookup saves "error" over a known status, so the change is judged against the last one.
+        $lastKnownStatus = $whoisService->getLastKnownStatus($domain);
+        if ($lastKnownStatus !== $status) {
+            sendStatusChangeAlerts($refreshed, $lastKnownStatus, $status, $renewal !== null, $notificationService, $stats);
         }
 
         // ============================================================
-        // EXPIRATION-BASED NOTIFICATIONS (existing logic)
+        // RENEWAL NOTIFICATIONS
         // ============================================================
-        // Check if notifications should be sent based on days until expiration
-        $daysLeft = $whoisService->daysUntilExpiration($whoisData['expiration_date']);
-
-        if ($daysLeft === null) {
-            continue;
+        if ($renewal) {
+            sendRenewalAlerts($refreshed, $renewal, $notificationService, $stats);
         }
 
-        // Check if this domain should trigger an expiration notification
-        $shouldNotify = false;
-        $notificationType = '';
+        // ============================================================
+        // EXPIRATION-BASED NOTIFICATIONS
+        // ============================================================
+        // Reminders before expiry, "expired" on the day it expires, and reminders after (Settings),
+        // from the saved date: a manual one counts too when WHOIS has none
+        sendExpiryAlerts($refreshed, $notificationService, $stats);
 
-        if ($daysLeft <= 0) {
-            // Only send expiration notification if we didn't already send a status change expired notification
-            if ($statusNotificationType !== 'domain_expired_status') {
-                $shouldNotify = true;
-                $notificationType = 'expired';
-            }
-        } elseif (in_array($daysLeft, $notificationDays)) {
-            $shouldNotify = true;
-            $notificationType = "expiring_in_{$daysLeft}_days";
-        }
-
-        if (!$shouldNotify) {
-            logMessage("  → No expiration notification needed ($daysLeft days left)");
-            continue;
-        }
-
-        // Refresh domain data with group info
-        $domainData = $domainModel->find($domain['id']);
-        
-        // Send external notifications (email, telegram, etc.) if notification group is assigned
-        // Check if external alert was already sent recently (within last 23 hours)
-        $shouldSendExternal = false;
-        if ($domain['notification_group_id']) {
-            if (!$logModel->wasSentRecently($domain['id'], $notificationType, 23)) {
-                $shouldSendExternal = true;
-            } else {
-                logMessage("  → External notification already sent recently (skipping external alerts)");
-            }
-        }
-        
-        if ($shouldSendExternal) {
-            $channels = $channelModel->getActiveByGroupId($domain['notification_group_id']);
-
-            if (!empty($channels)) {
-                logMessage("  📤 Sending external notifications to " . count($channels) . " channel(s)");
-                
-                // Send external notifications (email, telegram, etc.)
-                $results = $notificationService->sendDomainExpirationAlert($domainData, $channels);
-
-                foreach ($results as $result) {
-                    $success = $result['success'];
-                    $channel = $result['channel'];
-
-                    if ($success) {
-                        logMessage("    ✓ Sent to $channel");
-                        $stats['notifications_sent']++;
-                    } else {
-                        logMessage("    ✗ Failed to send to $channel");
-                    }
-
-                    // Log the notification attempt
-                    $logModel->log(
-                        $domain['id'],
-                        $notificationType,
-                        $channel,
-                        "Domain $domainName expires in $daysLeft days",
-                        $success,
-                        $success ? null : "Failed to send notification"
-                    );
-                }
-            } else {
-                logMessage("  → No active notification channels configured in group");
-            }
-        } elseif (!$domain['notification_group_id']) {
-            logMessage("  → No notification group assigned (skipping external alerts, but will create in-app notification)");
-        }
-
-        // Create in-app notification (bell icon) for users
-        // Handle user isolation: 
-        // - Isolated mode: send only to domain owner
-        // - Shared mode: send to all active users (company-wide notifications)
-        $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
-        $usersToNotify = [];
-        
-        if ($isolationMode === 'isolated') {
-            // Isolated mode: only notify the domain owner
-            $notificationUserId = null;
-            
-            if (!empty($domainData['user_id'])) {
-                $notificationUserId = $domainData['user_id'];
-            } elseif (!empty($domain['notification_group_id'])) {
-                // Fallback to notification group owner
-                $group = $groupModel->find($domain['notification_group_id']);
-                if ($group && !empty($group['user_id'])) {
-                    $notificationUserId = $group['user_id'];
-                }
-            }
-            
-            if ($notificationUserId) {
-                $usersToNotify[] = $notificationUserId;
-            }
-        } else {
-            // Shared mode: notify all active users (company-wide)
-            $allUsers = $userModel->where('is_active', 1);
-            foreach ($allUsers as $user) {
-                $usersToNotify[] = $user['id'];
-            }
-            logMessage("  → Shared mode: Notifying all " . count($usersToNotify) . " active user(s)");
-        }
-        
-        // Send notifications to all identified users
-        // Check if in-app notification was already created recently (within last 23 hours) to prevent duplicates
-        if (!empty($usersToNotify)) {
-            $notifiedCount = 0;
-            $notificationTypeForInApp = $daysLeft <= 0 ? 'domain_expired' : 'domain_expiring';
-            
-            foreach ($usersToNotify as $userId) {
-                // Check if this user already has a notification for this domain and type within last 23 hours
-                $db = \Core\Database::getConnection();
-                $stmt = $db->prepare(
-                    "SELECT COUNT(*) as count FROM user_notifications 
-                     WHERE user_id = ? 
-                     AND domain_id = ? 
-                     AND type = ?
-                     AND created_at >= DATE_SUB(NOW(), INTERVAL 23 HOUR)"
-                );
-                $stmt->execute([$userId, $domain['id'], $notificationTypeForInApp]);
-                $result = $stmt->fetch();
-                
-                if ($result && $result['count'] > 0) {
-                    // Notification already exists for this user, skip
-                    continue;
-                }
-                
-                try {
-                    if ($daysLeft <= 0) {
-                        $notificationService->notifyDomainExpired(
-                            $userId,
-                            $domainName,
-                            $domain['id']
-                        );
-                    } else {
-                        $notificationService->notifyDomainExpiring(
-                            $userId,
-                            $domainName,
-                            $daysLeft,
-                            $domain['id']
-                        );
-                    }
-                    $notifiedCount++;
-                } catch (Exception $e) {
-                    logMessage("  ⚠ Failed to create in-app notification for user $userId: " . $e->getMessage());
-                }
-            }
-            if ($notifiedCount > 0) {
-                $statusText = $daysLeft <= 0 ? "Domain expired" : "Domain expiring in $daysLeft days";
-                logMessage("  🔔 Created in-app notifications for $notifiedCount user(s): $statusText");
-                $stats['in_app_notifications_created'] += $notifiedCount;
-                $stats['domains_with_notifications']++;
-                
-                // Track which domain got notifications
-                $stats['domains_notified'][] = [
-                    'domain' => $domainName,
-                    'days_left' => $daysLeft,
-                    'users_notified' => $notifiedCount,
-                    'has_group' => !empty($domain['notification_group_id']),
-                    'group_id' => $domain['notification_group_id'] ?? null
-                ];
-                
-                // Track notification groups used
-                if (!empty($domain['notification_group_id'])) {
-                    $groupId = $domain['notification_group_id'];
-                    if (!isset($stats['notification_groups_used'][$groupId])) {
-                        $stats['notification_groups_used'][$groupId] = 0;
-                    }
-                    $stats['notification_groups_used'][$groupId]++;
-                }
-            } elseif (count($usersToNotify) > 0) {
-                logMessage("  → In-app notifications already exist for all users (skipping duplicates)");
-            }
-        } else {
-            logMessage("  → No users to notify, skipping in-app notification (external alerts still sent)");
-        }
-
-    } catch (Exception $e) {
+    } catch (\Throwable $e) {
         logMessage("  ✗ Error processing $domainName: " . $e->getMessage());
         $stats['errors']++;
     }
@@ -531,6 +385,7 @@ foreach ($domains as $domain) {
 // Process retry queue with exponential backoff
 $maxRetries = 3;
 $retryDelays = [30, 60, 120]; // Delays in seconds: 30s, 60s, 120s
+$retryFailed = []; // Domains that could not be refreshed by any retry
 
 if (!empty($retryQueue)) {
     logMessage("\n=== Processing retry queue (" . count($retryQueue) . " domain(s)) ===");
@@ -601,6 +456,7 @@ if (!empty($retryQueue)) {
                             // Failed after max retries or non-rate-limit error
                             $reason = WhoisService::getLastErrorMessage();
                             logMessage("    ✗ Failed after {$currentAttempt} attempt(s)" . ($reason ? ": $reason" : ''));
+                            $retryFailed[] = $domainName;
                             $wasActive = in_array($domain['status'], ['active', 'expiring_soon']);
                             
                             if ($wasActive) {
@@ -614,6 +470,9 @@ if (!empty($retryQueue)) {
                                     'last_checked' => date('Y-m-d H:i:s')
                                 ]);
                             }
+
+                            // The saved expiration date still says which reminder is due
+                            sendExpiryAlerts($domain, $notificationService, $stats, true);
                         }
                         
                         // Delay between retry attempts
@@ -627,7 +486,8 @@ if (!empty($retryQueue)) {
                     
                     $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
                     $status = $whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
-                    
+                    $renewal = $whoisService->detectRenewal($domain, $whoisData, $status);
+
                     $domainModel->update($domain['id'], [
                         'registrar' => $whoisData['registrar'],
                         'registrar_url' => $whoisData['registrar_url'] ?? null,
@@ -641,112 +501,38 @@ if (!empty($retryQueue)) {
                     
                     $stats['checked']++;
                     $stats['updated']++;
-                    
-                    // Check notifications for successfully retried domains
-                    $daysLeft = $whoisService->daysUntilExpiration($whoisData['expiration_date']);
-                    
-                    if ($daysLeft !== null) {
-                        $shouldNotify = false;
-                        $notificationType = '';
-                        
-                        if ($daysLeft <= 0) {
-                            $shouldNotify = true;
-                            $notificationType = 'expired';
-                        } elseif (in_array($daysLeft, $notificationDays)) {
-                            $shouldNotify = true;
-                            $notificationType = "expiring_in_{$daysLeft}_days";
-                        }
-                        
-                        if ($shouldNotify && !$logModel->wasSentRecently($domain['id'], $notificationType, 23)) {
-                            $domainData = $domainModel->find($domain['id']);
-                            
-                            // Send external notifications (email, telegram, etc.) if notification group is assigned
-                            if ($domain['notification_group_id']) {
-                                $channels = $channelModel->getActiveByGroupId($domain['notification_group_id']);
-                                if (!empty($channels)) {
-                                    $results = $notificationService->sendDomainExpirationAlert($domainData, $channels);
-                                    
-                                    foreach ($results as $result) {
-                                        if ($result['success']) {
-                                            $stats['notifications_sent']++;
-                                        }
-                                        $logModel->log(
-                                            $domain['id'],
-                                            $notificationType,
-                                            $result['channel'],
-                                            "Domain $domainName expires in $daysLeft days",
-                                            $result['success'],
-                                            $result['success'] ? null : "Failed to send notification"
-                                        );
-                                    }
-                                }
-                            }
 
-                            // Create in-app notification (bell icon) for users
-                            // Handle user isolation: 
-                            // - Isolated mode: send only to domain owner
-                            // - Shared mode: send to all active users (company-wide notifications)
-                            $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
-                            $usersToNotify = [];
-                            
-                            if ($isolationMode === 'isolated') {
-                                // Isolated mode: only notify the domain owner
-                                $notificationUserId = null;
-                                
-                                if (!empty($domainData['user_id'])) {
-                                    $notificationUserId = $domainData['user_id'];
-                                } elseif (!empty($domain['notification_group_id'])) {
-                                    // Fallback to notification group owner
-                                    $group = $groupModel->find($domain['notification_group_id']);
-                                    if ($group && !empty($group['user_id'])) {
-                                        $notificationUserId = $group['user_id'];
-                                    }
-                                }
-                                
-                                if ($notificationUserId) {
-                                    $usersToNotify[] = $notificationUserId;
-                                }
-                            } else {
-                                // Shared mode: notify all active users (company-wide)
-                                $allUsers = $userModel->where('is_active', 1);
-                                foreach ($allUsers as $user) {
-                                    $usersToNotify[] = $user['id'];
-                                }
-                            }
-                            
-                            // Send notifications to all identified users
-                            if (!empty($usersToNotify)) {
-                                foreach ($usersToNotify as $userId) {
-                                    try {
-                                        if ($daysLeft <= 0) {
-                                            $notificationService->notifyDomainExpired(
-                                                $userId,
-                                                $domainName,
-                                                $domain['id']
-                                            );
-                                        } else {
-                                            $notificationService->notifyDomainExpiring(
-                                                $userId,
-                                                $domainName,
-                                                $daysLeft,
-                                                $domain['id']
-                                            );
-                                        }
-                                    } catch (Exception $e) {
-                                        // Silently fail for retry queue to avoid interrupting retry process
-                                    }
-                                }
-                            }
-                        }
+                    $refreshed = $domainModel->find($domain['id']);
+                    if (!$refreshed) {
+                        logMessage("    → Domain was deleted during this run (skipping its alerts)");
+                        continue;
                     }
-                    
+
+                    $lastKnownStatus = $whoisService->getLastKnownStatus($domain);
+                    if ($lastKnownStatus !== $status) {
+                        sendStatusChangeAlerts($refreshed, $lastKnownStatus, $status, $renewal !== null, $notificationService, $stats);
+                    }
+
+                    if ($renewal) {
+                        sendRenewalAlerts($refreshed, $renewal, $notificationService, $stats);
+                    }
+
+                    // Check notifications for successfully retried domains
+                    sendExpiryAlerts($refreshed, $notificationService, $stats);
+
                     // Delay between successful retries
                     usleep(1000000); // 1 second delay
-                    
-                } catch (Exception $e) {
+
+                } catch (\Throwable $e) {
                     logMessage("    ✗ Exception during retry: " . $e->getMessage());
                     if ($currentAttempt < $maxRetries) {
                         $remainingQueue[] = $queueItem;
+                    } else {
+                        // Only active domains are queued, so keep the status as for a failed lookup
+                        $retryFailed[] = $domainName;
+                        $domainModel->update($domain['id'], [
+                            'last_checked' => date('Y-m-d H:i:s')
+                        ]);
                     }
                 }
             }
@@ -757,32 +543,22 @@ if (!empty($retryQueue)) {
             }
         }
         
-        // Update retry queue for next attempt
-        if (empty($remainingQueue)) {
-            logMessage("All retries completed successfully");
+        // The next attempt retries only the domains that are still rate limited
+        $retryQueue = $remainingQueue;
+        if (empty($retryQueue)) {
             break;
         }
         
-        // Update retry queue with remaining items for next iteration
-        $retryQueue = $remainingQueue;
-        
         if ($attempt < $maxRetries - 1) {
-            logMessage(count($remainingQueue) . " domain(s) remaining for next retry");
+            logMessage(count($retryQueue) . " domain(s) remaining for next retry");
         }
     }
     
-    if (!empty($retryQueue)) {
-        logMessage("\n⚠ " . count($retryQueue) . " domain(s) still failed after {$maxRetries} retry attempts");
-        // Preserve status for remaining failed domains
-        foreach ($retryQueue as $queueItem) {
-            $domain = $queueItem['domain'];
-            $wasActive = in_array($domain['status'], ['active', 'expiring_soon']);
-            if ($wasActive) {
-                $domainModel->update($domain['id'], [
-                    'last_checked' => date('Y-m-d H:i:s')
-                ]);
-            }
-        }
+    if (empty($retryFailed)) {
+        logMessage("All retries completed successfully");
+    } else {
+        $retryFailed = array_unique($retryFailed);
+        logMessage("\n⚠ " . count($retryFailed) . " domain(s) still failed after retrying: " . implode(', ', $retryFailed));
     }
     
     logMessage("=== Retry queue processing completed ===\n");
@@ -802,6 +578,7 @@ logMessage("Domains checked: {$stats['checked']}");
 logMessage("Domains updated: {$stats['updated']}");
 logMessage("Status changes detected: {$stats['status_changes']}");
 logMessage("Status notifications sent: {$stats['status_notifications_sent']}");
+logMessage("Renewals detected: {$stats['renewals']}");
 logMessage("External notifications sent: {$stats['notifications_sent']}");
 logMessage("In-app notifications created: {$stats['in_app_notifications_created']}");
 logMessage("Domains with notifications: {$stats['domains_with_notifications']}");

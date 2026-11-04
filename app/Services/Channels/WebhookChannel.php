@@ -128,7 +128,7 @@ class WebhookChannel implements NotificationChannelInterface
     }
 
     /**
-     * Build a rich card payload for Google Chat domain expiration alerts
+     * Build a rich card payload for Google Chat domain expiration and renewal alerts
      */
     private function buildGoogleChatCard(string $message, array $data): array
     {
@@ -143,7 +143,11 @@ class WebhookChannel implements NotificationChannelInterface
                     'cardId' => 'domain-alert-' . time(),
                     'card' => [
                         'header' => [
-                            'title' => 'Domain Expiration Alert',
+                            'title' => match (true) {
+                                isset($data['previous_expiration_date']) => 'Domain Renewed',
+                                !empty($data['watchlist']) => 'Domain Lifecycle Update',
+                                default => 'Domain Expiration Alert',
+                            },
                             'subtitle' => $domain,
                             'imageUrl' => 'https://www.gstatic.com/images/branding/product/2x/hats_notification_96dp.png',
                             'imageType' => 'CIRCLE'

@@ -7,7 +7,8 @@
  * Checks tracked SSL endpoints for active domains with SSL monitoring enabled.
  * If no root endpoint is tracked yet, the root domain falls back to port 443.
  * Sends notifications when an SSL state changes or when the first monitored
- * baseline already has an issue.
+ * baseline already has an issue, and expiry reminders on the SSL reminder days
+ * from Settings (each reminder day once per certificate).
  *
  * Usage: php cron/check_ssl.php
  * Recommended schedule: run at minute 0 every 12 hours.
@@ -17,12 +18,8 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use Dotenv\Dotenv;
 use App\Models\Domain;
-use App\Models\NotificationChannel;
-use App\Models\NotificationGroup;
-use App\Models\NotificationLog;
 use App\Models\Setting;
 use App\Models\SslCertificate;
-use App\Models\User;
 use App\Services\Logger;
 use App\Services\NotificationService;
 use App\Services\SslService;
@@ -40,11 +37,7 @@ new Database();
 
 $domainModel = new Domain();
 $sslModel = new SslCertificate();
-$channelModel = new NotificationChannel();
-$groupModel = new NotificationGroup();
-$logModel = new NotificationLog();
 $settingModel = new Setting();
-$userModel = new User();
 $sslService = new SslService();
 $notificationService = new NotificationService();
 $logger = new Logger('ssl-cron');
@@ -62,9 +55,11 @@ $startTime = microtime(true);
 
 logMessage("=== Starting SSL check cron job ===");
 
-// Only check domains that are registered and in use (active or expiring_soon).
-// Skip available, expired, error, redemption_period, pending_delete — they typically have no DNS/SSL.
-$checkableStatuses = ['active', 'expiring_soon'];
+// Only check domains that are registered and in use (active or expiring_soon), plus "error" ones:
+// that status means the WHOIS lookup failed, which says nothing about the website. Hosts that
+// do not resolve are skipped per endpoint below.
+// Skip available, expired, redemption_period, pending_delete — they typically have no DNS/SSL.
+$checkableStatuses = Domain::DNS_SSL_CHECK_STATUSES;
 
 $allSslEnabled = array_values(array_filter(
     $domainModel->where('is_active', 1),
@@ -75,9 +70,9 @@ $domains = array_values(array_filter($allSslEnabled, static function (array $dom
     return in_array($status, $checkableStatuses, true);
 }));
 $skippedByStatus = count($allSslEnabled) - count($domains);
-logMessage("Found " . count($domains) . " domain(s) with SSL monitoring enabled and checkable status (active/expiring_soon)");
+logMessage("Found " . count($domains) . " domain(s) with SSL monitoring enabled and checkable status (active/expiring_soon/error)");
 if ($skippedByStatus > 0) {
-    logMessage("Skipped " . $skippedByStatus . " domain(s) with non-checkable status (available/expired/error/redemption_period/pending_delete)");
+    logMessage("Skipped " . $skippedByStatus . " domain(s) with non-checkable status (available/expired/redemption_period/pending_delete)");
 }
 
 $stats = [
@@ -90,9 +85,11 @@ $stats = [
     'in_app_notifications' => 0,
     'errors' => 0,
     'status_changes' => 0,
+    'reminders' => 0,
 ];
 
-$isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
+$sslReminderDays = $settingModel->getSslNotificationDays();
+logMessage("Reminder days: " . implode(', ', $sslReminderDays));
 
 foreach ($domains as $domain) {
     $domainName = strtolower($domain['domain_name']);
@@ -140,22 +137,15 @@ foreach ($domains as $domain) {
                 continue;
             }
 
-            $existing = $sslModel->findByDomainAndHost($domain['id'], $hostname, $port);
-            $previousStatus = $existing['status'] ?? null;
-
-            $snapshot = $sslService->fetchCertificateSnapshot($hostname, $port);
-            $sslModel->saveSnapshot($domain['id'], $hostname, $snapshot, $port);
+            $check = $sslService->checkEndpoint($domain['id'], $hostname, $port, $sslReminderDays);
+            $snapshot = $check['snapshot'];
             $stats['checked_hosts']++;
 
             $status = $snapshot['status'];
-            $isIssue = in_array($status, ['expiring', 'expired', 'invalid'], true);
-            if ($isIssue) {
+            if (in_array($status, ['expiring', 'expired', 'invalid'], true)) {
                 $domainIssues++;
                 $stats['issues_detected']++;
             }
-
-            $statusChanged = $previousStatus !== null && $previousStatus !== $status;
-            $firstIssueBaseline = $previousStatus === null && $isIssue;
 
             logMessage(
                 "  {$endpointLabel}: {$status}" .
@@ -163,36 +153,23 @@ foreach ($domains as $domain) {
                 ($snapshot['last_error'] ? " (error: {$snapshot['last_error']})" : '')
             );
 
-            if (!$statusChanged && !$firstIssueBaseline) {
+            if ($check['status_changed']) {
+                $domainStatusChanges++;
+                $stats['status_changes']++;
+            }
+
+            $alerts = $notificationService->alertSslCheck($domain, $endpointLabel, $check);
+            if ($alerts['skipped'] !== null) {
+                logMessage("  -> {$alerts['skipped']}");
                 continue;
             }
 
-            $domainStatusChanges++;
-            $stats['status_changes']++;
+            if ($check['reminder_days'] !== null) {
+                $stats['reminders']++;
+                logMessage("  -> Expiry reminder ({$check['reminder_days']}-day): {$snapshot['days_remaining']} day(s) left");
+            }
 
-            sendExternalSslNotifications(
-                $domain,
-                $endpointLabel,
-                $status,
-                $previousStatus,
-                $snapshot,
-                $channelModel,
-                $logModel,
-                $notificationService,
-                $stats
-            );
-
-            sendInAppSslNotifications(
-                $domain,
-                $endpointLabel,
-                $status,
-                $previousStatus,
-                $isolationMode,
-                $userModel,
-                $groupModel,
-                $notificationService,
-                $stats
-            );
+            logAlertResults($alerts, $stats);
         }
 
         $domainModel->update($domain['id'], ['ssl_last_checked' => date('Y-m-d H:i:s')]);
@@ -210,7 +187,7 @@ foreach ($domains as $domain) {
 
         logTimeSince($domainStart);
         usleep(250000);
-    } catch (\Exception $e) {
+    } catch (\Throwable $e) {
         logMessage("  x Error: " . $e->getMessage());
         logTimeSince($domainStart);
         $logger->error('SSL check failed', [
@@ -229,6 +206,7 @@ logMessage("Domains skipped:        {$stats['skipped_by_status']} (non-checkable
 logMessage("Endpoints skipped:      {$stats['skipped_unresolved']} (hostname does not resolve)");
 logMessage("Endpoints checked:      {$stats['checked_hosts']}");
 logMessage("Status changes:         {$stats['status_changes']}");
+logMessage("Expiry reminders:       {$stats['reminders']}");
 logMessage("Issue endpoints:        {$stats['issues_detected']}");
 logMessage("External notifications: {$stats['notifications_sent']}");
 logMessage("In-app notifications:   {$stats['in_app_notifications']}");
@@ -238,39 +216,16 @@ logMessage("============================\n");
 
 exit(0);
 
-function sendExternalSslNotifications(
-    array $domain,
-    string $hostname,
-    string $status,
-    ?string $previousStatus,
-    array $snapshot,
-    NotificationChannel $channelModel,
-    NotificationLog $logModel,
-    NotificationService $notificationService,
-    array &$stats
-): void {
-    if (empty($domain['notification_group_id'])) {
-        return;
+/**
+ * Log what NotificationService::alertSslCheck() sent and count it
+ */
+function logAlertResults(array $alerts, array &$stats): void
+{
+    if (!empty($alerts['channels'])) {
+        logMessage("  -> Sending SSL alerts to " . count($alerts['channels']) . " channel(s)");
     }
 
-    $channels = $channelModel->getActiveByGroupId($domain['notification_group_id']);
-    if (empty($channels)) {
-        return;
-    }
-
-    logMessage("  -> Sending SSL alerts to " . count($channels) . " channel(s)");
-
-    $results = $notificationService->sendSslStatusAlert(
-        $domain,
-        $channels,
-        $hostname,
-        $status,
-        $previousStatus,
-        $snapshot['valid_to'] ?? null,
-        $snapshot['last_error'] ?? null
-    );
-
-    foreach ($results as $result) {
+    foreach ($alerts['channels'] as $result) {
         $success = $result['success'];
         if ($success) {
             $stats['notifications_sent']++;
@@ -280,73 +235,11 @@ function sendExternalSslNotifications(
             ? "    + Sent to {$result['channel']}"
             : "    - Failed: {$result['channel']}"
         );
-
-        $logModel->log(
-            $domain['id'],
-            'ssl_status_' . $status,
-            $result['channel'],
-            "SSL status for {$hostname}: {$status}",
-            $success,
-            $success ? null : 'Failed to send SSL status notification'
-        );
-    }
-}
-
-function sendInAppSslNotifications(
-    array $domain,
-    string $hostname,
-    string $status,
-    ?string $previousStatus,
-    string $isolationMode,
-    User $userModel,
-    NotificationGroup $groupModel,
-    NotificationService $notificationService,
-    array &$stats
-): void {
-    $usersToNotify = [];
-
-    if ($isolationMode === 'isolated') {
-        $userId = $domain['user_id'] ?? null;
-
-        if (!$userId && !empty($domain['notification_group_id'])) {
-            $group = $groupModel->find($domain['notification_group_id']);
-            $userId = $group['user_id'] ?? null;
-        }
-
-        if ($userId) {
-            $usersToNotify[] = $userId;
-        }
-    } else {
-        foreach ($userModel->where('is_active', 1) as $user) {
-            $usersToNotify[] = $user['id'];
-        }
     }
 
-    if (empty($usersToNotify)) {
-        return;
-    }
-
-    $notifiedCount = 0;
-
-    foreach ($usersToNotify as $userId) {
-        try {
-            $notificationService->notifySslStatusChange(
-                $userId,
-                $domain['domain_name'],
-                $hostname,
-                $domain['id'],
-                $status,
-                $previousStatus
-            );
-            $notifiedCount++;
-        } catch (\Exception $e) {
-            logMessage("  ! In-app SSL notification failed for user {$userId}: " . $e->getMessage());
-        }
-    }
-
-    if ($notifiedCount > 0) {
-        logMessage("  -> Notified {$notifiedCount} user(s) in-app");
-        $stats['in_app_notifications'] += $notifiedCount;
+    if ($alerts['users'] > 0) {
+        logMessage("  -> Notified {$alerts['users']} user(s) in-app");
+        $stats['in_app_notifications'] += $alerts['users'];
     }
 }
 

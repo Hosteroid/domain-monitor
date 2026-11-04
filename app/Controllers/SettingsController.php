@@ -70,6 +70,13 @@ class SettingsController extends Controller
         // Status notification triggers
         $statusTriggers = $this->settingModel->getNotificationStatusTriggers();
 
+        // Certificate transparency sources for DNS deep scans
+        $enabledCtSources = $this->settingModel->getCtLogSources();
+        $ctLogSources = [];
+        foreach (\App\Services\DnsService::CT_LOG_SOURCES as $id => $name) {
+            $ctLogSources[] = ['id' => $id, 'name' => $name, 'enabled' => in_array($id, $enabledCtSources, true)];
+        }
+
         // Timezone lists for the Application tab
         $popularTimezones = [
             'UTC' => 'UTC',
@@ -162,6 +169,8 @@ class SettingsController extends Controller
             'notificationPresets' => $notificationPresets,
             'checkIntervalPresets' => $checkIntervalPresets,
             'statusTriggers' => $statusTriggers,
+            'ctLogSources' => $ctLogSources,
+            'hasCertSpotterApiKey' => ($settings['certspotter_api_key'] ?? '') !== '',
             'popularTimezones' => $popularTimezones,
             'allTimezones' => $allTimezones,
             'selectedPreset' => $selectedPreset,
@@ -233,11 +242,57 @@ class SettingsController extends Controller
             if (!is_array($statusTriggers)) {
                 $statusTriggers = [];
             }
-            
+
+            // Update SSL certificate reminder days (comma-separated, 1-365)
+            $sslDays = array_map('trim', explode(',', $_POST['ssl_notification_days'] ?? '14,7,3,1'));
+            $sslDays = array_filter($sslDays, function($day) {
+                return ctype_digit($day) && (int)$day > 0 && (int)$day <= 365;
+            });
+
+            if (empty($sslDays)) {
+                $_SESSION['error'] = 'Invalid SSL reminder days format. Use comma-separated numbers between 1 and 365 (e.g., 14,7,3,1)';
+                $this->redirect('/settings#monitoring');
+                return;
+            }
+
+            $sslDays = array_unique(array_map('intval', $sslDays));
+            rsort($sslDays, SORT_NUMERIC);
+
+            // Reminder days after a domain expired (comma-separated, 1-365, empty for none)
+            $postExpiryInput = trim($_POST['post_expiry_notification_days'] ?? '');
+            $postExpiryDays = $postExpiryInput === '' ? [] : array_map('trim', explode(',', $postExpiryInput));
+            foreach ($postExpiryDays as $day) {
+                if (!ctype_digit($day) || (int)$day < 1 || (int)$day > 365) {
+                    $_SESSION['error'] = 'Invalid reminder days after expiry. Use comma-separated numbers between 1 and 365 (e.g., 7,14,30), or leave it empty';
+                    $this->redirect('/settings#monitoring');
+                    return;
+                }
+            }
+            $postExpiryDays = array_unique(array_map('intval', $postExpiryDays));
+            sort($postExpiryDays, SORT_NUMERIC);
+
+            // Certificate transparency sources for DNS deep scans, in the order they're listed
+            $ctSources = array_values(array_intersect(
+                array_keys(\App\Services\DnsService::CT_LOG_SOURCES),
+                (array)($_POST['ct_log_sources'] ?? [])
+            ));
+
             // Save settings
             $this->settingModel->setValue('notification_days_before', $notificationDays);
+            $this->settingModel->setValue('post_expiry_notification_days', implode(',', $postExpiryDays));
             $this->settingModel->setValue('check_interval_hours', $checkInterval);
             $this->settingModel->updateNotificationStatusTriggers($statusTriggers);
+            $this->settingModel->setValue('ssl_notification_days', implode(',', $sslDays));
+            $this->settingModel->setValue('ssl_monitoring_new_domains', isset($_POST['ssl_monitoring_new_domains']) ? '1' : '0');
+            $this->settingModel->setValue('ct_log_sources', implode(',', $ctSources));
+
+            // The saved key is never sent to the page: a blank field keeps it
+            $certSpotterApiKey = trim($_POST['certspotter_api_key'] ?? '');
+            if (!empty($_POST['certspotter_api_key_remove'])) {
+                $this->settingModel->setCertSpotterApiKey('');
+            } elseif ($certSpotterApiKey !== '') {
+                $this->settingModel->setCertSpotterApiKey($certSpotterApiKey);
+            }
 
             $_SESSION['success'] = 'Settings updated successfully';
             $this->redirect('/settings#monitoring');

@@ -77,6 +77,85 @@ class Setting extends Model
     }
 
     /**
+     * Get the days after a domain expired to send a reminder, smallest first (empty for none)
+     */
+    public function getPostExpiryNotificationDays(): array
+    {
+        $value = (string)$this->getValue('post_expiry_notification_days', '7,14,30');
+        $days = array_filter(array_map('intval', explode(',', $value)), static fn(int $day): bool => $day > 0);
+        $days = array_values(array_unique($days));
+        sort($days, SORT_NUMERIC);
+
+        return $days;
+    }
+
+    /**
+     * Get SSL certificate reminder days, largest first
+     */
+    public function getSslNotificationDays(): array
+    {
+        $value = (string)$this->getValue('ssl_notification_days', '14,7,3,1');
+        $days = array_filter(array_map('intval', explode(',', $value)), static fn(int $day): bool => $day > 0);
+        $days = array_values(array_unique($days));
+        rsort($days, SORT_NUMERIC);
+
+        return $days ?: [14, 7, 3, 1];
+    }
+
+    /**
+     * Whether new domains start with SSL monitoring turned on
+     */
+    public function isSslMonitoringOnForNewDomains(): bool
+    {
+        return $this->getValue('ssl_monitoring_new_domains', '0') === '1';
+    }
+
+    /**
+     * Days left at which an SSL certificate counts as expiring soon (the first reminder day)
+     */
+    public function getSslExpiringSoonDays(): int
+    {
+        return max($this->getSslNotificationDays());
+    }
+
+    /**
+     * Certificate transparency sources a DNS deep scan asks, in order (keys of DnsService::CT_LOG_SOURCES)
+     */
+    public function getCtLogSources(): array
+    {
+        $ids = array_map('trim', explode(',', (string)$this->getValue('ct_log_sources', 'crtsh,certspotter')));
+        return array_values(array_intersect($ids, array_keys(\App\Services\DnsService::CT_LOG_SOURCES)));
+    }
+
+    /**
+     * Cert Spotter API key, decrypted ('' when none is saved)
+     */
+    public function getCertSpotterApiKey(): string
+    {
+        $stored = (string)$this->getValue('certspotter_api_key', '');
+        if ($stored === '') {
+            return '';
+        }
+
+        try {
+            return (new \Core\Encryption())->decrypt($stored);
+        } catch (\Exception $e) {
+            $this->logger->warning("Failed to decrypt certspotter_api_key", [
+                'error' => $e->getMessage()
+            ]);
+            return '';
+        }
+    }
+
+    /**
+     * Save the Cert Spotter API key encrypted ('' removes it)
+     */
+    public function setCertSpotterApiKey(string $apiKey): bool
+    {
+        return $this->setValue('certspotter_api_key', $apiKey === '' ? '' : (new \Core\Encryption())->encrypt($apiKey));
+    }
+
+    /**
      * Get check interval hours
      */
     public function getCheckIntervalHours(): int
@@ -122,7 +201,7 @@ class Setting extends Model
      */
     public function getAppVersion(): string
     {
-        return $this->getValue('app_version', '1.1.5');
+        return $this->getValue('app_version', '1.1.6');
     }
 
     /**
@@ -307,7 +386,7 @@ class Setting extends Model
      */
     public function getNotificationStatusTriggers(): array
     {
-        $value = $this->getValue('notification_status_triggers', 'available,registered,expired,redemption_period,pending_delete');
+        $value = $this->getValue('notification_status_triggers', 'available,registered,expired,redemption_period,pending_delete,renewed');
         return array_map('trim', explode(',', $value));
     }
 
@@ -316,7 +395,7 @@ class Setting extends Model
      */
     public function updateNotificationStatusTriggers(array $triggers): bool
     {
-        $validTriggers = ['available', 'registered', 'expired', 'redemption_period', 'pending_delete'];
+        $validTriggers = ['available', 'registered', 'expired', 'redemption_period', 'pending_delete', 'renewed'];
         $triggers = array_intersect($triggers, $validTriggers);
         $value = implode(',', $triggers);
         return $this->setValue('notification_status_triggers', $value);

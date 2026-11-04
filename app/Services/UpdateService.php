@@ -833,12 +833,14 @@ class UpdateService
      */
     private function findBinary(string $name): ?string
     {
-        // Check PATH first
+        // Check PATH first. which/where only list executables, so a path that open_basedir
+        // hides from PHP is still used: exec() is not limited by open_basedir.
         $command = PHP_OS_FAMILY === 'Windows' ? "where {$name} 2>NUL" : "which {$name} 2>/dev/null";
         $output = [];
         @exec($command, $output);
-        if (!empty($output[0]) && is_executable(trim($output[0]))) {
-            return trim($output[0]);
+        $found = trim($output[0] ?? '');
+        if ($found !== '' && (!$this->isPathAllowed($found) || @is_executable($found))) {
+            return $found;
         }
 
         // Common locations on Linux/cPanel hosts
@@ -850,12 +852,32 @@ class UpdateService
             "/usr/sbin/{$name}",
         ];
         foreach ($commonPaths as $path) {
-            if (file_exists($path) && is_executable($path)) {
+            if ($this->isPathAllowed($path) && @is_executable($path)) {
                 return $path;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Whether open_basedir lets PHP look at a path. Checking a file outside it raises a warning,
+     * which stops the update (#73).
+     */
+    private function isPathAllowed(string $path): bool
+    {
+        $baseDirs = (string)ini_get('open_basedir');
+        if ($baseDirs === '') {
+            return true;
+        }
+
+        foreach (explode(PATH_SEPARATOR, $baseDirs) as $baseDir) {
+            if ($baseDir !== '' && str_starts_with($path, $baseDir)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // ========================================================================
