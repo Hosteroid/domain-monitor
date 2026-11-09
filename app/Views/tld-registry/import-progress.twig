@@ -214,7 +214,12 @@ function checkProgress() {
         return;
     }
 
-    fetch(`/tld-registry/api/import-progress?log_id=${logId}`)
+    // Each call runs the next batch of the import, so it is a POST with the page's security token
+    const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+    fetch(`/tld-registry/api/import-progress?log_id=${logId}`, {
+        method: 'POST',
+        body: new URLSearchParams({ csrf_token: tokenMeta ? tokenMeta.content : '' })
+    })
         .then(response => {
             const contentType = response.headers.get('content-type');
             if (!contentType || !contentType.includes('application/json')) {

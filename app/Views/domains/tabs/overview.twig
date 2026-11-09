@@ -1,5 +1,7 @@
 <!-- OVERVIEW TAB CONTENT -->
 
+{% include 'partials/lookup-note.twig' %}
+
 <!-- Main 2-Column Layout -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
     <!-- LEFT COLUMN -->
@@ -45,7 +47,7 @@
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-500 dark:text-slate-400">Created:</span>
-                        <span class="text-gray-900 dark:text-white">{% if whoisData.creation_date is defined %}{{ whoisData.creation_date|date('M d, Y') }}{% else %}-{% endif %}</span>
+                        <span class="text-gray-900 dark:text-white">{% if whoisData.creation_date is defined and whoisData.creation_date %}{{ whoisData.creation_date|date('M d, Y') }}{% else %}-{% endif %}</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-500 dark:text-slate-400">Last Updated:</span>

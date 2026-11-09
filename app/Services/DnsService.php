@@ -152,22 +152,30 @@ class DnsService
      * Standard DNS lookup: root domain + resolve targets + special TXT.
      * No subdomain brute force, no certificate logs. Like running nslookup/dig.
      * Used by Discover > Quick Scan.
+     *
+     * @param array $existingHosts Hosts already saved for the domain. They are asked again: what a scan
+     *                             returns replaces the domain's looked-up records, so a host left out
+     *                             here would lose its records.
      */
-    public function quickScan(string $domain): array
+    public function quickScan(string $domain, array $existingHosts = []): array
     {
-        $this->logger->info("DNS quick scan started", ['domain' => $domain]);
+        $this->logger->info("DNS quick scan started", ['domain' => $domain, 'known_hosts' => count($existingHosts)]);
 
         [$records, $seen] = $this->queryRootDomain($domain);
         $wildcard = $this->probeWildcard($domain);
         $this->mergeRecords($wildcard, $records, $seen);
 
-        // Add subdomains found as NS/MX/CNAME/SRV targets
-        $targetSubs = $this->extractTargetSubdomains($domain, $records);
-        foreach ($targetSubs as $sub) {
+        // Subdomains found as NS/MX/CNAME/SRV targets, and the known hosts ("*" is listed from the wildcard probe)
+        $subs = array_diff(
+            array_unique(array_merge($this->extractTargetSubdomains($domain, $records), $existingHosts)),
+            ['*', '@']
+        );
+        foreach ($subs as $sub) {
             $this->collectHost($sub, $domain, $wildcard, $records, $seen);
         }
 
-        foreach (self::SPECIAL_TXT_SUBDOMAINS as $sub) {
+        // The hosts above already covered these when they exist
+        foreach (array_diff(self::SPECIAL_TXT_SUBDOMAINS, $subs) as $sub) {
             $this->collectHost($sub, $domain, $wildcard, $records, $seen, [DNS_TXT => 'TXT']);
         }
 
@@ -189,10 +197,14 @@ class DnsService
      * Used by Discover > Deep Scan and the discover_dns.php script.
      *
      * @param string        $domain          The domain to scan
-     * @param array         $extraSubdomains Additional candidates (e.g. from certificate logs or previous scans)
+     * @param array         $extraSubdomains Additional candidates (e.g. from certificate logs)
      * @param callable|null $onProgress      Optional callback for progress messages: fn(string $msg)
+     * @param array         $knownHosts      Hosts already saved for the domain. They are asked for their
+     *                                       records without the existence probe, which only looks for A,
+     *                                       AAAA and CNAME: a host with TXT or SRV records only would
+     *                                       fail it and lose its records.
      */
-    public function lookup(string $domain, array $extraSubdomains = [], ?callable $onProgress = null): array
+    public function lookup(string $domain, array $extraSubdomains = [], ?callable $onProgress = null, array $knownHosts = []): array
     {
         $log = $onProgress ?? function (string $msg) {};
 
@@ -222,6 +234,10 @@ class DnsService
             $log("No wildcard detected");
         }
 
+        // Known hosts skip the probe ("*" is listed from the wildcard probe)
+        $knownHosts = array_values(array_diff(array_unique($knownHosts), ['*', '@']));
+        $candidates = array_values(array_diff($candidates, $knownHosts));
+
         // Probe subdomains — fast checkdnsrr existence test
         $total = count($candidates);
         $log("Probing {$total} subdomain candidate(s)...");
@@ -243,8 +259,11 @@ class DnsService
         if (!empty($discovered)) {
             $log("Querying " . count($discovered) . " discovered subdomain(s)...");
         }
+        if (!empty($knownHosts)) {
+            $log("Querying " . count($knownHosts) . " known host(s)...");
+        }
         $wildcardHosts = 0;
-        foreach ($discovered as $sub) {
+        foreach (array_merge($knownHosts, $discovered) as $sub) {
             if (!$this->collectHost($sub, $domain, $wildcard, $records, $seen)) {
                 $wildcardHosts++;
             }
@@ -576,14 +595,22 @@ class DnsService
             if (empty($records[$type])) {
                 continue;
             }
-            usort($records[$type], function ($a, $b) {
-                if ($a['host'] === '@' && $b['host'] !== '@') return -1;
-                if ($b['host'] === '@' && $a['host'] !== '@') return 1;
-                $hostCmp = strcmp($a['host'], $b['host']);
-                if ($hostCmp !== 0) return $hostCmp;
-                return ($a['priority'] ?? 0) <=> ($b['priority'] ?? 0);
-            });
+            usort($records[$type], [self::class, 'compareByHost']);
         }
+    }
+
+    /**
+     * Order two records: root (@) first, then by host, then by priority
+     */
+    private static function compareByHost(array $a, array $b): int
+    {
+        $hostA = (string)($a['host'] ?? '@');
+        $hostB = (string)($b['host'] ?? '@');
+        if ($hostA === '@' && $hostB !== '@') return -1;
+        if ($hostB === '@' && $hostA !== '@') return 1;
+        $hostCmp = strcmp($hostA, $hostB);
+        if ($hostCmp !== 0) return $hostCmp;
+        return ($a['priority'] ?? 0) <=> ($b['priority'] ?? 0);
     }
 
     // ========================================================================
@@ -598,6 +625,8 @@ class DnsService
      *   www  IN  CNAME  example.com.
      *   mail  IN  MX  10  mx.example.com.
      *   @ 3600 IN TXT "v=spf1 ..."
+     *   @  IN  SOA  ns1.example.com. admin.example.com. (
+     *               2024010101 7200 900 1209600 300 )
      *
      * @return array Grouped records ['A' => [...], 'MX' => [...], ...]
      */
@@ -614,7 +643,10 @@ class DnsService
         $lastHost = '@';
         $defaultTtl = 3600;
 
-        foreach ($lines as $line) {
+        for ($i = 0, $lineCount = count($lines); $i < $lineCount; $i++) {
+            $line = $lines[$i];
+            // A line that starts with whitespace leaves its name out and takes the previous line's
+            $indented = $line !== '' && ($line[0] === ' ' || $line[0] === "\t");
             $line = trim($line);
 
             if ($line === '' || $line[0] === ';') {
@@ -632,8 +664,7 @@ class DnsService
                 continue;
             }
 
-            // Strip inline comments (not inside quotes)
-            $line = preg_replace('/\s;[^"]*$/', '', $line);
+            $line = self::stripZoneComment($line);
 
             // Standard BIND format: [name] [ttl] [class] type rdata
             $tokens = preg_split('/\s+/', $line);
@@ -641,47 +672,22 @@ class DnsService
                 continue;
             }
 
-            $host = null;
-            $ttl  = $defaultTtl;
-            $type = null;
-            $rdataStart = 0;
-
-            $idx = 0;
-
-            // First token: hostname, or continuation (starts with a type or digit)
-            if (!ctype_digit($tokens[0]) && !in_array(strtoupper($tokens[0]), $supportedTypes)
-                && strtoupper($tokens[0]) !== 'IN') {
-                $host = $tokens[0];
-                $idx = 1;
-            }
-
-            // Optional TTL (numeric)
-            if (isset($tokens[$idx]) && ctype_digit($tokens[$idx])) {
-                $ttl = (int)$tokens[$idx];
-                $idx++;
-            }
-
-            // Optional class (IN)
-            if (isset($tokens[$idx]) && strtoupper($tokens[$idx]) === 'IN') {
-                $idx++;
-            }
-
-            // Record type
-            if (!isset($tokens[$idx])) {
-                continue;
-            }
-            $type = strtoupper($tokens[$idx]);
-            $idx++;
-
-            if (!in_array($type, $supportedTypes)) {
+            $fields = self::readZoneLine($tokens, $indented, $supportedTypes);
+            if ($fields === null) {
                 continue;
             }
 
-            $rdataStart = $idx;
-            $rdata = array_slice($tokens, $rdataStart);
-            if (empty($rdata)) {
+            [$host, $ttl, $type, $rdataStart] = $fields;
+            $ttl ??= $defaultTtl;
+
+            // The record's data as written: splitting it on whitespace loses the spaces inside quotes.
+            // In parentheses it goes on over the next lines, which are then read with this one.
+            $data = preg_split('/\s+/', $line, $rdataStart + 1)[$rdataStart] ?? '';
+            [$data, $i] = self::readZoneGroup($type, $data, $lines, $i);
+            if ($data === '') {
                 continue;
             }
+            $rdata = preg_split('/\s+/', $data);
 
             // Resolve host
             if ($host === null) {
@@ -730,7 +736,8 @@ class DnsService
                     break;
                 case 'MX':
                     $priority = (int)($rdata[0] ?? 0);
-                    $target = rtrim($rdata[1] ?? '', '.');
+                    // "." alone is the root, as in "MX 0 ." (the host takes no mail): it stays as it is
+                    $target = ($rdata[1] ?? '') === '.' ? '.' : rtrim($rdata[1] ?? '', '.');
                     $parsed = [
                         'host' => $host, 'value' => $target, 'ttl' => $ttl,
                         'priority' => $priority, 'is_cloudflare' => false,
@@ -745,8 +752,7 @@ class DnsService
                     ];
                     break;
                 case 'TXT':
-                    $txtValue = implode(' ', $rdata);
-                    $txtValue = trim($txtValue, '"');
+                    $txtValue = self::parseZoneText($data);
                     $parsed = [
                         'host' => $host, 'value' => $txtValue, 'ttl' => $ttl,
                         'is_cloudflare' => false,
@@ -758,7 +764,7 @@ class DnsService
                         $priority = (int)$rdata[0];
                         $weight = (int)$rdata[1];
                         $port = (int)$rdata[2];
-                        $target = rtrim($rdata[3], '.');
+                        $target = $rdata[3] === '.' ? '.' : rtrim($rdata[3], '.');
                         $parsed = [
                             'host' => $host, 'value' => $target, 'ttl' => $ttl,
                             'priority' => $priority, 'is_cloudflare' => false,
@@ -796,6 +802,426 @@ class DnsService
 
         $this->sortRecords($records);
         return $records;
+    }
+
+    /**
+     * Find the name, TTL and type on a zone file line: "[name] [ttl] [class] type data".
+     *
+     * A line may leave its name out and take the previous line's. The standard marks that by
+     * starting the line with whitespace, but pasted zone text is indented or not at random, so the
+     * line is read both ways first, with and without a name, and each reading has to find a record
+     * type in its place. When both do, the one whose data fits its type is taken:
+     * "mx IN A 192.0.2.1" is an address for the host mx, not a mail server called IN. Only when
+     * that leaves both ("123 IN A 192.0.2.1": a host named 123, or a TTL of 123) does the
+     * indentation decide, as the standard says.
+     *
+     * @param string[] $tokens   The line split on whitespace
+     * @param bool     $indented Whether the line started with whitespace
+     * @param string[] $types    Record types the importer reads
+     * @return array{0: ?string, 1: ?int, 2: string, 3: int}|null Name (null when left out), TTL (null
+     *         when left out), type and the index of the first data token; null when there is no record
+     */
+    private static function readZoneLine(array $tokens, bool $indented, array $types): ?array
+    {
+        $named = self::readZoneFields($tokens, 1, $types);
+        $unnamed = self::readZoneFields($tokens, 0, $types);
+
+        if ($named !== null && $unnamed !== null) {
+            $namedFits = self::zoneDataFits($named[1], array_slice($tokens, $named[2]), $types);
+            $unnamedFits = self::zoneDataFits($unnamed[1], array_slice($tokens, $unnamed[2]), $types);
+
+            // A line that starts with "IN" was always read as starting with its class
+            $hasName = $namedFits !== $unnamedFits
+                ? $namedFits
+                : !$indented && strtoupper($tokens[0]) !== 'IN';
+        } else {
+            $hasName = $named !== null;
+        }
+
+        $fields = $hasName ? $named : $unnamed;
+
+        return $fields === null ? null : [$hasName ? $tokens[0] : null, ...$fields];
+    }
+
+    /**
+     * Read "[ttl] [class] type data" from one position of a line.
+     *
+     * @return array{0: ?int, 1: string, 2: int}|null TTL (null when left out), type and the index of
+     *         the first data token; null when no record type the importer reads is there, or no data
+     */
+    private static function readZoneFields(array $tokens, int $idx, array $types): ?array
+    {
+        $ttl = null;
+        if (isset($tokens[$idx]) && ctype_digit($tokens[$idx])) {
+            $ttl = (int)$tokens[$idx];
+            $idx++;
+        }
+
+        if (isset($tokens[$idx]) && strtoupper($tokens[$idx]) === 'IN') {
+            $idx++;
+        }
+
+        $type = strtoupper($tokens[$idx] ?? '');
+        if (!in_array($type, $types, true) || !isset($tokens[$idx + 1])) {
+            return null;
+        }
+
+        return [$ttl, $type, $idx + 1];
+    }
+
+    /**
+     * Whether a record's data looks like what its type holds. It only helps choose between two
+     * readings of a line: a record is never left out because its data looks wrong.
+     */
+    private static function zoneDataFits(string $type, array $rdata, array $types): bool
+    {
+        $count = count($rdata);
+        $isNumber = static fn(int $i): bool => isset($rdata[$i]) && ctype_digit($rdata[$i]);
+
+        switch ($type) {
+            case 'A':
+                return $count === 1 && filter_var($rdata[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false;
+            case 'AAAA':
+                return $count === 1 && filter_var($rdata[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false;
+            case 'NS':
+            case 'CNAME':
+                return $count === 1;
+            case 'MX':
+                return $count === 2 && $isNumber(0);
+            case 'SRV':
+                return $count === 4 && $isNumber(0) && $isNumber(1) && $isNumber(2);
+            case 'CAA':
+                return $count >= 3 && $isNumber(0);
+            case 'SOA':
+                return $count >= 7 && $isNumber(2) && $isNumber(3) && $isNumber(4) && $isNumber(5) && $isNumber(6);
+            case 'TXT':
+                // Text can be anything, but it hardly starts with what a line has before its type
+                $first = strtoupper($rdata[0]);
+                return $first !== 'IN' && !in_array($first, $types, true);
+        }
+
+        return false;
+    }
+
+    /** Lines a record may go on for inside parentheses: an SOA takes six, a long DKIM key a few more */
+    private const ZONE_GROUP_MAX_LINES = 30;
+
+    /**
+     * Put a record that goes on over several lines back together. Inside parentheses a line break
+     * does not end the record: BIND and hosting panels write SOA records that way, and opendkim
+     * its DKIM keys.
+     *
+     * Parentheses inside quotes are text. In a TXT record they only group when the data starts
+     * with one, so text typed without quotes keeps its parentheses. Parentheses that are never
+     * closed are not a group: the line is then read on its own, as it always was.
+     *
+     * @param string   $data  The record's data on its first line
+     * @param string[] $lines The file's lines
+     * @param int      $i     Index of the line the record starts on
+     * @return array{0: string, 1: int} The data without its grouping parentheses, and the index of
+     *         the last line it took
+     */
+    private static function readZoneGroup(string $type, string $data, array $lines, int $i): array
+    {
+        if (!str_contains($data, '(') || ($type === 'TXT' && $data[0] !== '(')) {
+            return [$data, $i];
+        }
+
+        $joined = '';
+        $depth = 0;
+        $last = min(count($lines) - 1, $i + self::ZONE_GROUP_MAX_LINES);
+
+        for ($j = $i; $j <= $last; $j++) {
+            // A comment ends with its line, so it is cut off before the lines are put together
+            $part = $j === $i ? $data : self::stripZoneComment(trim($lines[$j]));
+
+            $inQuotes = false;
+            for ($k = 0, $length = strlen($part); $k < $length; $k++) {
+                $char = $part[$k];
+                if ($char === '\\') {
+                    $k++; // the next character is escaped
+                } elseif ($char === '"') {
+                    $inQuotes = !$inQuotes;
+                } elseif (!$inQuotes && ($char === '(' || $char === ')')) {
+                    $depth += $char === '(' ? 1 : -1;
+                    $part[$k] = ' ';
+                }
+            }
+
+            $joined .= ' ' . $part;
+            if ($depth <= 0) {
+                return [trim($joined), $j];
+            }
+        }
+
+        return [$data, $i];
+    }
+
+    /**
+     * Cut the comment off a zone file line: from a ";" that follows whitespace and is not inside
+     * quotes. What comes after it may hold quotes of its own, as in Cloudflare's
+     * `; cf_tags=team:"web"`. A ";" right after other text stays, so an unquoted
+     * "v=DMARC1; p=none" is still read whole.
+     */
+    private static function stripZoneComment(string $line): string
+    {
+        $inQuotes = false;
+        for ($i = 0, $length = strlen($line); $i < $length; $i++) {
+            $char = $line[$i];
+            if ($char === '\\') {
+                $i++; // the next character is escaped
+            } elseif ($char === '"') {
+                $inQuotes = !$inQuotes;
+            } elseif ($char === ';' && !$inQuotes && ($i === 0 || ctype_space($line[$i - 1]))) {
+                return rtrim(substr($line, 0, $i));
+            }
+        }
+
+        return $line;
+    }
+
+    /**
+     * Read the text of a TXT record from a zone file line. A long text is written as several quoted
+     * strings ("part one" "part two"), which are one text put together, with \" \\ and \DDD escapes.
+     * Text without quotes is taken as written.
+     */
+    private static function parseZoneText(string $rdata): string
+    {
+        $rdata = trim($rdata);
+        if ($rdata === '' || $rdata[0] !== '"') {
+            return trim(preg_replace('/\s+/', ' ', $rdata), '"');
+        }
+
+        $text = '';
+        $length = strlen($rdata);
+        $i = 0;
+        while ($i < $length) {
+            if ($rdata[$i] !== '"') {
+                $i++; // whitespace between the strings
+                continue;
+            }
+
+            for ($i++; $i < $length && $rdata[$i] !== '"'; $i++) {
+                if ($rdata[$i] !== '\\' || $i + 1 >= $length) {
+                    $text .= $rdata[$i];
+                } elseif (preg_match('/\G\d{3}/', $rdata, $code, 0, $i + 1)) {
+                    $text .= chr((int)$code[0]);
+                    $i += 3;
+                } else {
+                    $text .= $rdata[++$i];
+                }
+            }
+            $i++; // the closing quote
+        }
+
+        return $text;
+    }
+
+    // ========================================================================
+    // BIND ZONE FILE WRITER
+    // ========================================================================
+
+    /** Record types in the order a zone file lists them */
+    private const ZONE_TYPE_ORDER = ['SOA', 'NS', 'A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'CAA'];
+
+    /**
+     * Write records as a BIND zone file: what parseBindZone() reads, the other way round.
+     *
+     * Every name is written in full with a trailing dot and every record on one line, which
+     * parseBindZone(), BIND and DNS providers' importers all read the same way. Nothing follows a
+     * record on its line: Cloudflare imports a comment there as that record's comment.
+     *
+     * @param string   $domain  The zone's domain name
+     * @param array    $records Records by type, as DnsRecord::getPreviousSnapshot() returns them
+     * @param string[] $notes   Lines for the comment at the top, e.g. when the records are from
+     */
+    public function buildBindZone(string $domain, array $records, array $notes = []): string
+    {
+        $domain = rtrim(strtolower(trim($domain)), '.');
+        $body = [];
+        $skipped = 0;
+        $proxied = 0;
+
+        foreach (self::ZONE_TYPE_ORDER as $type) {
+            $typeRecords = $records[$type] ?? [];
+            usort($typeRecords, [self::class, 'compareByHost']);
+
+            $lines = [];
+            foreach ($typeRecords as $record) {
+                $owner = self::zoneOwner((string)($record['host'] ?? '@'), $domain);
+                $rdata = $owner === null ? null : self::zoneRdata($type, $record);
+                if ($rdata === null) {
+                    $skipped++;
+                    continue;
+                }
+
+                $discovered = ($record['source'] ?? 'discovered') === 'discovered';
+                // A looked-up TTL is what the resolver's cache had left of it, not the zone's own
+                $ttl = !$discovered && (int)($record['ttl'] ?? 0) > 0 ? (int)$record['ttl'] . "\t" : '';
+                $lines[] = "{$owner}\t{$ttl}IN\t{$type}\t{$rdata}";
+                $proxied += !empty($record['is_cloudflare']) ? 1 : 0;
+            }
+
+            if (!empty($lines)) {
+                array_push($body, '', "; {$type} records", ...$lines);
+            }
+        }
+
+        $header = ["; Zone file for {$domain}"];
+        foreach ($notes as $note) {
+            $header[] = '; ' . trim(preg_replace('/[\x00-\x1F\x7F]+/', ' ', (string)$note));
+        }
+        $header[] = ';';
+        $header[] = '; Written by Domain Monitor from DNS lookups, not from your DNS provider: records the';
+        $header[] = '; lookups never found are not in it. Looked-up records are written without a TTL of';
+        $header[] = '; their own, so the $TTL below applies to them.';
+        if ($proxied > 0) {
+            $header[] = "; {$proxied} address record(s) point to Cloudflare's proxy, not to your own server.";
+        }
+        if ($skipped > 0) {
+            $header[] = "; {$skipped} record(s) could not be written as a zone file line and were left out.";
+        }
+        $header[] = "\$ORIGIN {$domain}.";
+        $header[] = '$TTL 3600';
+
+        return implode("\n", array_merge($header, $body)) . "\n";
+    }
+
+    /**
+     * A record's host as a full name with a trailing dot, null when it can't be a name in a zone file.
+     * Written in full so no reader has to tell a host from a record type or a TTL (hosts "mx", "123").
+     */
+    private static function zoneOwner(string $host, string $domain): ?string
+    {
+        $host = rtrim(trim($host), '.');
+        if ($host === '@' || $host === '') {
+            return "{$domain}.";
+        }
+
+        return self::isZoneName($host) ? "{$host}.{$domain}." : null;
+    }
+
+    /**
+     * A record's target (CNAME, MX, NS, SRV, SOA) as a zone file writes it, null when it is not a name.
+     * A looked-up name is always complete and gets its trailing dot. One typed or imported without
+     * a dot in it may be meant inside the zone ("mail" for mail.example.com), which is how a zone
+     * file reads it as written.
+     */
+    private static function zoneTarget(string $target, bool $complete): ?string
+    {
+        $target = trim($target);
+        if ($target === '.') {
+            return '.'; // the root: "MX 0 ." says the host takes no mail, "SRV 0 0 0 ." that there is no such service
+        }
+
+        $name = rtrim($target, '.');
+        if ($name === '' || !self::isZoneName($name)) {
+            return null;
+        }
+
+        return $complete || str_contains($name, '.') || str_ends_with($target, '.') ? "{$name}." : $name;
+    }
+
+    /**
+     * Whether a name can be written into a zone file as it is: no empty labels, and none of the
+     * characters a zone file gives a meaning to
+     */
+    private static function isZoneName(string $name): bool
+    {
+        return !str_contains($name, '..') && !str_starts_with($name, '.') && preg_match('/^[^\s"();\\\\@$\x00-\x1F\x7F]+$/', $name) === 1;
+    }
+
+    /**
+     * What follows the type on a record's zone file line, null when the record can't be written
+     */
+    private static function zoneRdata(string $type, array $record): ?string
+    {
+        $value = trim((string)($record['value'] ?? ''));
+        $discovered = ($record['source'] ?? 'discovered') === 'discovered';
+        $priority = (int)($record['priority'] ?? 0);
+
+        switch ($type) {
+            case 'A':
+                return filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? $value : null;
+
+            case 'AAAA':
+                return filter_var($value, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ? $value : null;
+
+            case 'NS':
+            case 'CNAME':
+                return self::zoneTarget($value, $discovered);
+
+            case 'MX':
+                $target = self::zoneTarget($value, $discovered);
+                return $target === null ? null : "{$priority} {$target}";
+
+            case 'TXT':
+                return self::zoneText((string)($record['value'] ?? ''));
+
+            case 'SRV':
+                $weight = $record['weight'] ?? null;
+                $port = $record['port'] ?? null;
+                if ($weight === null || $port === null) {
+                    // Added by hand, where the value is typed as "weight port target"
+                    if (!preg_match('/^(\d+)\s+(\d+)\s+(\S+)$/', $value, $typed)) {
+                        return null;
+                    }
+                    [, $weight, $port, $value] = $typed;
+                }
+                $target = self::zoneTarget($value, $discovered);
+                return $target === null ? null : "{$priority} " . (int)$weight . ' ' . (int)$port . " {$target}";
+
+            case 'CAA':
+                // Stored as: flags tag "value"
+                if (!preg_match('/^(\d+)\s+([A-Za-z0-9]+)\s+(.+)$/s', $value, $caa)) {
+                    return null;
+                }
+                return (int)$caa[1] . " {$caa[2]} " . self::zoneText(trim($caa[3], '"'), false);
+
+            case 'SOA':
+                $mname = self::zoneTarget($value, true);
+                $rname = self::zoneTarget((string)($record['rname'] ?? ''), true);
+                $numbers = [];
+                foreach (['serial', 'refresh', 'retry', 'expire', 'minimum'] as $field) {
+                    if (!isset($record[$field])) {
+                        return null; // added by hand: only its primary nameserver is known
+                    }
+                    $numbers[] = (int)$record[$field];
+                }
+                return $mname === null || $rname === null ? null : "{$mname} {$rname} " . implode(' ', $numbers);
+        }
+
+        return null;
+    }
+
+    /**
+     * Text as a zone file writes it: in quotes, with quotes, backslashes and control characters
+     * escaped. DNS holds text in strings of up to 255 bytes, so a longer one (a DKIM key) is
+     * written as several strings, which readers put back together.
+     */
+    private static function zoneText(string $text, bool $split = true): string
+    {
+        $utf8 = mb_check_encoding($text, 'UTF-8');
+
+        $chunks = [];
+        for ($offset = 0, $length = strlen($text); $offset < $length; $offset += strlen($chunk)) {
+            // mb_strcut() cuts between characters, never inside one
+            $chunk = !$split ? substr($text, $offset) : ($utf8 ? mb_strcut($text, $offset, 255, 'UTF-8') : substr($text, $offset, 255));
+            if ($chunk === '') {
+                break;
+            }
+            $chunks[] = $chunk;
+        }
+
+        // Bytes that are not valid UTF-8 are escaped too, so the file itself always is
+        $escape = '/[\x00-\x1F\x7F"\\\\' . ($utf8 ? '' : '\x80-\xFF') . ']/';
+        $quote = static fn(string $chunk): string => '"' . preg_replace_callback(
+            $escape,
+            static fn(array $m): string => $m[0] === '"' || $m[0] === '\\' ? '\\' . $m[0] : sprintf('\\%03d', ord($m[0])),
+            $chunk
+        ) . '"';
+
+        return empty($chunks) ? '""' : implode(' ', array_map($quote, $chunks));
     }
 
     // ========================================================================

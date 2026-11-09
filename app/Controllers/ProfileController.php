@@ -288,6 +288,8 @@ class ProfileController extends Controller
      */
     public function resendVerification()
     {
+        $this->verifyCsrf('/profile');
+
         $userId = Auth::id();
         $user = $this->userModel->find($userId);
 

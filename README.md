@@ -145,6 +145,8 @@ Alternatively, use the CLI:
 php cron/import_tld_registry.php
 ```
 
+Some registries (.ch, .li, .co.za and others) run servers IANA doesn't list. Add them with **Create TLD** or **Import**, see [Lookup Servers](https://github.com/Hosteroid/domain-monitor/wiki/Lookup-Servers).
+
 ### 7. Configure Web Server
 
 #### Apache
@@ -344,6 +346,8 @@ A DNS **Deep Scan** looks up subdomains in certificate transparency logs as well
 
 When a zone has a wildcard record, every name answers, so each refresh and scan probes a random name: subdomains that only get the wildcard's answers are not listed, the wildcard itself is listed as host `*`, and the DNS tab shows a **Wildcard DNS** badge. Subdomains with records of their own, and records you add or import, are kept.
 
+**DNS History** saves a domain's records before every DNS change, so a lost record can be looked up later. Entries are listed on the DNS tab and the **DNS History** page, can be exported as a zone file, and are kept 90 days by default (**Settings → Monitoring → DNS History**).
+
 ### Configure Settings
 
 All system settings are managed through the **Settings** page (`/settings`) in your browser:
@@ -474,6 +478,7 @@ Domain Monitor/
 
 ### WHOIS Lookup Fails
 
+- A domain showing **Error** tells you why on its page; missing WHOIS/RDAP servers can be added under **TLD Registry** ([Lookup Servers](https://github.com/Hosteroid/domain-monitor/wiki/Lookup-Servers))
 - Some domain TLDs may not be supported
 - Check if the domain is valid and registered
 - Verify your server can make outbound connections

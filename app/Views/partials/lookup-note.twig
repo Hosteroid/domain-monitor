@@ -1,0 +1,20 @@
+{# Why the last lookup holds nothing about the domain: WhoisService saves the reason as lookup_note #}
+{% if whoisData.lookup_note is defined and whoisData.lookup_note %}
+<div class="mb-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-4">
+    <div class="flex items-start">
+        <i class="fas fa-exclamation-triangle text-amber-500 dark:text-amber-400 mt-0.5 mr-3" style="font-size: 18px;"></i>
+        <div>
+            <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">Registration data could not be read</h3>
+            <p class="text-xs text-amber-700 dark:text-amber-400 mt-1 break-words">{{ whoisData.lookup_note }}</p>
+            <p class="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                If the registry runs a WHOIS or RDAP server that IANA does not list, an administrator can add it under
+                <a href="/tld-registry" class="font-medium underline hover:text-amber-900 dark:hover:text-amber-200">TLD Registry</a>:
+                the <a href="https://github.com/Hosteroid/domain-monitor/wiki/Lookup-Servers" target="_blank" rel="noopener noreferrer" class="font-medium underline hover:text-amber-900 dark:hover:text-amber-200">wiki</a>
+                lists the known ones. Until then, set the expiration date by hand in
+                <a href="/domains/{{ domain.id }}/edit" class="font-medium underline hover:text-amber-900 dark:hover:text-amber-200">Edit</a>
+                to keep getting expiry reminders.
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -226,10 +226,11 @@
                                                 <p class="text-xs text-amber-700 dark:text-amber-300 mt-0.5">Verify your email to unlock all features</p>
                                             </div>
                                         </div>
-                                        <a href="/profile/resend-verification" class="ml-3 inline-flex items-center px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded-lg transition-colors font-medium whitespace-nowrap">
+                                        {# Belongs to the form after the profile form: a form can't sit inside another one #}
+                                        <button type="submit" form="resendVerificationForm" class="ml-3 inline-flex items-center px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs rounded-lg transition-colors font-medium whitespace-nowrap">
                                             <i class="fas fa-paper-plane mr-1.5"></i>
                                             Resend
-                                        </a>
+                                        </button>
                                     </div>
                                 </div>
                             {% endif %}
@@ -276,6 +277,11 @@
                             Save Changes
                         </button>
                     </div>
+                </form>
+
+                <!-- The form of the "Resend" button above -->
+                <form id="resendVerificationForm" method="POST" action="/profile/resend-verification" class="hidden">
+                    {{ csrf_field() }}
                 </form>
             </div>
         </div>

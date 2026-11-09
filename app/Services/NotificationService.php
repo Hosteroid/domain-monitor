@@ -442,6 +442,13 @@ class NotificationService
 
         $triggers = (new \App\Models\Setting())->getNotificationStatusTriggers();
         $type = $this->getStatusChangeAlertType($oldStatus, $newStatus, $triggers, $renewed);
+
+        // A domain whose lookups could not be read until now was not just registered if its
+        // registration is older than its entry here (e.g. a registry read for the first time)
+        if ($type === 'domain_registered' && $oldStatus === 'error' && self::wasRegisteredBeforeAdded($domain)) {
+            $type = null;
+        }
+
         if ($type === null) {
             return $result;
         }
@@ -484,6 +491,21 @@ class NotificationService
         });
 
         return $result;
+    }
+
+    /**
+     * Whether the saved WHOIS data dates the domain's registration before the day it was added here.
+     * The dates must be more than a day apart, as a registry gives the date in its own time zone.
+     *
+     * @param array $domain Domain row after the WHOIS refresh
+     */
+    private static function wasRegisteredBeforeAdded(array $domain): bool
+    {
+        $whois = json_decode($domain['whois_data'] ?? '', true);
+        $registered = is_array($whois) && is_string($whois['creation_date'] ?? null) ? strtotime($whois['creation_date']) : false;
+        $added = strtotime((string)($domain['created_at'] ?? ''));
+
+        return $registered !== false && $added !== false && $registered < $added - 86400;
     }
 
     /**

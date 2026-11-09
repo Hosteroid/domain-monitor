@@ -62,14 +62,19 @@
         {% else %}
         <span class="text-gray-400 dark:text-slate-500"><i class="fas fa-envelope mr-1"></i>Email code unavailable</span>
         {% endif %}
-        <a href="/logout" class="text-gray-600 dark:text-slate-400 hover:text-gray-500 dark:hover:text-slate-300">
+        {# Belongs to the form after this one: a form can't sit inside another one #}
+        <button type="submit" form="logoutForm" class="text-gray-600 dark:text-slate-400 hover:text-gray-500 dark:hover:text-slate-300">
             <i class="fas fa-sign-out-alt mr-1"></i>Sign out instead
-        </a>
+        </button>
     </div>
 
     <div class="mt-6 pt-4 border-t border-gray-200 dark:border-slate-700 text-center">
         <p class="text-sm text-gray-600 dark:text-slate-400">Having trouble? You can also use a backup code or contact your administrator.</p>
     </div>
+</form>
+
+<form id="logoutForm" method="POST" action="/logout" class="hidden">
+    {{ csrf_field() }}
 </form>
 
 <script>

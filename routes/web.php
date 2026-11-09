@@ -4,6 +4,7 @@ use Core\Application;
 use Core\Auth;
 use App\Controllers\DashboardController;
 use App\Controllers\DomainController;
+use App\Controllers\DnsHistoryController;
 use App\Controllers\NotificationGroupController;
 use App\Controllers\AuthController;
 use App\Controllers\DebugController;
@@ -33,10 +34,11 @@ $router->post('/install/update', [InstallerController::class, 'runUpdate']);
 $router->get('/login', [AuthController::class, 'showLogin']);
 $router->post('/login', [AuthController::class, 'login']);
 $router->get('/logout', [AuthController::class, 'logout']);
+$router->post('/logout', [AuthController::class, 'logout']);
 $router->get('/register', [AuthController::class, 'showRegister']);
 $router->post('/register', [AuthController::class, 'register']);
 $router->get('/verify-email', [AuthController::class, 'showVerifyEmail']);
-$router->get('/resend-verification', [AuthController::class, 'resendVerification']);
+$router->post('/resend-verification', [AuthController::class, 'resendVerification']);
 $router->get('/forgot-password', [AuthController::class, 'showForgotPassword']);
 $router->post('/forgot-password', [AuthController::class, 'forgotPassword']);
 $router->get('/reset-password', [AuthController::class, 'showResetPassword']);
@@ -92,6 +94,7 @@ $router->post('/domains/{id}/dns-records', [DomainController::class, 'addDnsReco
 $router->post('/domains/{id}/dns-records/bulk-delete', [DomainController::class, 'bulkDeleteDnsRecords']);
 $router->post('/domains/{id}/dns-records/{recordId}/delete', [DomainController::class, 'deleteDnsRecord']);
 $router->post('/domains/{id}/dns-import', [DomainController::class, 'importDnsZone']);
+$router->get('/domains/{id}/dns-export', [DnsHistoryController::class, 'exportCurrent']);
 $router->post('/domains/{id}/ssl/add', [DomainController::class, 'addSslHost']);
 $router->post('/domains/{id}/ssl/refresh-all', [DomainController::class, 'refreshAllSsl']);
 $router->post('/domains/{id}/ssl/bulk-refresh', [DomainController::class, 'bulkRefreshSsl']);
@@ -100,6 +103,11 @@ $router->post('/domains/{id}/ssl/{certificateId}/refresh', [DomainController::cl
 $router->post('/domains/{id}/ssl/{certificateId}/delete', [DomainController::class, 'deleteSsl']);
 $router->post('/domains/{id}/refresh-all', [DomainController::class, 'refreshAll']);
 $router->post('/domains/{id}/delete', [DomainController::class, 'delete']);
+
+// DNS History
+$router->get('/dns-history', [DnsHistoryController::class, 'index']);
+$router->post('/dns-history/delete', [DnsHistoryController::class, 'delete']);
+$router->get('/dns-history/{id}/export', [DnsHistoryController::class, 'export']);
 
 // Notification Groups
 $router->get('/groups', [NotificationGroupController::class, 'index']);
@@ -131,11 +139,11 @@ $router->post('/tld-registry/import-rdap', [TldRegistryController::class, 'impor
 $router->post('/tld-registry/import-whois', [TldRegistryController::class, 'importWhois']);
 $router->post('/tld-registry/start-progressive-import', [TldRegistryController::class, 'startProgressiveImport']);
 $router->get('/tld-registry/import-progress/{log_id}', [TldRegistryController::class, 'importProgress']);
-$router->get('/tld-registry/api/import-progress', [TldRegistryController::class, 'apiGetImportProgress']);
+$router->post('/tld-registry/api/import-progress', [TldRegistryController::class, 'apiGetImportProgress']);
 $router->post('/tld-registry/bulk-delete', [TldRegistryController::class, 'bulkDelete']);
 $router->get('/tld-registry/check-updates', [TldRegistryController::class, 'checkUpdates']);
-$router->get('/tld-registry/{id}/toggle-active', [TldRegistryController::class, 'toggleActive']);
-$router->get('/tld-registry/{id}/refresh', [TldRegistryController::class, 'refresh']);
+$router->post('/tld-registry/{id}/toggle-active', [TldRegistryController::class, 'toggleActive']);
+$router->post('/tld-registry/{id}/refresh', [TldRegistryController::class, 'refresh']);
 $router->post('/tld-registry/{id}/update-whois-server', [TldRegistryController::class, 'updateWhoisServer']);
 $router->post('/tld-registry/{id}/update-rdap-servers', [TldRegistryController::class, 'updateRdapServers']);
 $router->get('/tld-registry/import-logs', [TldRegistryController::class, 'importLogs']);
@@ -166,7 +174,7 @@ $router->get('/profile', [ProfileController::class, 'index']);
 $router->post('/profile/update', [ProfileController::class, 'update']);
 $router->post('/profile/change-password', [ProfileController::class, 'changePassword']);
 $router->post('/profile/delete', [ProfileController::class, 'delete']);
-$router->get('/profile/resend-verification', [ProfileController::class, 'resendVerification']);
+$router->post('/profile/resend-verification', [ProfileController::class, 'resendVerification']);
 $router->post('/profile/logout-other-sessions', [ProfileController::class, 'logoutOtherSessions']);
 $router->post('/profile/logout-session/{sessionId}', [ProfileController::class, 'logoutSession']);
 $router->post('/profile/upload-avatar', [ProfileController::class, 'uploadAvatar']);
@@ -182,8 +190,8 @@ $router->post('/2fa/regenerate-backup-codes', [TwoFactorController::class, 'rege
 
 // Notifications
 $router->get('/notifications', [NotificationController::class, 'index']);
-$router->get('/notifications/{id}/mark-read', [NotificationController::class, 'markAsRead']);
-$router->get('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
+$router->post('/notifications/{id}/mark-read', [NotificationController::class, 'markAsRead']);
+$router->post('/notifications/mark-all-read', [NotificationController::class, 'markAllAsRead']);
 $router->post('/notifications/{id}/delete', [NotificationController::class, 'delete']);
 $router->post('/notifications/clear-all', [NotificationController::class, 'clearAll']);
 $router->get('/api/notifications/unread-count', [NotificationController::class, 'getUnreadCount']);

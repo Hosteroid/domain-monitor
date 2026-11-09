@@ -34,6 +34,13 @@ class UpdateController extends Controller
             return;
         }
 
+        // CSRF Protection: answered as JSON, since the page reads this response with fetch()
+        $token = $_POST['csrf_token'] ?? '';
+        if (!is_string($token) || !\Core\Csrf::validateToken($token)) {
+            $this->json(['error' => 'Security token validation failed. Please reload the page and try again.'], 403);
+            return;
+        }
+
         $forceCheck = isset($_POST['force']) && $_POST['force'] === '1';
         $result = $this->updateService->checkForUpdate($forceCheck);
 

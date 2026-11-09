@@ -12,6 +12,7 @@
     <meta name="description" content="Domain Monitor - Track and monitor your domain expiration dates">
     <meta name="author" content="Domain Monitor">
     <meta name="robots" content="noindex, nofollow">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     
     {# Title #}
     <title>{{ title|default('Domain Monitor') }} - {{ appName }}</title>

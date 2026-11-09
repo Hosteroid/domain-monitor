@@ -229,8 +229,9 @@ function toggleRawWhois() {
 function toggleDnsHistory() {
     const content = document.getElementById('dns-history-content');
     const icon = document.getElementById('dns-history-icon');
-    content.classList.toggle('hidden');
-    icon.classList.toggle('rotate-180');
+    const open = content.classList.toggle('hidden') === false;
+    icon.classList.toggle('rotate-180', open);
+    document.getElementById('dns-history-toggle').setAttribute('aria-expanded', open ? 'true' : 'false');
 }
 
 function toggleNotesEdit(editMode) {

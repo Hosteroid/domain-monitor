@@ -131,9 +131,12 @@ class DnsRecord extends Model
                     if (($type === 'A' || $type === 'AAAA') && isset($record['raw'])) {
                         $rawData = json_encode($this->keepStoredIpInfo($record['raw'], $existing['raw_data']));
                     }
+                    // Host and value are saved again: the stored record is found whatever its upper and lower
+                    // case, while diffRecords() compares exactly, so a record kept in its old spelling would be
+                    // reported as added and removed on every check
                     $this->db->prepare(
-                        "UPDATE dns_records SET ttl = ?, is_cloudflare = ?, raw_data = ?, last_seen_at = ?, updated_at = ? WHERE id = ?"
-                    )->execute([$ttl, $isCloudflare, $rawData, $now, $now, $existing['id']]);
+                        "UPDATE dns_records SET host = ?, value = ?, ttl = ?, is_cloudflare = ?, raw_data = ?, last_seen_at = ?, updated_at = ? WHERE id = ?"
+                    )->execute([$host, $value, $ttl, $isCloudflare, $rawData, $now, $now, $existing['id']]);
                     $seenIds[] = $existing['id'];
                     $stats['updated']++;
                 } else {
@@ -302,7 +305,9 @@ class DnsRecord extends Model
 
     /**
      * Get previous snapshot as grouped records (for diff comparison).
-     * Reconstructs the same format that DnsService::lookup() returns.
+     * Reconstructs the same format that DnsService::lookup() returns. It is also what DNS history
+     * saves and what DnsService::buildBindZone() writes, so SRV and SOA records carry the fields
+     * a zone file needs besides their value.
      */
     public function getPreviousSnapshot(int $domainId): array
     {
@@ -324,11 +329,43 @@ class DnsRecord extends Model
                 if ($row['is_cloudflare']) {
                     $entry['is_cloudflare'] = true;
                 }
+                if ($type === 'SRV' || $type === 'SOA') {
+                    $entry += $this->zoneFields($type, $row['raw_data'] ?? null);
+                }
                 $grouped[$type][] = $entry;
             }
         }
 
         return $grouped;
+    }
+
+    /**
+     * What an SRV or SOA record has besides its value, which only raw_data holds. A record added by
+     * hand has no raw_data, so none of these.
+     */
+    private function zoneFields(string $type, ?string $rawData): array
+    {
+        $raw = json_decode((string)$rawData, true);
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $fields = [];
+        if ($type === 'SOA' && isset($raw['rname'])) {
+            $fields['rname'] = (string)$raw['rname'];
+        }
+
+        // raw_data key => key in the lookup format
+        $numbers = $type === 'SRV'
+            ? ['weight' => 'weight', 'port' => 'port']
+            : ['serial' => 'serial', 'refresh' => 'refresh', 'retry' => 'retry', 'expire' => 'expire', 'minimum-ttl' => 'minimum'];
+        foreach ($numbers as $rawKey => $key) {
+            if (isset($raw[$rawKey])) {
+                $fields[$key] = (int)$raw[$rawKey];
+            }
+        }
+
+        return $fields;
     }
 
     /**

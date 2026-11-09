@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS domains (
     notes TEXT,
     is_active BOOLEAN DEFAULT TRUE,
     dns_monitoring_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    dns_history_enabled TINYINT(1) NOT NULL DEFAULT 1,
     ssl_monitoring_enabled TINYINT(1) NOT NULL DEFAULT 0,
     user_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -378,6 +379,27 @@ CREATE TABLE IF NOT EXISTS dns_records (
     INDEX idx_last_seen (last_seen_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- DNS history: the records a domain had before each change a DNS check or scan found, kept after the domain is deleted
+CREATE TABLE IF NOT EXISTS dns_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    domain_id INT NULL COMMENT 'NULL once the domain is deleted',
+    domain_name VARCHAR(255) NOT NULL,
+    user_id INT NULL COMMENT 'Owner of the domain, used once the domain is deleted',
+    source VARCHAR(20) NOT NULL COMMENT 'cron, refresh, quick_scan, deep_scan, deleted',
+    added_count INT NOT NULL DEFAULT 0,
+    removed_count INT NOT NULL DEFAULT 0,
+    changed_count INT NOT NULL DEFAULT 0,
+    record_count INT NOT NULL DEFAULT 0 COMMENT 'Records in the saved set',
+    changes JSON NULL COMMENT 'Records added, removed and changed',
+    records JSON NOT NULL COMMENT 'Every record from before the change, by type',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (domain_id) REFERENCES domains(id) ON DELETE SET NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    INDEX idx_dns_history_domain (domain_id, created_at),
+    INDEX idx_dns_history_created (created_at),
+    INDEX idx_dns_history_name (domain_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- SSL certificates table for tracking monitored TLS endpoints
 CREATE TABLE IF NOT EXISTS ssl_certificates (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -477,6 +499,8 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('last_dns_check_run', NULL, 'datetime', 'Last time DNS cron job ran'),
 ('ct_log_sources', 'crtsh,certspotter', 'string', 'Certificate transparency sources a DNS deep scan asks (comma-separated)'),
 ('certspotter_api_key', '', 'encrypted', 'Cert Spotter API key (encrypted, optional)'),
+('dns_history_enabled', '1', 'boolean', 'Save the DNS records from before each change a check or scan finds'),
+('dns_history_retention_days', '90', 'string', 'Days DNS history is kept'),
 
 -- SSL monitoring settings
 ('ssl_check_interval_hours', '12', 'string', 'SSL certificate check interval in hours'),

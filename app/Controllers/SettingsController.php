@@ -77,6 +77,18 @@ class SettingsController extends Controller
             $ctLogSources[] = ['id' => $id, 'name' => $name, 'enabled' => in_array($id, $enabledCtSources, true)];
         }
 
+        // How long DNS history is kept
+        $dnsHistoryRetentionDays = $this->settingModel->getDnsHistoryRetentionDays();
+        $dnsHistoryRetentionChoices = [];
+        foreach (Setting::DNS_HISTORY_RETENTION_DAYS as $days) {
+            $years = intdiv($days, 365);
+            $dnsHistoryRetentionChoices[] = [
+                'value' => $days,
+                'label' => $days % 365 === 0 ? $years . ($years === 1 ? ' year' : ' years') : "$days days",
+                'selected' => $days === $dnsHistoryRetentionDays,
+            ];
+        }
+
         // Timezone lists for the Application tab
         $popularTimezones = [
             'UTC' => 'UTC',
@@ -170,6 +182,8 @@ class SettingsController extends Controller
             'checkIntervalPresets' => $checkIntervalPresets,
             'statusTriggers' => $statusTriggers,
             'ctLogSources' => $ctLogSources,
+            'dnsHistoryRetentionChoices' => $dnsHistoryRetentionChoices,
+            'dnsHistoryMaxPerDomain' => \App\Models\DnsHistory::MAX_PER_DOMAIN,
             'hasCertSpotterApiKey' => ($settings['certspotter_api_key'] ?? '') !== '',
             'popularTimezones' => $popularTimezones,
             'allTimezones' => $allTimezones,
@@ -285,6 +299,16 @@ class SettingsController extends Controller
             $this->settingModel->setValue('ssl_notification_days', implode(',', $sslDays));
             $this->settingModel->setValue('ssl_monitoring_new_domains', isset($_POST['ssl_monitoring_new_domains']) ? '1' : '0');
             $this->settingModel->setValue('ct_log_sources', implode(',', $ctSources));
+
+            // Only when the form has the DNS history fields: one rendered before the update that
+            // added them would otherwise read as "unchecked" and turn history off
+            if (isset($_POST['dns_history_settings'])) {
+                $retentionDays = (int)($_POST['dns_history_retention_days'] ?? 0);
+                $this->settingModel->setValue('dns_history_enabled', isset($_POST['dns_history_enabled']) ? '1' : '0');
+                if (in_array($retentionDays, Setting::DNS_HISTORY_RETENTION_DAYS, true)) {
+                    $this->settingModel->setValue('dns_history_retention_days', (string)$retentionDays);
+                }
+            }
 
             // The saved key is never sent to the page: a blank field keeps it
             $certSpotterApiKey = trim($_POST['certspotter_api_key'] ?? '');

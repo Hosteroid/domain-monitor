@@ -478,6 +478,8 @@ class AuthController extends Controller
      */
     public function resendVerification()
     {
+        $this->verifyCsrf('/verify-email');
+
         // Only allow resend if email is in session (from registration or login attempt)
         $email = $_SESSION['pending_verification_email'] ?? '';
 
@@ -857,6 +859,14 @@ class AuthController extends Controller
      */
     public function logout()
     {
+        // Logging out takes the security token of the page's own form, so a link on another
+        // site can't do it. The address by itself, typed or bookmarked, changes nothing.
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect(\Core\Auth::check() ? '/' : '/login');
+            return;
+        }
+        $this->verifyCsrf('/');
+
         // Clear remember me token if exists
         if (isset($_COOKIE['remember_token'])) {
             $token = $_COOKIE['remember_token'];

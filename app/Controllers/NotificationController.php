@@ -83,17 +83,31 @@ class NotificationController extends Controller
      */
     public function markAsRead($params = [])
     {
+        // A script asks with ?ajax=1 or for JSON, and gets JSON back also when the token is refused
+        $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+                || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
+                || !empty($_GET['ajax']);
+        if ($isAjax) {
+            $token = $_POST['csrf_token'] ?? null;
+            if (!is_string($token) || !\Core\Csrf::validateToken($token)) {
+                $this->json(['success' => false, 'error' => 'Security token validation failed. Please reload the page and try again.'], 403);
+                return;
+            }
+        } else {
+            $this->verifyCsrf('/notifications');
+        }
+
         $userId = Auth::id();
         $notificationId = (int)($params['id'] ?? 0);
-        
+
         if ($notificationId <= 0) {
             $_SESSION['error'] = 'Invalid notification';
             $this->redirect('/notifications');
             return;
         }
-        
+
         $this->notificationModel->markAsRead($notificationId, $userId);
-        
+
         // Optional redirect after marking read
         $redirect = $_GET['redirect'] ?? '';
         if ($redirect === 'domain') {
@@ -107,17 +121,13 @@ class NotificationController extends Controller
             $this->redirect('/settings#updates');
             return;
         }
-        
-        // AJAX request - return JSON (check multiple detection methods)
-        $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
-                || (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false)
-                || !empty($_GET['ajax']);
+
         if ($isAjax) {
             $unreadCount = $this->notificationModel->getUnreadCount($userId);
             $this->json(['success' => true, 'id' => $notificationId, 'unread_count' => $unreadCount]);
             return;
         }
-        
+
         $_SESSION['success'] = 'Notification marked as read';
         $this->redirect('/notifications');
     }
@@ -127,6 +137,8 @@ class NotificationController extends Controller
      */
     public function markAllAsRead()
     {
+        $this->verifyCsrf('/notifications');
+
         $userId = Auth::id();
         $this->notificationModel->markAllAsRead($userId);
         $_SESSION['success'] = 'All notifications marked as read';

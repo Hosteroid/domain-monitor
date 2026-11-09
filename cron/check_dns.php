@@ -25,6 +25,7 @@ use Dotenv\Dotenv;
 use App\Models\Domain;
 use App\Models\DnsRecord;
 use App\Models\Setting;
+use App\Services\DnsHistoryService;
 use App\Services\DnsService;
 use App\Services\NotificationService;
 use App\Services\Logger;
@@ -61,6 +62,7 @@ $domainModel         = new Domain();
 $dnsModel            = new DnsRecord();
 $settingModel        = new Setting();
 $dnsService          = new DnsService();
+$historyService      = new DnsHistoryService();
 $notificationService = new NotificationService();
 $logger              = new Logger('dns-cron');
 
@@ -102,6 +104,7 @@ $stats = [
     'checked'              => 0,
     'skipped_by_status'    => $skippedByStatus,
     'changes_detected'     => 0,
+    'history_saved'        => 0,
     'records_added'        => 0,
     'records_removed'      => 0,
     'records_changed'      => 0,
@@ -179,6 +182,12 @@ foreach ($domains as $domain) {
         $detail  = $dnsService->formatChangesDetail($changes, $domainName);
         logMessage("  🔄 $summary");
 
+        // The records from before the change, whether or not an alert goes out for it
+        if ($historyService->recordChange($domain, $previousRecords, $changes, 'cron')) {
+            $stats['history_saved']++;
+            logMessage("  → Previous records saved to DNS history");
+        }
+
         $stats['domains_with_changes'][] = [
             'domain'  => $domainName,
             'added'   => count($changes['added']),
@@ -206,6 +215,11 @@ foreach ($domains as $domain) {
         ]);
         $stats['errors']++;
     }
+}
+
+$historyPruned = $historyService->prune();
+if ($historyPruned > 0) {
+    logMessage("DNS history: removed $historyPruned item(s) older than " . $settingModel->getDnsHistoryRetentionDays() . " days");
 }
 
 $settingModel->setValue('last_dns_check_run', date('Y-m-d H:i:s'));
@@ -357,6 +371,7 @@ function printSummary(array $stats, float $startTime): void
     logMessage("Skipped (by status):        {$stats['skipped_by_status']}");
     logMessage("Skipped (unresolved):       {$stats['skipped_unresolved']}");
     logMessage("Changes detected:           {$stats['changes_detected']}");
+    logMessage("Saved to DNS history:       {$stats['history_saved']}");
     logMessage("Records added:              {$stats['records_added']}");
     logMessage("Records removed:            {$stats['records_removed']}");
     logMessage("Records changed:            {$stats['records_changed']}");

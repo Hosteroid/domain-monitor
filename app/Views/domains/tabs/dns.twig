@@ -118,6 +118,12 @@
             <i class="fas fa-file-import mr-1.5" style="font-size: 10px;"></i>Import Zone
         </button>
 
+        {# Export Zone #}
+        <a href="/domains/{{ domain.id }}/dns-export" title="Download these records as a zone file (.txt)"
+           class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+            <i class="fas fa-file-export mr-1.5" style="font-size: 10px;"></i>Export Zone
+        </a>
+
         {# Bulk delete (shown when records are selected) #}
         <button type="button" id="dnsBulkDeleteBtn" class="hidden inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium"
                 onclick="submitDnsBulkDelete()">
@@ -733,6 +739,86 @@
 
 </div>
 {% endif %}
+{% endif %}
+
+{# ===== DNS History (#75): the records from before each change ===== #}
+{% set history = dnsHistory|default({}) %}
+{% if domain and history.available|default(false) and (history.total > 0 or (dnsMonitoringEnabled and totalDnsRecords > 0)) %}
+{% set historySavedHere = history.on and domain.dns_history_enabled|default(1) %}
+<div class="mt-3 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+    <button type="button" id="dns-history-toggle" onclick="toggleDnsHistory()" aria-expanded="false" aria-controls="dns-history-content"
+            class="w-full px-4 py-2 bg-gray-100 dark:bg-slate-700 flex items-center justify-between text-left">
+        <span class="text-xs font-semibold text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-history text-gray-500 dark:text-slate-400 mr-2" style="font-size: 10px;"></i>
+            DNS History
+            <span class="ml-2 px-1.5 py-0.5 bg-gray-600 text-white text-xs font-semibold rounded">{{ history.total }}</span>
+            {% if not historySavedHere %}
+            <span class="ml-2 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 text-xs font-semibold rounded">Off</span>
+            {% endif %}
+        </span>
+        <i id="dns-history-icon" class="fas fa-chevron-down text-gray-500 dark:text-slate-400 transition-transform" style="font-size: 10px;"></i>
+    </button>
+    <div id="dns-history-content" class="hidden border-t border-gray-200 dark:border-slate-600">
+        <p class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-700">
+            {% if historySavedHere %}
+                When a check or scan changes this domain's records, the records from before the change are saved for {{ history.days }} days.
+            {% elseif not history.on %}
+                DNS History is turned off, so nothing new is saved.
+                {% if session.role is defined and session.role == 'admin' %}<a href="/settings#monitoring" class="text-primary hover:underline">Turn it on in Settings</a>{% endif %}
+            {% else %}
+                DNS History is turned off for this domain, so nothing new is saved.
+                <a href="/domains/{{ domain.id }}/edit#dns-monitoring" class="text-primary hover:underline">Turn it on in Edit</a>
+            {% endif %}
+        </p>
+
+        {% if history.entries is not empty %}
+        <div class="divide-y divide-gray-100 dark:divide-slate-700">
+            {% for entry in history.entries %}
+            <div class="px-4 py-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div class="text-xs text-gray-600 dark:text-slate-400">
+                        <span class="font-semibold text-gray-900 dark:text-white">{{ entry.created_at|date('M d, Y H:i') }}</span>
+                        <span class="mx-1">·</span>{{ history.labels[entry.source]|default(entry.source) }}
+                        {% if entry.removed_count > 0 %}
+                            <span class="ml-1 px-1.5 py-0.5 bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 rounded font-semibold">−{{ entry.removed_count }} removed</span>
+                        {% endif %}
+                        {% if entry.added_count > 0 %}
+                            <span class="ml-1 px-1.5 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 rounded font-semibold">+{{ entry.added_count }} added</span>
+                        {% endif %}
+                        {% if entry.changed_count > 0 %}
+                            <span class="ml-1 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded font-semibold">~{{ entry.changed_count }} changed</span>
+                        {% endif %}
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="text-xs text-gray-500 dark:text-slate-400 mr-1">{{ entry.record_count }} records from before:</span>
+                        <a href="/dns-history/{{ entry.id }}/export?view=1" target="_blank" rel="noopener"
+                           class="inline-flex items-center px-2 py-1 text-xs text-gray-700 dark:text-slate-300 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                            <i class="fas fa-eye mr-1" style="font-size: 9px;"></i>View
+                        </a>
+                        <a href="/dns-history/{{ entry.id }}/export"
+                           class="inline-flex items-center px-2 py-1 text-xs text-white bg-primary rounded hover:bg-primary-dark transition-colors">
+                            <i class="fas fa-download mr-1" style="font-size: 9px;"></i>Zone File
+                        </a>
+                    </div>
+                </div>
+                {% include 'partials/dns-history-changes.twig' with { entry: entry } only %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="px-4 py-6 text-center text-xs text-gray-500 dark:text-slate-400">No changes found yet.</p>
+        {% endif %}
+
+        {% if history.total > 0 %}
+        <div class="px-4 py-2 bg-gray-50 dark:bg-slate-900 border-t border-gray-100 dark:border-slate-700 flex items-center justify-between text-xs text-gray-500 dark:text-slate-400">
+            <span>{% if history.total > history.entries|length %}Showing the newest {{ history.entries|length }} of {{ history.total }}{% endif %}</span>
+            <a href="/dns-history?search={{ domain.domain_name|url_encode }}" class="text-primary hover:underline">
+                All DNS history for this domain <i class="fas fa-arrow-right ml-0.5" style="font-size: 9px;"></i>
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
 {% endif %}
 
 {# ===== Add Record Modal ===== #}

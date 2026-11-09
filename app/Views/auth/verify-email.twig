@@ -34,10 +34,13 @@
                 <i class="fas fa-sign-in-alt mr-2"></i>
                 Go to Login
             </a>
-            <a href="/resend-verification" class="block text-center px-6 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm rounded-lg transition-colors font-medium">
-                <i class="fas fa-redo mr-2"></i>
-                Resend Verification Email
-            </a>
+            <form method="POST" action="/resend-verification">
+                {{ csrf_field() }}
+                <button type="submit" class="block w-full text-center px-6 py-2.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 text-sm rounded-lg transition-colors font-medium">
+                    <i class="fas fa-redo mr-2"></i>
+                    Resend Verification Email
+                </button>
+            </form>
         </div>
     </div>
 {% else %}
@@ -65,10 +68,13 @@
         </div>
         
         <div class="space-y-2">
-            <a href="/resend-verification" class="block text-center px-6 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm rounded-lg transition-colors font-medium">
-                <i class="fas fa-redo mr-2"></i>
-                Resend Verification Email
-            </a>
+            <form method="POST" action="/resend-verification">
+                {{ csrf_field() }}
+                <button type="submit" class="block w-full text-center px-6 py-2.5 bg-primary hover:bg-primary-dark text-white text-sm rounded-lg transition-colors font-medium">
+                    <i class="fas fa-redo mr-2"></i>
+                    Resend Verification Email
+                </button>
+            </form>
             <a href="/login" class="block text-center text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
                 Back to Login
             </a>

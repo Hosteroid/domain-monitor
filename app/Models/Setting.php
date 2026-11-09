@@ -7,6 +7,9 @@ use App\Services\Logger;
 
 class Setting extends Model
 {
+    /** Choices for how long DNS history is kept, in days */
+    public const DNS_HISTORY_RETENTION_DAYS = [30, 90, 180, 365, 730];
+
     protected static string $table = 'settings';
     private Logger $logger;
 
@@ -153,6 +156,24 @@ class Setting extends Model
     public function setCertSpotterApiKey(string $apiKey): bool
     {
         return $this->setValue('certspotter_api_key', $apiKey === '' ? '' : (new \Core\Encryption())->encrypt($apiKey));
+    }
+
+    /**
+     * Whether DNS history is saved. This is the global switch: each domain has its own as well
+     * (domains.dns_history_enabled).
+     */
+    public function isDnsHistoryOn(): bool
+    {
+        return $this->getValue('dns_history_enabled', '1') === '1';
+    }
+
+    /**
+     * Days DNS history is kept (one of DNS_HISTORY_RETENTION_DAYS)
+     */
+    public function getDnsHistoryRetentionDays(): int
+    {
+        $days = (int)$this->getValue('dns_history_retention_days', 90);
+        return in_array($days, self::DNS_HISTORY_RETENTION_DAYS, true) ? $days : 90;
     }
 
     /**

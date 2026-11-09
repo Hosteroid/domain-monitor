@@ -3,23 +3,26 @@
 namespace Core;
 
 use Twig\Environment;
-use Twig\Loader\FilesystemLoader;
 use Twig\Extension\DebugExtension;
 use Twig\TwigFunction;
 use Twig\TwigFilter;
 
 class TwigService
 {
+    /** Where compiled templates are kept in production, under the application root */
+    private const CACHE_DIR = 'cache/twig';
+
     private static ?self $instance = null;
     private Environment $twig;
 
     private function __construct()
     {
         $viewsPath = PATH_ROOT . 'app/Views';
-        $loader = new FilesystemLoader($viewsPath);
+        // Keys the cache by each template's file, so an updated template is not served from it
+        $loader = new TemplateLoader($viewsPath);
 
         $isDev = ($_ENV['APP_ENV'] ?? 'development') === 'development';
-        $cachePath = $isDev ? false : PATH_ROOT . 'cache/twig';
+        $cachePath = $isDev ? false : PATH_ROOT . self::CACHE_DIR;
 
         $this->twig = new Environment($loader, [
             'cache' => $cachePath,
@@ -48,6 +51,37 @@ class TwigService
     public function getEnvironment(): Environment
     {
         return $this->twig;
+    }
+
+    /**
+     * Delete the compiled templates. A page compiles its templates again when it next needs them,
+     * so this is safe at any time, also while other requests are being served. An update leaves
+     * the compiled copies of the templates it replaced behind, and this removes them.
+     *
+     * Never throws: what can't be deleted (another request just wrote it) is left where it is.
+     */
+    public static function clearCache(): void
+    {
+        $dir = PATH_ROOT . self::CACHE_DIR;
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        try {
+            $items = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($items as $item) {
+                if ($item->isDir()) {
+                    @rmdir($item->getPathname());
+                } else {
+                    @unlink($item->getPathname());
+                }
+            }
+        } catch (\Throwable $e) {
+            // The folder changed while it was being read: the rest goes with the next update
+        }
     }
 
     /**

@@ -75,6 +75,8 @@
     </div>
 </div>
 
+{% include 'partials/lookup-note.twig' %}
+
 <!-- Main 2-Column Layout -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
     
@@ -175,7 +177,7 @@
                     </div>
                     {% endif %}
 
-                    {% if whoisData.creation_date is defined %}
+                    {% if whoisData.creation_date is defined and whoisData.creation_date %}
                     <div class="flex items-center p-2 bg-green-50 dark:bg-green-500/10 rounded border border-green-200 dark:border-green-800">
                         <div class="w-7 h-7 bg-green-500 rounded flex items-center justify-center mr-2">
                             <i class="fas fa-calendar-plus text-white text-xs"></i>

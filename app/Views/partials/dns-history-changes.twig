@@ -1,0 +1,34 @@
+{#
+    The records one DNS history entry removed, added and changed.
+
+    Variables:
+        entry - a dns_history row with its `changes` decoded (removed / added / changed)
+
+    The values come from DNS, so they are untrusted: never output them with |raw.
+#}
+{% set shownPerKind = 50 %}
+{% set kinds = [
+    { key: 'removed', sign: '−', label: 'Removed', text: 'text-red-700 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-500/10' },
+    { key: 'added', sign: '+', label: 'Added', text: 'text-green-700 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-500/10' },
+    { key: 'changed', sign: '~', label: 'Changed', text: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-500/10' }
+] %}
+<div class="space-y-1">
+    {% for kind in kinds %}
+        {% set kindRecords = entry.changes[kind.key]|default([]) %}
+        {% for record in kindRecords|slice(0, shownPerKind) %}
+        <div class="flex items-start gap-2 px-2 py-1 rounded {{ kind.bg }}">
+            <span class="w-3 shrink-0 text-xs font-bold {{ kind.text }}">{{ kind.sign }}</span>
+            <span class="w-16 shrink-0 text-xs font-semibold {{ kind.text }}">{{ kind.label }}</span>
+            <span class="w-12 shrink-0 text-xs font-semibold text-gray-700 dark:text-slate-300">{{ record.type }}</span>
+            <span class="w-40 shrink-0 text-xs font-mono text-gray-900 dark:text-white break-all">{{ record.host == '@' ? '@ (root)' : record.host }}</span>
+            <span class="min-w-0 text-xs font-mono text-gray-700 dark:text-slate-300 break-all">
+                {%- if kind.key == 'changed' %}{{ record.old_value }} <i class="fas fa-arrow-right mx-1 text-gray-400 dark:text-slate-500" style="font-size: 9px;"></i> {% endif -%}
+                {%- if record.priority is defined %}{{ record.priority }} {% endif %}{{ record.value -}}
+            </span>
+        </div>
+        {% endfor %}
+        {% if kindRecords|length > shownPerKind %}
+        <p class="px-2 text-xs text-gray-500 dark:text-slate-400">… and {{ kindRecords|length - shownPerKind }} more {{ kind.label|lower }}</p>
+        {% endif %}
+    {% endfor %}
+</div>

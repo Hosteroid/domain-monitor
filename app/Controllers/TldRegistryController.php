@@ -381,6 +381,22 @@ class TldRegistryController extends Controller
                 return;
             }
 
+            // Every call runs the next batch of the import: that is for administrators, and for
+            // this app's own page, which sends the security token
+            if (!Auth::isAdmin()) {
+                $this->logger->warning('Import progress asked for without administrator rights', ['log_id' => $logId]);
+                ob_end_clean();
+                $this->json(['error' => 'Administrator access required'], 403);
+                return;
+            }
+            $token = $_POST['csrf_token'] ?? null;
+            if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !is_string($token) || !\Core\Csrf::validateToken($token)) {
+                $this->logger->warning('Import progress asked for without a valid security token', ['log_id' => $logId]);
+                ob_end_clean();
+                $this->json(['error' => 'Security token validation failed. Please reload the page and try again.'], 403);
+                return;
+            }
+
             $this->logger->info('Processing batch', ['log_id' => $logId]);
             
             // Add detailed logging around the service call
@@ -501,6 +517,7 @@ class TldRegistryController extends Controller
     public function toggleActive($params = [])
     {
         Auth::requireAdmin();
+        $this->verifyCsrf('/tld-registry');
         
         $id = $params['id'] ?? 0;
         $tld = $this->tldModel->find($id);
@@ -533,6 +550,7 @@ class TldRegistryController extends Controller
     public function refresh($params = [])
     {
         Auth::requireAdmin();
+        $this->verifyCsrf('/tld-registry');
         
         $id = $params['id'] ?? 0;
         $tld = $this->tldModel->find($id);
@@ -544,33 +562,16 @@ class TldRegistryController extends Controller
         }
 
         try {
-            // Remove dot from TLD for URL
-            $tldForUrl = ltrim($tld['tld'], '.');
-            $url = "https://www.iana.org/domains/root/db/{$tldForUrl}.html";
+            // The same data an import gets: IANA's RDAP record for the TLD, and its page for the WHOIS server
+            $updateData = $this->tldService->fetchTldData($tld['tld']);
 
-            $client = new \GuzzleHttp\Client();
-            $response = $client->get($url);
-            $html = $response->getBody()->getContents();
+            if ($updateData === null) {
+                $_SESSION['error'] = "Could not get the data of {$tld['tld']} from IANA. Try again later.";
+            } else {
+                $this->tldModel->update($id, $updateData);
+                $_SESSION['success'] = "TLD {$tld['tld']} data refreshed successfully";
+            }
 
-            // Extract data from HTML
-            $whoisServer = $this->extractWhoisServer($html);
-            $lastUpdated = $this->extractLastUpdated($html);
-            $registryUrl = $this->extractRegistryUrl($html);
-            $registrationDate = $this->extractRegistrationDate($html);
-
-            $updateData = [
-                'updated_at' => date('Y-m-d H:i:s')
-            ];
-
-            if ($whoisServer) $updateData['whois_server'] = $whoisServer;
-            if ($lastUpdated) $updateData['record_last_updated'] = $lastUpdated;
-            if ($registryUrl) $updateData['registry_url'] = $registryUrl;
-            if ($registrationDate) $updateData['registration_date'] = $registrationDate;
-
-            $this->tldModel->update($id, $updateData);
-            
-            $_SESSION['success'] = "TLD {$tld['tld']} data refreshed successfully";
-            
         } catch (\Exception $e) {
             $_SESSION['error'] = 'Failed to refresh TLD data: ' . $e->getMessage();
         }
@@ -991,50 +992,6 @@ class TldRegistryController extends Controller
         }
 
         $this->redirect('/tld-registry');
-    }
-
-    /**
-     * Extract WHOIS server from HTML
-     */
-    private function extractWhoisServer(string $html): ?string
-    {
-        if (preg_match('/WHOIS Server:\s*([^\s<]+)/i', $html, $matches)) {
-            return trim($matches[1]);
-        }
-        return null;
-    }
-
-    /**
-     * Extract last updated date from HTML
-     */
-    private function extractLastUpdated(string $html): ?string
-    {
-        if (preg_match('/Record last updated\s+(\d{4}-\d{2}-\d{2})/i', $html, $matches)) {
-            return $matches[1] . ' 00:00:00';
-        }
-        return null;
-    }
-
-    /**
-     * Extract registry URL from HTML
-     */
-    private function extractRegistryUrl(string $html): ?string
-    {
-        if (preg_match('/URL for registration services:\s*([^\s<]+)/i', $html, $matches)) {
-            return trim($matches[1]);
-        }
-        return null;
-    }
-
-    /**
-     * Extract registration date from HTML
-     */
-    private function extractRegistrationDate(string $html): ?string
-    {
-        if (preg_match('/Registration date\s+(\d{4}-\d{2}-\d{2})/i', $html, $matches)) {
-            return $matches[1];
-        }
-        return null;
     }
 
     /**

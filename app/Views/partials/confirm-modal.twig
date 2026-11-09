@@ -102,6 +102,7 @@
         return false;
     };
 
+    // A link with data-method="post" changes something: it is sent as a POST with the security token
     window.confirmClick = function(e, msg, opts) {
         e.preventDefault();
         var el = e.currentTarget || e.target.closest('a') || e.target;
@@ -109,7 +110,9 @@
         opts.message = opts.message || msg;
         confirmAction(opts).then(function(ok) {
             if (ok) {
-                if (el.tagName === 'A' && el.href) {
+                if (el.tagName === 'A' && el.href && el.dataset.method === 'post') {
+                    postTo(el.href);
+                } else if (el.tagName === 'A' && el.href) {
                     window.location.href = el.href;
                 } else if (el.form) {
                     el.form.submit();
@@ -118,5 +121,77 @@
         });
         return false;
     };
+
+    // The page's security token, for requests that scripts make
+    window.csrfToken = function() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute('content') : '';
+    };
+
+    // Send a POST with the security token, as a submitted form would
+    window.postTo = function(url) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = url;
+        form.style.display = 'none';
+
+        var token = document.createElement('input');
+        token.type = 'hidden';
+        token.name = 'csrf_token';
+        token.value = csrfToken();
+        form.appendChild(token);
+
+        document.body.appendChild(form);
+        form.submit();
+    };
+
+    // A link with data-mark-read="<notification id>" leads to what the notification is about and
+    // marks it as read on the way. In this tab the page opens once that is done, so it shows the
+    // notification as read; a link opened in a new tab or window is marked in passing.
+    function markRead(id, andThen) {
+        var url = '/notifications/' + encodeURIComponent(id) + '/mark-read?ajax=1';
+        var body = new URLSearchParams({ csrf_token: csrfToken() });
+
+        if (!andThen) {
+            if (navigator.sendBeacon) navigator.sendBeacon(url, body);
+            return;
+        }
+
+        var done = false;
+        var finish = function() {
+            if (!done) {
+                done = true;
+                andThen();
+            }
+        };
+        fetch(url, { method: 'POST', body: body, headers: { 'Accept': 'application/json' }, credentials: 'same-origin' }).then(finish, finish);
+        setTimeout(finish, 2000);
+    }
+
+    document.addEventListener('click', function(e) {
+        // A data-method="post" link without a confirmation of its own
+        var action = e.target.closest ? e.target.closest('a[data-method="post"]') : null;
+        if (action && !e.defaultPrevented) {
+            e.preventDefault();
+            postTo(action.href);
+            return;
+        }
+
+        var link = e.target.closest ? e.target.closest('a[data-mark-read]') : null;
+        if (!link || e.defaultPrevented) return;
+
+        if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) {
+            markRead(link.dataset.markRead);
+            return;
+        }
+
+        e.preventDefault();
+        markRead(link.dataset.markRead, function() { window.location.href = link.href; });
+    });
+
+    document.addEventListener('auxclick', function(e) {
+        var link = e.target.closest ? e.target.closest('a[data-mark-read]') : null;
+        if (link && e.button === 1) markRead(link.dataset.markRead);
+    });
 })();
 </script>

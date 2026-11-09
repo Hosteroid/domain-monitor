@@ -16,6 +16,16 @@ class WhoisService
     // A renewal adds at least a month; a smaller move of the expiration date is a correction
     private const RENEWAL_MIN_DAYS = 28;
 
+    // Field names that an answer gives in Japanese only, under the English names the parser reads
+    private const FIELD_NAMES = [
+        '登録年月日' => 'Created on',
+        '有効期限' => 'Expires on',
+        '状態' => 'Status',
+        'ロック状態' => 'Lock Status',
+        '最終更新' => 'Last Updated',
+        'ネームサーバ' => 'Name Server',
+    ];
+
     private TldRegistry $tldModel;
     
     // Track last error type for rate limit detection
@@ -142,7 +152,7 @@ class WhoisService
                     $isAvailable = false;
                     if (isset($rdapData['status']) && is_array($rdapData['status'])) {
                         foreach ($rdapData['status'] as $status) {
-                            if (stripos($status, 'AVAILABLE') !== false) {
+                            if (is_string($status) && self::isAvailableStatus($status)) {
                                 $isAvailable = true;
                                 break;
                             }
@@ -190,7 +200,9 @@ class WhoisService
                 // If RDAP failed, fall through to WHOIS
             }
 
-            // Fallback to WHOIS if RDAP not available or failed
+            // Fallback to WHOIS if RDAP not available or failed. With no WHOIS server known for
+            // the TLD, IANA is asked: its answer may name the registry's server.
+            $ianaAnswer = !$whoisServer;
             if (!$whoisServer) {
                 $whoisServer = 'whois.iana.org';
             }
@@ -261,6 +273,7 @@ class WhoisService
                     $referralData = $this->queryWhois($domain, $referralServer);
                     if ($referralData) {
                         $whoisData = $referralData;
+                        $ianaAnswer = false;
                     }
                 } else {
                     $logger = new \App\Services\Logger();
@@ -273,6 +286,20 @@ class WhoisService
                     ]);
                     $referralServer = null; // Don't use referral server
                 }
+            }
+
+            // What IANA itself answers is about the TLD: its nameservers and dates are not the
+            // domain's. Either a server that is known gave no answer, or none is known.
+            if ($ianaAnswer) {
+                if ($referralServer || $rdapUrl) {
+                    self::$lastErrorType ??= 'no_data';
+                    self::$lastErrorMessage ??= $referralServer
+                        ? "{$referralServer}, the WHOIS server IANA names for .{$tld}, gave no answer."
+                        : 'The RDAP lookup at ' . parse_url($rdapUrl, PHP_URL_HOST) . " failed, and .{$tld} has no WHOIS server to ask instead.";
+                    return null;
+                }
+
+                return self::recordWithoutData($domain, $whoisServer, self::noServerNote($tld, $whoisData));
             }
 
             // Parse the response
@@ -381,11 +408,6 @@ class WhoisService
                     $result['whois_server'] = trim($matches[1]);
                 }
             }
-            
-            // Special handling for .pro TLD - it doesn't have a WHOIS server in IANA
-            if ($tld === 'pro' && !$result['whois_server']) {
-                $result['whois_server'] = 'whois.afilias.net';
-            }
 
             // Try to get RDAP URL from IANA's RDAP bootstrap service
             $rdapBootstrapUrl = "https://data.iana.org/rdap/dns.json";
@@ -436,12 +458,10 @@ class WhoisService
                 ]));
 
                 if ($html) {
-                    // Extract RDAP Server from HTML
-                    // Pattern: <b>RDAP Server:</b>  https://rdap.example.com/
-                    if (preg_match('/<b>RDAP Server:<\/b>\s*<a[^>]*>(https?:\/\/[^<]+)<\/a>/i', $html, $matches)) {
-                        $result['rdap_url'] = rtrim(trim($matches[1]), '/') . '/';
-                    } elseif (preg_match('/<b>RDAP Server:<\/b>\s+(https?:\/\/\S+)/i', $html, $matches)) {
-                        $result['rdap_url'] = rtrim(trim($matches[1]), '/') . '/';
+                    // The RDAP server as the page names it
+                    $rdapServers = TldRegistryService::parseIanaPage($html)['rdap_servers'];
+                    if ($rdapServers !== []) {
+                        $result['rdap_url'] = rtrim($rdapServers[0], '/') . '/';
                     }
                 }
             }
@@ -697,6 +717,7 @@ class WhoisService
                 if (in_array('registrar', $roles)) {
                     // Get registrar name from vCard
                     if (isset($entity['vcardArray'][1])) {
+                        $registrarOrg = null;
                         foreach ($entity['vcardArray'][1] as $vcardField) {
                             if (is_array($vcardField) && count($vcardField) >= 4) {
                                 if ($vcardField[0] === 'fn') {
@@ -706,10 +727,16 @@ class WhoisService
                                         $registrarName = trim($matches[1]);
                                     }
                                     $info['registrar'] = $registrarName;
+                                } elseif ($vcardField[0] === 'org' && is_string($vcardField[3]) && trim($vcardField[3]) !== '') {
+                                    $registrarOrg = trim($vcardField[3]);
                                 } elseif ($vcardField[0] === 'url') {
                                     $info['registrar_url'] = $vcardField[3];
                                 }
                             }
+                        }
+                        // Some registries give the registrar as an organisation, without a name (.ch, .li)
+                        if (empty($info['registrar']) && $registrarOrg !== null) {
+                            $info['registrar'] = $registrarOrg;
                         }
                     }
                     
@@ -889,6 +916,133 @@ class WhoisService
     }
 
     /**
+     * Whether a line of a WHOIS answer, or a status in it, says that nothing is registered under
+     * the name. Every registry words it its own way ("No Data Found", "No match for domain",
+     * "Object does not exist", "The domain has not been registered", "is available for
+     * registration"), so the wording is looked for anywhere in the line.
+     */
+    private static function saysNotRegistered(string $line): bool
+    {
+        return (bool)preg_match(
+            '/\b(?:no|not|nothing)\b[^.:;]{0,40}?\bfound\b'
+            . '|\bno match'
+            . '|\b(?:does|do) not exist\b'
+            . '|\bnot (?:been )?registe?red\b'
+            . '|\bis available for (?:registration|purchase)\b'
+            . '|\bno (?:entries|data|records?|objects?|such domain)\b/i',
+            str_replace('_', ' ', $line)
+        );
+    }
+
+    /**
+     * Whether a line of a WHOIS answer says that too many queries were made or that the registry
+     * can't answer for now ("Maximum query rate reached", "Quota exceeded"). A sentence about
+     * its terms ("Access is rate limited") is not one.
+     */
+    private static function saysQueryLimit(string $line): bool
+    {
+        return (bool)preg_match(
+            '/\b(?:limit|quota|rate|queries|requests|connections)\b[^.]{0,40}\b(?:exceeded|reached)\b'
+            . '|\bexceeded\b[^.]{0,40}\b(?:limit|quota|rate|queries|requests|connections)\b'
+            . '|\btoo many\b|\btry again later\b|\btemporarily\b/i',
+            $line
+        );
+    }
+
+    /**
+     * The first line of a WHOIS answer that fits, without the marks in front of it ("%", ">>>").
+     * Longer lines are the registry's terms and are passed over.
+     *
+     * @param callable(string): bool $fits
+     */
+    private static function findLine(string $answer, callable $fits): ?string
+    {
+        foreach (explode("\n", $answer) as $line) {
+            $line = trim($line, " \t\r%#>*<");
+            if ($line !== '' && strlen($line) <= 100 && $fits($line)) {
+                return $line;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * What to tell the user about an answer that holds nothing of a registration and does not say
+     * the name is free: the registry's own words, e.g. a refusal
+     */
+    private static function unreadableNote(string $server, string $answer): string
+    {
+        // Lines marked ">>>" are messages; an answer without any says it in its plain lines.
+        // Comments, the name asked about and the time of the registry's last update say nothing.
+        $marked = [];
+        $plain = [];
+        foreach (explode("\n", $answer) as $line) {
+            $line = trim($line);
+            if ($line === '' || $line[0] === '%' || $line[0] === '#') {
+                continue;
+            }
+
+            $isMarked = str_starts_with($line, '>>>');
+            $line = trim(preg_replace('/\s+/', ' ', $line), ' >*<');
+            if (!preg_match('/[a-z]{2,} [a-z]{2,}/i', $line) || preg_match('/^(?:domain(?: name)?:|last update)/i', $line)) {
+                continue;
+            }
+
+            if ($isMarked) {
+                $marked[] = $line;
+            } else {
+                $plain[] = $line;
+            }
+        }
+
+        $said = $marked ?: $plain;
+        if ($said === []) {
+            return "{$server} answered without anything about the domain.";
+        }
+
+        // A short first line leads up to the reason in the next one ("Error code: 01044")
+        $text = strlen($said[0]) < 60 && isset($said[1]) ? $said[0] . ' ' . $said[1] : $said[0];
+
+        return "{$server} answered: \"" . mb_substr($text, 0, 200) . '"';
+    }
+
+    /**
+     * What to tell the user when IANA's answer names no WHOIS server to ask
+     */
+    private static function noServerNote(string $tld, string $ianaAnswer): string
+    {
+        return preg_match('/returned 0 objects/i', $ianaAnswer)
+            ? "IANA does not list the TLD .{$tld}."
+            : "No WHOIS or RDAP server is known for .{$tld}: IANA lists none.";
+    }
+
+    /**
+     * A lookup result for a domain nothing could be found out about, with the reason
+     */
+    private static function recordWithoutData(string $domain, string $server, string $note): array
+    {
+        return [
+            'domain' => $domain,
+            'registrar' => 'Unknown',
+            'registrar_url' => null,
+            'expiration_date' => null,
+            'updated_date' => null,
+            'creation_date' => null,
+            'abuse_email' => null,
+            'nameservers' => [],
+            'status' => [],
+            'owner' => 'Unknown',
+            'whois_server' => $server,
+            'raw_data' => [
+                'states' => [],
+                'nameServers' => [],
+            ],
+            'lookup_note' => $note,
+        ];
+    }
+
+    /**
      * Parse WHOIS data
      */
     private function parseWhoisData(string $domain, string $whoisData, string $whoisServer = 'Unknown'): ?array
@@ -906,6 +1060,9 @@ class WhoisService
             return null;
         }
         
+        // Registries end their lines in LF or in CR LF: the patterns below are written for LF
+        $whoisData = str_replace("\r", '', $whoisData);
+
         $lines = explode("\n", $whoisData);
         $data = [
             'domain' => $domain,
@@ -958,6 +1115,24 @@ class WhoisService
                 continue;
             }
 
+            // Layouts without a colon are read as "Field: value" from here on
+            if (preg_match('/^(?:[a-z]\.\s+)?\[(\S[^\]]*)\]\s+(\S.*)$/iu', $line, $matches)) {
+                // "[Name Server]   ns1.example.jp", for some kinds of name with a letter in front
+                // ("p. [Name Server]   ns1.example.jp"), as .jp answers. A bracketed name alone on
+                // its line is a section heading in other answers (.lv "[Registrar]") and stays as it is.
+                // A time zone in brackets after a time is left off, so the date is saved as written.
+                $line = (self::FIELD_NAMES[$matches[1]] ?? $matches[1]) . ': ' . preg_replace('/\s*\([A-Z]{2,5}\)$/', '', $matches[2]);
+
+                // The day the registration ends can come with the state: "Connected (2027/03/31)"
+                if (preg_match('/^(?:State|Status): (Connected|Registered)\s*\((\d{4}\/\d{2}\/\d{2})\)$/i', $line, $matches)) {
+                    $line = 'Status: ' . $matches[1];
+                    $data['expiration_date'] = $this->parseDate($matches[2]);
+                }
+            } elseif (preg_match('/^Record (created|expires) on\s+(\S.*)$/i', $line, $matches)) {
+                // "Record created on 2008-05-28 17:21:15", "Record expires on 2029-05-28", as .mo answers
+                $line = 'Record ' . strtolower($matches[1]) . ': ' . $matches[2];
+            }
+
             // Check for section headers (UK format - lines ending with colon, no value)
             if (preg_match('/^([^:]+):\s*$/', $line, $matches)) {
                 $currentSection = strtolower(trim($matches[1]));
@@ -982,8 +1157,8 @@ class WhoisService
                 continue;
             }
 
-            // For multi-line sections (UK format), check if we're in a specific section
-            if ($currentSection === 'name servers') {
+            // For multi-line sections (UK format, and .mo's "Domain name servers:"), check if we're in a specific section
+            if ($currentSection === 'name servers' || $currentSection === 'domain name servers') {
                 // Extract nameserver (format: "ns1.example.com    192.168.1.1")
                 if (!preg_match('/^(This|--|\d+\.)/', $line)) {
                     $ns = preg_split('/\s+/', $line)[0]; // Get first part (nameserver)
@@ -1004,8 +1179,8 @@ class WhoisService
                     $data['registrar_url'] = $value;
                 }
 
-                // Expiration date
-                if (preg_match('/(expir|expiry|expire|paid-till|renewal|registry.*expir|^valid\s*until$)/i', $key) && !empty($value)) {
+                // Expiration date (.bo: "Fecha de vencimiento")
+                if (preg_match('/(expir|expiry|expire|paid-till|renewal|registry.*expir|^valid\s*until$|vencimiento)/i', $key) && !empty($value)) {
                     $data['expiration_date'] = $this->parseDate($value);
                 }
 
@@ -1014,8 +1189,8 @@ class WhoisService
                     $data['updated_date'] = $this->parseDate($value);
                 }
 
-                // Creation date (UK format: "Registered on")
-                if (preg_match('/(creat|registered|registered on|creation)/i', $key) && !empty($value)) {
+                // Creation date (UK format: "Registered on", .bo: "Fecha de registro")
+                if (preg_match('/(creat|registered|registered on|creation|^fecha de registro$)/i', $key) && !empty($value)) {
                     $data['creation_date'] = $this->parseDate($value);
                 }
 
@@ -1097,6 +1272,32 @@ class WhoisService
             }
         }
 
+        // An answer with nothing of a registration in it says that the name is free, that too
+        // many queries were made, or something this parser cannot read
+        if (!$registrarFound && $data['status'] === [] && $data['nameservers'] === []
+            && $data['expiration_date'] === null && $data['creation_date'] === null) {
+            if (self::findLine($whoisData, fn(string $line): bool => self::saysNotRegistered($line)) !== null) {
+                $data['status'][] = 'AVAILABLE';
+                $data['registrar'] = 'Not Registered';
+                return $data;
+            }
+
+            $limit = self::findLine($whoisData, fn(string $line): bool => self::saysQueryLimit($line));
+            if ($limit !== null) {
+                self::$lastErrorType = 'rate_limit';
+                self::$lastErrorMessage = "{$whoisServer} is not answering queries for now: \"{$limit}\". Try again later.";
+                $logger = new \App\Services\Logger();
+                $logger->warning('WHOIS query limit reached', [
+                    'domain' => $domain,
+                    'server' => $whoisServer,
+                    'answer' => $limit
+                ]);
+                return null;
+            }
+
+            $data['lookup_note'] = self::unreadableNote($whoisServer, $whoisData);
+        }
+
         // If no registrar found, set default
         if ($data['registrar'] === null) {
             $data['registrar'] = 'Unknown';
@@ -1168,8 +1369,30 @@ class WhoisService
     }
 
     /**
+     * Whether a WHOIS or RDAP status says the domain is not registered.
+     *
+     * The words are looked for anywhere in the status, as registries wrap them in sentences
+     * (.pk: "Not Registered, and may be available if valid"). A status that says the opposite
+     * holds the same word, so those are ruled out first: DNS Belgium answers "NOT AVAILABLE"
+     * for every registered .be domain. Other wordings of "nothing found" count as well, as
+     * "No Object Found" does.
+     */
+    private static function isAvailableStatus(string $status): bool
+    {
+        if (preg_match('/\b(?:not|un)\s*available\b|\bnot\s+free\b/i', $status)) {
+            return false;
+        }
+
+        return stripos($status, 'AVAILABLE') !== false
+            || stripos($status, 'FREE') !== false
+            || stripos($status, 'NO MATCH') !== false
+            || stripos($status, 'NOT FOUND') !== false
+            || self::saysNotRegistered($status);
+    }
+
+    /**
      * Get domain status based on expiration and WHOIS status
-     * 
+     *
      * @param string|null $expirationDate The domain expiration date
      * @param array $statusArray WHOIS/RDAP status flags
      * @param array $whoisData Full WHOIS data (optional, for additional checks)
@@ -1178,10 +1401,7 @@ class WhoisService
     {
         // Check if domain is available (not registered)
         foreach ($statusArray as $status) {
-            if (stripos($status, 'AVAILABLE') !== false || 
-                stripos($status, 'FREE') !== false ||
-                stripos($status, 'NO MATCH') !== false ||
-                stripos($status, 'NOT FOUND') !== false) {
+            if (is_string($status) && self::isAvailableStatus($status)) {
                 return 'available';
             }
         }
@@ -1217,8 +1437,9 @@ class WhoisService
             }
         }
 
-        // Check for other positive status indicators (domain is registered)
-        $registeredIndicators = ['ok', 'registered', 'client', 'server'];
+        // Check for other positive status indicators (domain is registered).
+        // "connect" is DENIC's status for a registered .de domain, "Connected" JPRS's for a name like co.jp.
+        $registeredIndicators = ['ok', 'registered', 'client', 'server', 'connect'];
         foreach ($statusArray as $status) {
             foreach ($registeredIndicators as $indicator) {
                 if (stripos($status, $indicator) !== false) {
@@ -1275,6 +1496,14 @@ class WhoisService
         if (!empty($whoisData['registrar']) && $whoisData['registrar'] === 'Not Registered') {
             return 'available';
         }
+
+        // Only a registered domain has a registration date, and for .hu that date is all the answer
+        // holds. Today's date doesn't count: a value that is only a time of day is read as today.
+        $created = $whoisData['creation_date'] ?? null;
+        if (is_string($created) && preg_match('/^(?:19[89]\d|2\d{3})-\d{2}-\d{2}$/', $created) && $created < date('Y-m-d')) {
+            return 'active';
+        }
+
         // Return error to avoid incorrectly marking registered domains as available
         return 'error';
     }
@@ -1285,13 +1514,17 @@ class WhoisService
      * a lookup that works again then doesn't announce the redemption period a second time, or
      * take a dropped domain registered again for a renewal.
      *
+     * "available" is read from the saved WHOIS data again as well. Versions up to 1.1.6 took DNS
+     * Belgium's "NOT AVAILABLE" for available, so every registered .be domain was saved that way:
+     * the check that corrects one then doesn't announce it as newly registered.
+     *
      * @param array $domain Domain row as it was before this lookup
      */
     public function getLastKnownStatus(array $domain): string
     {
         $status = (string)($domain['status'] ?? '');
         $whois = json_decode($domain['whois_data'] ?? '', true);
-        if ($status !== 'error' || !is_array($whois) || $whois === []) {
+        if (($status !== 'error' && $status !== 'available') || !is_array($whois) || $whois === []) {
             return $status;
         }
 

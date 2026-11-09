@@ -21,6 +21,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use Dotenv\Dotenv;
 use App\Models\Domain;
 use App\Models\DnsRecord;
+use App\Services\DnsHistoryService;
 use App\Services\DnsService;
 use App\Services\Logger;
 use App\Helpers\CronHelper;
@@ -38,6 +39,7 @@ new Database();
 $domainModel = new Domain();
 $dnsModel    = new DnsRecord();
 $dnsService  = new DnsService();
+$historyService = new DnsHistoryService();
 $logger      = new Logger('dns-discover');
 
 $settingModel = new \App\Models\Setting();
@@ -130,7 +132,7 @@ foreach ($domains as $domain) {
         }
 
         if ($quickMode) {
-            $newRecords = $dnsService->quickScan($domainName);
+            $newRecords = $dnsService->quickScan($domainName, $dnsModel->getDistinctHosts($domain['id']));
         } else {
             // Deep scan: gather certificate log subdomains + existing hosts, then full lookup
             $existingHosts = $dnsModel->getDistinctHosts($domain['id']);
@@ -180,8 +182,7 @@ foreach ($domains as $domain) {
                 ]);
             }
 
-            $extraSubs  = array_unique(array_merge($existingHosts, $ctSubs));
-            $newRecords = $dnsService->lookup($domainName, $extraSubs, fn(string $msg) => $cron->log("  🔎 $msg"));
+            $newRecords = $dnsService->lookup($domainName, $ctSubs, fn(string $msg) => $cron->log("  🔎 $msg"), $existingHosts);
         }
 
         $totalRecords = array_sum(array_map('count', $newRecords));
@@ -213,8 +214,19 @@ foreach ($domains as $domain) {
             }
         }
 
+        // Read after the scan: a deep scan can take minutes, and a DNS check may have run meanwhile
+        $previousRecords = $dnsModel->getPreviousSnapshot($domain['id']);
+
         $saveStats = $dnsModel->saveSnapshot($domain['id'], $newRecords);
         $domainModel->update($domain['id'], ['dns_last_checked' => date('Y-m-d H:i:s')]);
+
+        // A scan sends no alert, but what it changed in the list is kept like any other change
+        if (!empty($previousRecords)) {
+            $changes = $dnsService->diffRecords($previousRecords, $newRecords);
+            if ($historyService->recordChange($domain, $previousRecords, $changes, $quickMode ? 'quick_scan' : 'deep_scan')) {
+                $cron->log("  → Previous records saved to DNS history");
+            }
+        }
 
         $stats['scanned']++;
         $stats['added']   += $saveStats['added'];

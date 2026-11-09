@@ -341,6 +341,10 @@ foreach ($domains as $domain) {
         logMessage("  ✓ Updated WHOIS data for $domainName");
         logMessage("    Expiration: " . ($whoisData['expiration_date'] ?? ($expirationDate ? "$expirationDate (set by hand)" : 'N/A')) . ", Status: $status" . ($oldStatus !== $status ? " (was: $oldStatus)" : ""));
 
+        if (!empty($whoisData['lookup_note'])) {
+            logMessage("    ⚠ Nothing could be read: {$whoisData['lookup_note']}");
+        }
+
         // Add a small delay between domain checks to avoid rate limiting
         // This helps especially with .nl and other TLDs that have strict rate limits
         usleep(1000000); // 1 second delay between checks

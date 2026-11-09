@@ -1,0 +1,346 @@
+{% extends "layout/base.twig" %}
+
+{% set title = 'DNS History' %}
+{% set pageTitle = 'DNS History' %}
+{% set pageDescription = 'The DNS records your domains had before each change' %}
+{% set pageIcon = 'fas fa-history' %}
+
+{% block content %}
+{% set filterSearch = filters.search ?? '' %}
+{% set filterState = filters.state ?? '' %}
+{% set filterSource = filters.source ?? '' %}
+{% set page = pagination.current_page %}
+{% set totalPages = pagination.total_pages %}
+{% set perPage = pagination.per_page %}
+{% set totalEntries = pagination.total %}
+{% set isAdmin = session.role is defined and session.role == 'admin' %}
+
+{# What this page is, and whether anything is being saved #}
+{% if not historyAvailable %}
+<div class="mb-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-4">
+    <div class="flex items-start">
+        <i class="fas fa-database text-amber-500 dark:text-amber-400 mt-0.5 mr-3"></i>
+        <div>
+            <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">DNS History needs a database update</h3>
+            <p class="text-xs text-amber-700 dark:text-amber-400 mt-1">Nothing is saved until the update has run.</p>
+            {% if isAdmin %}
+            <a href="/install/update" class="inline-flex items-center mt-2 text-xs font-medium text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100">
+                <i class="fas fa-arrow-right mr-1"></i>Run the database update
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% elseif not historyOn %}
+<div class="mb-4 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg p-4">
+    <div class="flex items-start">
+        <i class="fas fa-pause-circle text-amber-500 dark:text-amber-400 mt-0.5 mr-3"></i>
+        <div>
+            <h3 class="text-sm font-semibold text-amber-800 dark:text-amber-300">DNS History is turned off</h3>
+            <p class="text-xs text-amber-700 dark:text-amber-400 mt-1">Nothing new is saved. What is listed here stays until it is {{ retentionDays }} days old.</p>
+            {% if isAdmin %}
+            <a href="/settings#monitoring" class="inline-flex items-center mt-2 text-xs font-medium text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100">
+                <i class="fas fa-cog mr-1"></i>Turn it on in Settings
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="mb-4 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 rounded-lg p-4">
+    <div class="flex items-start">
+        <i class="fas fa-info-circle text-blue-500 dark:text-blue-400 mt-0.5 mr-3"></i>
+        <p class="text-xs text-blue-800 dark:text-blue-300">
+            When a DNS check or scan changes a domain's records, the records from before the change are saved here for {{ retentionDays }} days.
+            Deleting a domain saves its records too. Each entry can be downloaded as a zone file.
+        </p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Filters & Search -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-5 mb-4">
+    <form method="GET" action="/dns-history">
+        <input type="hidden" name="per_page" value="{{ perPage }}">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+                <label for="history-search" class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Domain</label>
+                <input type="text" id="history-search" name="search" value="{{ filterSearch }}" placeholder="example.com" maxlength="255"
+                       class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+            </div>
+
+            <div>
+                <label for="history-state" class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Domains</label>
+                <select id="history-state" name="state" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+                    <option value="">All Domains</option>
+                    <option value="existing" {{ filterState == 'existing' ? 'selected' : '' }}>Existing Only</option>
+                    <option value="deleted" {{ filterState == 'deleted' ? 'selected' : '' }}>Deleted Only</option>
+                </select>
+            </div>
+
+            <div>
+                <label for="history-source" class="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5">Saved By</label>
+                <select id="history-source" name="source" class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+                    <option value="">Anything</option>
+                    {% for key, label in sourceLabels %}
+                    <option value="{{ key }}" {{ filterSource == key ? 'selected' : '' }}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="flex items-end space-x-2">
+                <button type="submit" class="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium">
+                    <i class="fas fa-filter mr-2"></i>
+                    Apply Filters
+                </button>
+                <a href="/dns-history" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm font-medium">
+                    <i class="fas fa-times mr-2"></i>
+                    Clear
+                </a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Pagination Info, Bulk Delete & Per Page Selector -->
+<div class="mb-4 flex flex-wrap justify-between items-center gap-2">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Showing <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_from }}</span> to
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_to }}</span> of
+        <span class="font-semibold text-gray-900 dark:text-white">{{ totalEntries }}</span> {{ totalEntries == 1 ? 'entry' : 'entries' }}
+    </div>
+
+    <div class="flex items-center gap-2">
+        <button type="button" id="historyBulkDeleteBtn" class="hidden inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium"
+                onclick="deleteSelectedHistory()">
+            <i class="fas fa-trash-alt mr-1.5" style="font-size: 10px;"></i>
+            Delete Selected (<span id="historySelectedCount">0</span>)
+        </button>
+
+        <form method="GET" action="/dns-history" class="flex items-center gap-2">
+            <input type="hidden" name="search" value="{{ filterSearch }}">
+            <input type="hidden" name="state" value="{{ filterState }}">
+            <input type="hidden" name="source" value="{{ filterSource }}">
+
+            <label for="per_page" class="text-sm text-gray-600 dark:text-slate-400">Show:</label>
+            <select name="per_page" id="per_page" onchange="this.form.submit()" class="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+                <option value="10" {{ perPage == 10 ? 'selected' : '' }}>10</option>
+                <option value="25" {{ perPage == 25 ? 'selected' : '' }}>25</option>
+                <option value="50" {{ perPage == 50 ? 'selected' : '' }}>50</option>
+                <option value="100" {{ perPage == 100 ? 'selected' : '' }}>100</option>
+            </select>
+        </form>
+    </div>
+</div>
+
+<!-- Entries -->
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+    {% if entries is not empty %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full">
+            <thead class="bg-gray-50 dark:bg-slate-900">
+                <tr>
+                    <th class="w-8 px-3 py-2"><input type="checkbox" id="historySelectAll" class="rounded border-gray-300 dark:border-slate-600" aria-label="Select all entries on this page"></th>
+                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Saved</th>
+                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Domain</th>
+                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">What Happened</th>
+                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Records Saved</th>
+                    <th class="px-4 py-2 text-right text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                {% for entry in entries %}
+                {% set hasChanges = entry.added_count + entry.removed_count + entry.changed_count > 0 %}
+                <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
+                    <td class="w-8 px-3 py-2"><input type="checkbox" class="history-cb rounded border-gray-300 dark:border-slate-600" value="{{ entry.id }}" aria-label="Select this entry"></td>
+                    <td class="px-4 py-2 text-xs text-gray-700 dark:text-slate-300 whitespace-nowrap">{{ entry.created_at|date('M d, Y H:i') }}</td>
+                    <td class="px-4 py-2 text-xs font-medium">
+                        {% if entry.domain_id %}
+                            <a href="/domains/{{ entry.domain_id }}#dns" class="text-primary hover:underline">{{ entry.domain_name }}</a>
+                        {% else %}
+                            <span class="text-gray-900 dark:text-white">{{ entry.domain_name }}</span>
+                            <span class="ml-1 px-1.5 py-0.5 bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-slate-300 rounded font-medium" style="font-size: 10px;">deleted</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-xs text-gray-700 dark:text-slate-300">
+                        <span class="font-medium text-gray-900 dark:text-white">{{ sourceLabels[entry.source]|default(entry.source) }}</span>
+                        {% if entry.removed_count > 0 %}
+                            <span class="ml-1 px-1.5 py-0.5 bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 rounded font-semibold">−{{ entry.removed_count }} removed</span>
+                        {% endif %}
+                        {% if entry.added_count > 0 %}
+                            <span class="ml-1 px-1.5 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-700 dark:text-green-400 rounded font-semibold">+{{ entry.added_count }} added</span>
+                        {% endif %}
+                        {% if entry.changed_count > 0 %}
+                            <span class="ml-1 px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 rounded font-semibold">~{{ entry.changed_count }} changed</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-xs text-gray-600 dark:text-slate-400 whitespace-nowrap">
+                        {{ entry.record_count }} {{ entry.source == 'deleted' ? 'at deletion' : 'from before' }}
+                    </td>
+                    <td class="px-4 py-2 text-right whitespace-nowrap">
+                        {% if hasChanges %}
+                        <button type="button" onclick="toggleHistoryChanges({{ entry.id }})" aria-expanded="false" aria-controls="history-changes-{{ entry.id }}" id="history-toggle-{{ entry.id }}"
+                                class="inline-flex items-center px-2 py-1 text-xs text-gray-700 dark:text-slate-300 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                            <i class="fas fa-chevron-down mr-1 transition-transform" id="history-icon-{{ entry.id }}" style="font-size: 9px;"></i>Changes
+                        </button>
+                        {% endif %}
+                        <a href="/dns-history/{{ entry.id }}/export?view=1" target="_blank" rel="noopener"
+                           class="inline-flex items-center px-2 py-1 text-xs text-gray-700 dark:text-slate-300 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">
+                            <i class="fas fa-eye mr-1" style="font-size: 9px;"></i>View
+                        </a>
+                        <a href="/dns-history/{{ entry.id }}/export"
+                           class="inline-flex items-center px-2 py-1 text-xs text-white bg-primary rounded hover:bg-primary-dark transition-colors">
+                            <i class="fas fa-download mr-1" style="font-size: 9px;"></i>Zone File
+                        </a>
+                        <button type="button" onclick="deleteHistory([{{ entry.id }}])" title="Delete"
+                                class="ml-1 text-gray-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 transition-colors">
+                            <i class="fas fa-trash-alt" style="font-size: 11px;"></i>
+                        </button>
+                    </td>
+                </tr>
+                {% if hasChanges %}
+                <tr id="history-changes-{{ entry.id }}" class="hidden bg-gray-50 dark:bg-slate-900">
+                    <td></td>
+                    <td colspan="5" class="px-4 py-3">
+                        {% include 'partials/dns-history-changes.twig' with { entry: entry } only %}
+                    </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <!-- Empty State -->
+    <div class="p-12 text-center">
+        <i class="fas fa-history text-gray-300 dark:text-slate-600 text-4xl mb-3"></i>
+        {% if filterSearch or filterState or filterSource %}
+        <p class="text-sm text-gray-600 dark:text-slate-400">No entries match these filters</p>
+        <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">Try adjusting your filters</p>
+        {% else %}
+        <p class="text-sm text-gray-600 dark:text-slate-400">Nothing saved yet</p>
+        <p class="text-xs text-gray-400 dark:text-slate-500 mt-1">An entry appears the first time a DNS check finds a change, or a domain with DNS records is deleted.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Pagination Controls -->
+{% if totalPages > 1 %}
+<div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Page <span class="font-semibold text-gray-900 dark:text-white">{{ page }}</span> of
+        <span class="font-semibold text-gray-900 dark:text-white">{{ totalPages }}</span>
+    </div>
+
+    <div class="flex items-center gap-1">
+        {% if page > 1 %}
+            <a href="{{ pagination_url(1, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300" aria-label="First page">
+                <i class="fas fa-angle-double-left"></i>
+            </a>
+            <a href="{{ pagination_url(page - 1, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                <i class="fas fa-angle-left"></i> Previous
+            </a>
+        {% endif %}
+
+        {% set range = 2 %}
+        {% set startPage = max(1, page - range) %}
+        {% set endPage = min(totalPages, page + range) %}
+
+        {% if startPage > 1 %}
+            <a href="{{ pagination_url(1, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">1</a>
+            {% if startPage > 2 %}
+                <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+            {% endif %}
+        {% endif %}
+
+        {% for i in startPage..endPage %}
+            {% if i == page %}
+                <span class="px-3 py-2 text-sm bg-primary text-white rounded-lg font-semibold">{{ i }}</span>
+            {% else %}
+                <a href="{{ pagination_url(i, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ i }}</a>
+            {% endif %}
+        {% endfor %}
+
+        {% if endPage < totalPages %}
+            {% if endPage < totalPages - 1 %}
+                <span class="px-2 text-gray-500 dark:text-slate-400">...</span>
+            {% endif %}
+            <a href="{{ pagination_url(totalPages, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">{{ totalPages }}</a>
+        {% endif %}
+
+        {% if page < totalPages %}
+            <a href="{{ pagination_url(page + 1, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300">
+                Next <i class="fas fa-angle-right"></i>
+            </a>
+            <a href="{{ pagination_url(totalPages, filters, perPage) }}" class="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300" aria-label="Last page">
+                <i class="fas fa-angle-double-right"></i>
+            </a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Hidden form for deleting entries -->
+<form id="historyDeleteForm" method="POST" action="/dns-history/delete" class="hidden">
+    {{ csrf_field() }}
+    <input type="hidden" name="return_to" value="{{ pagination_url(page, filters, perPage) }}">
+</form>
+
+<script>
+function toggleHistoryChanges(id) {
+    var row = document.getElementById('history-changes-' + id);
+    var open = row.classList.toggle('hidden') === false;
+    document.getElementById('history-icon-' + id).classList.toggle('rotate-180', open);
+    document.getElementById('history-toggle-' + id).setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+async function deleteHistory(ids) {
+    var ok = await confirmAction({
+        message: ids.length === 1
+            ? 'Delete this DNS history entry? Its saved records can\'t be brought back.'
+            : 'Delete ' + ids.length + ' DNS history entries? Their saved records can\'t be brought back.'
+    });
+    if (!ok) return;
+
+    var form = document.getElementById('historyDeleteForm');
+    ids.forEach(function(id) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'history_ids[]';
+        input.value = id;
+        form.appendChild(input);
+    });
+    form.submit();
+}
+
+function deleteSelectedHistory() {
+    var ids = Array.prototype.map.call(document.querySelectorAll('.history-cb:checked'), function(cb) { return cb.value; });
+    if (ids.length > 0) deleteHistory(ids);
+}
+
+(function() {
+    var selectAll = document.getElementById('historySelectAll');
+    var boxes = document.querySelectorAll('.history-cb');
+    var bulkBtn = document.getElementById('historyBulkDeleteBtn');
+    var countEl = document.getElementById('historySelectedCount');
+
+    function updateSelection() {
+        var checked = document.querySelectorAll('.history-cb:checked').length;
+        countEl.textContent = checked;
+        bulkBtn.classList.toggle('hidden', checked === 0);
+        if (selectAll) {
+            selectAll.checked = checked > 0 && checked === boxes.length;
+        }
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            boxes.forEach(function(cb) { cb.checked = selectAll.checked; });
+            updateSelection();
+        });
+    }
+    boxes.forEach(function(cb) { cb.addEventListener('change', updateSelection); });
+})();
+</script>
+{% endblock %}

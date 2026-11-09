@@ -138,14 +138,14 @@
                 {% set iconTextClass = 'text-' ~ notification.color ~ '-600 dark:text-' ~ notification.color ~ '-400' %}
                 {% set hasDomain = notification.domain_id is not empty %}
                 {% set domainUrl = hasDomain ? '/domains/' ~ notification.domain_id : null %}
+                {# Where a click leads. The links of an unread notification also carry data-mark-read, which marks it as read on the way (partials/confirm-modal.twig) #}
                 {% set clickUrl = null %}
                 {% if notification.type == 'update_available' %}
-                    {% set clickUrl = '/notifications/' ~ notification.id ~ '/mark-read?redirect=settings' %}
-                {% elseif hasDomain and not notification.is_read %}
-                    {% set clickUrl = '/notifications/' ~ notification.id ~ '/mark-read?redirect=domain&domain_id=' ~ notification.domain_id %}
+                    {% set clickUrl = '/settings#updates' %}
                 {% elseif hasDomain %}
                     {% set clickUrl = domainUrl %}
                 {% endif %}
+                {% set clickMark = notification.is_read ? '' : ' data-mark-read="' ~ (notification.id + 0) ~ '"' %}
                 {% set loginData = notification.login_data ?? null %}
                 {% set isLogin = (notification.type == 'session_new' and loginData) %}
                 {% set isFailedLogin = (notification.type == 'session_failed' and loginData) %}
@@ -162,7 +162,7 @@
                                 <i class="fas fa-sign-in-alt text-blue-600"></i>
                             </div>
                         {% elseif clickUrl %}
-                            <a href="{{ clickUrl }}" class="w-10 h-10 {{ iconBgClass }} rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                            <a href="{{ clickUrl }}"{{ clickMark|raw }} class="w-10 h-10 {{ iconBgClass }} rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
                                 <i class="fas fa-{{ notification.icon }} {{ iconTextClass }} text-sm"></i>
                             </a>
                         {% else %}
@@ -175,7 +175,7 @@
                         <div class="flex-1 min-w-0">
                             <div class="flex items-center gap-2">
                                 {% if clickUrl %}
-                                    <a href="{{ clickUrl }}" class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary transition-colors">{{ notification.title }}</a>
+                                    <a href="{{ clickUrl }}"{{ clickMark|raw }} class="text-sm font-medium text-gray-900 dark:text-white hover:text-primary transition-colors">{{ notification.title }}</a>
                                 {% else %}
                                     <h3 class="text-sm font-medium text-gray-900 dark:text-white">{{ notification.title }}</h3>
                                 {% endif %}
@@ -301,7 +301,7 @@
                                 <!-- Standard notification message -->
                                 <p class="text-xs text-gray-600 dark:text-slate-400 mt-0.5">{{ notification.message }}</p>
                                 {% if hasDomain and clickUrl %}
-                                    <a href="{{ clickUrl }}" class="text-xs text-primary mt-0.5 hover:underline inline-block">
+                                    <a href="{{ clickUrl }}"{{ clickMark|raw }} class="text-xs text-primary mt-0.5 hover:underline inline-block">
                                         <i class="fas fa-external-link-alt text-[10px] mr-1"></i>View domain
                                     </a>
                                 {% endif %}
@@ -311,9 +311,12 @@
                         <!-- Actions -->
                         <div class="flex items-center gap-1 ml-2 flex-shrink-0">
                             {% if not notification.is_read %}
-                                <a href="/notifications/{{ notification.id }}/mark-read" class="w-7 h-7 flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10 rounded transition-colors" title="Mark as read">
-                                    <i class="fas fa-check text-xs"></i>
-                                </a>
+                                <form method="POST" action="/notifications/{{ notification.id }}/mark-read" class="inline">
+                                    {{ csrf_field() }}
+                                    <button type="submit" class="w-7 h-7 flex items-center justify-center text-gray-400 dark:text-slate-500 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-500/10 rounded transition-colors" title="Mark as read">
+                                        <i class="fas fa-check text-xs"></i>
+                                    </button>
+                                </form>
                             {% endif %}
                             <form method="POST" action="/notifications/{{ notification.id }}/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this notification?')">
                                 {{ csrf_field() }}
@@ -414,7 +417,7 @@
 <script>
 async function markAllAsRead() {
     var ok = await confirmAction({ message: 'Mark all notifications as read?', title: 'Mark All Read', icon: 'fa-check-double text-primary', confirmText: 'Mark Read', confirmClass: 'bg-primary hover:bg-primary-dark' });
-    if (ok) window.location.href = '/notifications/mark-all-read';
+    if (ok) postTo('/notifications/mark-all-read');
 }
 
 async function clearAll() {

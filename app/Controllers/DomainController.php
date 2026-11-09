@@ -559,6 +559,12 @@ class DomainController extends Controller
         if ($status !== 'available') {
             $_SESSION['success'] = "Domain '$domainName' added successfully";
         }
+
+        // The list shows only "Error" for a domain nothing could be read about: say why now
+        if (!empty($whoisData['lookup_note'])) {
+            $_SESSION['warning'] = "Registration data for '$domainName' could not be read. {$whoisData['lookup_note']} "
+                . 'The domain page says what can be done.';
+        }
         $this->redirect('/domains');
     }
 
@@ -610,6 +616,8 @@ class DomainController extends Controller
             'groups' => $groups,
             'availableTags' => $availableTags,
             'referrer' => $referrer,
+            'dnsHistoryAvailable' => (new \App\Services\DnsHistoryService())->isAvailable(),
+            'dnsHistoryOn' => (new \App\Models\Setting())->isDnsHistoryOn(),
             'title' => 'Edit Domain'
         ]);
     }
@@ -670,13 +678,20 @@ class DomainController extends Controller
         $statusChanged = ($domain['is_active'] != $isActive);
         $oldGroupId = $domain['notification_group_id'];
 
-        $this->domainModel->update($id, [
+        $fields = [
             'notification_group_id' => $groupId,
             'is_active' => $isActive,
             'dns_monitoring_enabled' => $dnsMonitoringEnabled,
             'ssl_monitoring_enabled' => $sslMonitoringEnabled,
             'expiration_date' => $manualExpirationDate
-        ]);
+        ];
+
+        // Only when the form has the checkbox, and once the update that adds the column has run
+        if (isset($_POST['dns_history_field']) && $this->domainModel->hasColumn('dns_history_enabled')) {
+            $fields['dns_history_enabled'] = isset($_POST['dns_history_enabled']) ? 1 : 0;
+        }
+
+        $this->domainModel->update($id, $fields);
 
         // Send notification if monitoring status changed and has notification group
         if ($statusChanged && $groupId) {
@@ -887,7 +902,9 @@ class DomainController extends Controller
 
         // A first check only saves a baseline, as in the cron
         if (!empty($previousRecords)) {
-            $this->sendDnsRefreshAlerts($id, $dnsService->diffRecords($previousRecords, $records), $dnsService);
+            $changes = $dnsService->diffRecords($previousRecords, $records);
+            (new \App\Services\DnsHistoryService())->recordChange($domain, $previousRecords, $changes, 'refresh');
+            $this->sendDnsRefreshAlerts($id, $changes, $dnsService);
         }
 
         $logger->info('DNS refresh completed', [
@@ -1265,6 +1282,13 @@ class DomainController extends Controller
 
     public function delete($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/domains');
+            return;
+        }
+
+        $this->verifyCsrf('/domains');
+
         $id = $params['id'] ?? 0;
         $domain = $this->checkDomainAccess($id);
 
@@ -1274,9 +1298,21 @@ class DomainController extends Controller
             return;
         }
 
+        $historyKept = (new \App\Services\DnsHistoryService())->recordDeletion($domain);
         $this->domainModel->delete($id);
-        $_SESSION['success'] = 'Domain deleted successfully';
+        $_SESSION['success'] = 'Domain deleted successfully' . ($historyKept ? '. ' . $this->dnsHistoryKeptNote(1) : '');
         $this->redirect('/domains');
+    }
+
+    /**
+     * What to tell the user after deleting domains whose DNS records went to DNS history
+     */
+    private function dnsHistoryKeptNote(int $domains): string
+    {
+        $days = (new \App\Models\Setting())->getDnsHistoryRetentionDays();
+        $whose = $domains === 1 ? 'Its DNS records are' : "The DNS records of $domains domain(s) are";
+
+        return "$whose kept in DNS History for $days days.";
     }
 
     public function show($params = [])
@@ -1365,10 +1401,50 @@ class DomainController extends Controller
             'dnsHasCloudflare' => $dnsHasCloudflare,
             'dnsHasWildcard' => $dnsHasWildcard,
             'dnsIpDetails' => $dnsIpDetails,
+            'dnsHistory' => $this->getDnsHistoryForView((int)$id),
             'sslCertificates' => $sslCertificates,
             'sslStats' => $sslStats,
             'title' => $domain['domain_name']
         ]);
+    }
+
+    /**
+     * What the DNS tab shows of a domain's DNS history: its newest entries without their saved
+     * records, and whether history is being saved. Empty while the update that adds the table is
+     * pending, and whenever reading it fails: the domain page must not depend on it.
+     *
+     * @return array{available: bool, on: bool, days: int, total: int, entries: array, labels: array}
+     */
+    private function getDnsHistoryForView(int $domainId): array
+    {
+        $history = [
+            'available' => false,
+            'on'        => false,
+            'days'      => 90,
+            'total'     => 0,
+            'entries'   => [],
+            'labels'    => \App\Services\DnsHistoryService::SOURCE_LABELS,
+        ];
+
+        try {
+            if (!(new \App\Services\DnsHistoryService())->isAvailable()) {
+                return $history;
+            }
+
+            $historyModel = new \App\Models\DnsHistory();
+            $settingModel = new \App\Models\Setting();
+
+            return [
+                'available' => true,
+                'on'        => $settingModel->isDnsHistoryOn(),
+                'days'      => $settingModel->getDnsHistoryRetentionDays(),
+                'total'     => $historyModel->countForDomain($domainId),
+                'entries'   => $historyModel->getForDomain($domainId, 20),
+            ] + $history;
+        } catch (\Throwable $e) {
+            (new \App\Services\Logger('dns'))->warning('DNS history could not be read', ['error' => $e->getMessage()]);
+            return $history;
+        }
     }
 
     public function bulkAdd()
@@ -1731,7 +1807,9 @@ class DomainController extends Controller
         $settingModel = new \App\Models\Setting();
         $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
 
+        $historyService = new \App\Services\DnsHistoryService();
         $deleted = 0;
+        $historyKept = 0;
         foreach ($domainIds as $id) {
             if ($isolationMode === 'isolated') {
                 $domain = $this->domainModel->findWithIsolation($id, $userId);
@@ -1739,12 +1817,18 @@ class DomainController extends Controller
                 $domain = $this->domainModel->find($id);
             }
 
-            if ($domain && $this->domainModel->delete($id)) {
+            if (!$domain) {
+                continue;
+            }
+
+            $kept = $historyService->recordDeletion($domain);
+            if ($this->domainModel->delete($id)) {
                 $deleted++;
+                $historyKept += $kept ? 1 : 0;
             }
         }
 
-        $_SESSION['success'] = "Deleted $deleted domain(s)";
+        $_SESSION['success'] = "Deleted $deleted domain(s)" . ($historyKept > 0 ? '. ' . $this->dnsHistoryKeptNote($historyKept) : '');
         $this->redirect('/domains');
     }
 
@@ -2425,13 +2509,34 @@ class DomainController extends Controller
             $dnsService = new \App\Services\DnsService();
             $dnsModel = new \App\Models\DnsRecord();
 
-            $records = $dnsService->quickScan($domain['domain_name']);
+            $previousRecords = $dnsModel->getPreviousSnapshot($id);
+            $records = $dnsService->quickScan($domain['domain_name'], $dnsModel->getDistinctHosts($id));
             $totalRecords = array_sum(array_map('count', $records));
+
+            // Saving an empty lookup would delete every record the lookups found, as in performDnsRefresh()
+            if ($totalRecords === 0) {
+                $logger->warning('Quick DNS scan returned no records', [
+                    'domain_name' => $domain['domain_name'],
+                ]);
+                $_SESSION['warning'] = 'No DNS records found for this domain';
+                $this->redirectBackToDomain($id, '#dns');
+                return;
+            }
 
             $this->enrichIpDetails($records, $dnsService);
 
             $stats = $dnsModel->saveSnapshot($id, $records);
             $this->domainModel->update($id, ['dns_last_checked' => date('Y-m-d H:i:s')]);
+
+            // A scan sends no alert, but what it changed in the list is kept like any other change
+            if (!empty($previousRecords)) {
+                (new \App\Services\DnsHistoryService())->recordChange(
+                    $domain,
+                    $previousRecords,
+                    $dnsService->diffRecords($previousRecords, $records),
+                    'quick_scan'
+                );
+            }
 
             $logger->info('Quick DNS scan completed', [
                 'domain_name' => $domain['domain_name'],

@@ -66,6 +66,11 @@
                         <i class="fas fa-search text-sm mr-3 w-4 {{ is_active_prefix('/debug/whois') ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400' }}"></i>
                         <span class="text-sm">WHOIS Lookup</span>
                     </a>
+                    <a href="/dns-history" class="sidebar-link group flex items-center px-3 py-2 rounded-lg transition-all duration-200
+                        {{ is_active_prefix('/dns-history') ? 'bg-blue-50 dark:bg-slate-800 text-blue-700 dark:text-blue-400 font-medium' : 'text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-white' }}">
+                        <i class="fas fa-history text-sm mr-3 w-4 {{ is_active_prefix('/dns-history') ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400' }}"></i>
+                        <span class="text-sm">DNS History</span>
+                    </a>
                 </div>
             </div>
 

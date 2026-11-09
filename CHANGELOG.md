@@ -7,9 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade Notes
+- **Run the updater** - Open `/install/update` to apply migration 034
+- **DNS History** - On by default, entries kept for 90 days (Settings → Monitoring)
+- **.ch and .li** - Add their RDAP server under TLD Registry, see [Lookup Servers](https://github.com/Hosteroid/domain-monitor/wiki/Lookup-Servers)
+- **TLDs Without a Lookup Server** - Domains on .gr, .ph, .vn and similar show Error instead of Active
+- **TLD Registry** - Run "Import TLDs from IANA" again if "With WHOIS" is low
+
+### Added
+- **DNS History** - Saves a domain's DNS records before every change; per-domain and global view, 90-day retention by default (#75)
+- **Zone File Export** - Export current records or any DNS History entry as a BIND zone file
+- **Lookup Notes** - Domain page shows why a WHOIS/RDAP lookup couldn't be read
+
+### Changed
+- **Zone Import** - Handles multi-string TXT records, escaped quotes and comments containing quotes
+- **TLD Refresh** - Fetches the same data as an import, including registration date
+- **Lookup Servers** - Servers not listed by IANA are added in TLD Registry; removed hard-coded .pro WHOIS server
+
 ### Fixed
-- **Updates Stopping Part-Way** - When the web server user couldn't write one of the files an update replaces, the update copied files until it reached that one, then showed an error page without rolling back, leaving a mix of old and new files (#109). The updater now checks every file before it changes anything; if some can't be written, it stops with nothing changed, names them and shows the command to fix their ownership. This takes effect from the next update on, because each update is run by the version you're updating from
-- **Updater Rollback** - A PHP warning during an update or a rollback showed the error page and stopped the request. It now goes to the updater's own error handling, so a copy that fails part-way restores the backup and removes the files the update had added, and the Rollback button says what went wrong. Backups are made only once the update is ready to copy files. The downloaded update is deleted after a failed update too, and updates no longer leave an empty temporary file behind
+- **Quick Scan** - Fixed removal of subdomains found by a Deep Scan
+- **Deep Scan** - Fixed removal of hosts that only have TXT or SRV records
+- **DNS Change Detection** - Fixed repeated alerts for records returned in different letter case
+- **.be Domains** - Fixed registered domains shown as Available
+- **.de, .jp, .hu, .mo, .bo Domains** - Fixed registered domains shown as Error
+- **Availability Detection** - Unregistered domains detected on about 60 more registries
+- **TLDs Without a Lookup Server** - Fixed IANA's TLD record being saved as domain data
+- **WHOIS Rate Limits** - Long rate-limit responses (.lu) no longer overwrite saved data
+- **Registered Alerts** - Not sent for domains registered before they were added
+- **Created Date** - Fixed today's date shown when the registry returns none
+- **TLD Import** - Fixed WHOIS servers missing after IANA redesigned its TLD pages
+- **Zone Import** - Fixed hosts named like a record type and records spanning several lines
+- **Updater** - Checks file permissions before applying, rolls back on errors, cleans up temporary files (#109)
+- **Template Cache** - Fixed stale pages after an update in production mode
+
+### Security
+- **CSRF Protection** - Added to domain delete, group delete, channel delete/toggle and update check
+- **POST Method Enforced** - TLD toggle/refresh, notification mark-read, resend verification and logout changed from GET to POST
+- **TLD Import Progress** - Requires admin and a CSRF token
+
+### Technical
+- **Core** - `Core\TemplateLoader`, `TwigService::clearCache()`
+- **Services** - `DnsHistoryService`, `DnsService::buildBindZone()`, `TldRegistryService::parseIanaPage()`
+- **Models** - `DnsHistory`; `Setting::isDnsHistoryOn()`, `Setting::getDnsHistoryRetentionDays()`
+- **Views** - `partials/lookup-note.twig`; `postTo()`, `data-method="post"` and `data-mark-read` links
+- **Routes** - `GET /dns-history`, `POST /dns-history/delete`, `GET /dns-history/{id}/export`, `GET /domains/{id}/dns-export`
+- **Database** - `dns_history` table, `domains.dns_history_enabled`, settings `dns_history_enabled` and `dns_history_retention_days`
+
+### Migrations
+- `034_add_dns_history.sql` - DNS history table, per-domain switch and settings
 
 ## [1.1.6] - 2026-11-04
 

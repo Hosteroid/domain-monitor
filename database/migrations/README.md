@@ -45,6 +45,7 @@ If upgrading from v1.0.0, these incremental migrations will be applied:
 - `031_add_ct_log_sources.sql` - Certificate transparency sources for DNS deep scans (crt.sh, Cert Spotter), version 1.1.6
 - `032_add_renewal_notifications.sql` - Turns on the "Renewed" status change notification
 - `033_add_watchlist_groups.sql` - Notification group purpose (my domains or watchlist) and reminder days after expiry
+- `034_add_dns_history.sql` - DNS history table, per-domain switch and settings
 
 **Upgrade via:** Web updater at `/install/update`
 

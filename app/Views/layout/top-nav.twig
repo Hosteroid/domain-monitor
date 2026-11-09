@@ -124,25 +124,26 @@
                             {% if recentNotifications is not empty %}
                                 {% for notif in recentNotifications %}
                                     {% set hasDomain = notif.domain_id is defined and notif.domain_id %}
+                                    {# Where the notification leads. Its links carry data-mark-read, which marks it as read on the way (partials/confirm-modal.twig) #}
                                     {% if notif.type == 'update_available' %}
-                                        {% set notifUrl = '/notifications/' ~ notif.id ~ '/mark-read?redirect=settings' %}
+                                        {% set notifUrl = '/settings#updates' %}
                                     {% elseif hasDomain %}
-                                        {% set notifUrl = '/notifications/' ~ notif.id ~ '/mark-read?redirect=domain&domain_id=' ~ notif.domain_id %}
+                                        {% set notifUrl = '/domains/' ~ notif.domain_id %}
                                     {% else %}
-                                        {% set notifUrl = '/notifications/' ~ notif.id ~ '/mark-read' %}
+                                        {% set notifUrl = '/notifications' %}
                                     {% endif %}
                                     {% set loginData = notif.login_data|default(null) %}
                                     <div class="px-4 py-3 hover:bg-gray-50 dark:hover:bg-slate-700 border-b border-gray-100 dark:border-slate-700 bg-blue-50 dark:bg-blue-900/20 transition-colors notification-item" data-id="{{ notif.id }}">
                                         <div class="flex items-start space-x-3">
                                             {% if loginData and notif.type == 'session_failed' %}
-                                                <a href="{{ notifUrl }}" class="w-8 h-8 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                <a href="{{ notifUrl }}" data-mark-read="{{ notif.id }}" class="w-8 h-8 bg-red-100 dark:bg-red-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
                                                     {% if (loginData.country_code|default('xx')) != 'xx' %}
                                                         <span class="fi fi-{{ loginData.country_code|lower }} text-base rounded-sm"></span>
                                                     {% else %}
                                                         <i class="fas fa-shield-alt text-red-600 dark:text-red-400 text-sm"></i>
                                                     {% endif %}
                                                 </a>
-                                                <a href="{{ notifUrl }}" class="flex-1 min-w-0">
+                                                <a href="{{ notifUrl }}" data-mark-read="{{ notif.id }}" class="flex-1 min-w-0">
                                                     <div class="flex items-center gap-2">
                                                         <p class="text-sm font-semibold text-red-700 dark:text-red-400">{{ notif.title }}</p>
                                                         <span class="w-2 h-2 bg-red-500 rounded-full flex-shrink-0"></span>
@@ -156,14 +157,14 @@
                                                     </p>
                                                 </a>
                                             {% elseif loginData and notif.type == 'session_new' %}
-                                                <a href="{{ notifUrl }}" class="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                <a href="{{ notifUrl }}" data-mark-read="{{ notif.id }}" class="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
                                                     {% if loginData.country_code != 'xx' %}
                                                         <span class="fi fi-{{ loginData.country_code|lower }} text-base rounded-sm"></span>
                                                     {% else %}
                                                         <i class="fas fa-sign-in-alt text-blue-600 dark:text-blue-400 text-sm"></i>
                                                     {% endif %}
                                                 </a>
-                                                <a href="{{ notifUrl }}" class="flex-1 min-w-0">
+                                                <a href="{{ notifUrl }}" data-mark-read="{{ notif.id }}" class="flex-1 min-w-0">
                                                     <div class="flex items-center gap-2">
                                                         <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ notif.title }}</p>
                                                         <span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
@@ -177,10 +178,10 @@
                                                     </p>
                                                 </a>
                                             {% else %}
-                                                <a href="{{ notifUrl }}" class="w-8 h-8 bg-{{ notif.color }}-100 dark:bg-{{ notif.color }}-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                                                <a href="{{ notifUrl }}" data-mark-read="{{ notif.id }}" class="w-8 h-8 bg-{{ notif.color }}-100 dark:bg-{{ notif.color }}-900/30 rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
                                                     <i class="fas fa-{{ notif.icon }} text-{{ notif.color }}-600 dark:text-{{ notif.color }}-400 text-sm"></i>
                                                 </a>
-                                                <a href="{{ notifUrl }}" class="flex-1 min-w-0">
+                                                <a href="{{ notifUrl }}" data-mark-read="{{ notif.id }}" class="flex-1 min-w-0">
                                                     <div class="flex items-center gap-2">
                                                         <p class="text-sm font-semibold text-gray-900 dark:text-white">{{ notif.title }}</p>
                                                         <span class="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></span>
@@ -298,10 +299,13 @@
                         
                         <div class="border-t border-gray-200 dark:border-slate-700 my-1"></div>
                         
-                        <a href="/logout" class="flex items-center px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150">
-                            <i class="fas fa-sign-out-alt w-5 mr-3"></i>
-                            Logout
-                        </a>
+                        <form method="POST" action="/logout">
+                            {{ csrf_field()|raw }}
+                            <button type="submit" class="w-full flex items-center px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150">
+                                <i class="fas fa-sign-out-alt w-5 mr-3"></i>
+                                Logout
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -312,6 +316,8 @@
 <script>
 function markNotifRead(notifId, btn) {
     fetch('/notifications/' + notifId + '/mark-read?ajax=1', {
+        method: 'POST',
+        body: new URLSearchParams({ csrf_token: csrfToken() }),
         headers: {
             'Accept': 'application/json',
             'X-Requested-With': 'XMLHttpRequest'
@@ -367,7 +373,7 @@ function markNotifRead(notifId, btn) {
         }
     })
     .catch(() => {
-        window.location.href = '/notifications/' + notifId + '/mark-read';
+        postTo('/notifications/' + notifId + '/mark-read');
     });
 }
 </script>

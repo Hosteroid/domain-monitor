@@ -64,6 +64,7 @@ class InstallerController extends Controller
             '031_add_ct_log_sources.sql',
             '032_add_renewal_notifications.sql',
             '033_add_watchlist_groups.sql',
+            '034_add_dns_history.sql',
         ];
 
         try {
@@ -214,6 +215,7 @@ class InstallerController extends Controller
                     '031_add_ct_log_sources.sql',
                     '032_add_renewal_notifications.sql',
                     '033_add_watchlist_groups.sql',
+                    '034_add_dns_history.sql',
                 ];
             }
 
@@ -447,6 +449,7 @@ class InstallerController extends Controller
                     '031_add_ct_log_sources.sql',
                     '032_add_renewal_notifications.sql',
                     '033_add_watchlist_groups.sql',
+                    '034_add_dns_history.sql',
                 ];
 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");
@@ -712,6 +715,10 @@ class InstallerController extends Controller
                 }
             }
             
+            // The update that brought these migrations replaced templates too: drop the compiled
+            // copies of the old ones, which nothing uses any more
+            \Core\TwigService::clearCache();
+
             $_SESSION['success'] = count($executed) . ' migration(s) executed successfully';
             $this->logger->info("Update completed successfully", ['migrations_executed' => count($executed)]);
             $this->redirect('/');

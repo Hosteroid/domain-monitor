@@ -1472,6 +1472,15 @@ class TldRegistryService
     }
 
     /**
+     * A TLD's WHOIS server, registry URL and dates as IANA has them now: what the Refresh button
+     * of a TLD saves. Null when IANA could not be reached.
+     */
+    public function fetchTldData(string $tld): ?array
+    {
+        return $this->fetchWhoisDataFromRdap($tld);
+    }
+
+    /**
      * Fallback: Fetch WHOIS data from IANA HTML page
      */
     private function fetchWhoisDataFromHtml(string $tld): ?array
@@ -1482,38 +1491,33 @@ class TldRegistryService
         try {
             $htmlClient = $this->getHtmlClient();
             $response = $htmlClient->get($url);
-            
+
             if ($response->getStatusCode() !== 200) {
                 $this->logger->error("HTML fetch failed for TLD $tld: HTTP " . $response->getStatusCode());
                 return null;
             }
-            
+
             $html = $response->getBody()->getContents();
-            
+
             if (empty($html) || strlen($html) < 100) {
                 $this->logger->warning("HTML content too short for TLD $tld: " . strlen($html) . " bytes");
                 return null;
             }
 
+            $page = self::parseIanaPage($html);
             $result = [];
 
-            // Parse HTML to extract WHOIS server and other data
-            $whoisServer = $this->extractWhoisServer($html);
-            $lastUpdated = $this->extractLastUpdated($html);
-            $registryUrl = $this->extractRegistryUrl($html);
-            $registrationDate = $this->extractRegistrationDate($html);
-
-            if ($whoisServer) {
-                $result['whois_server'] = $whoisServer;
+            if ($page['whois_server']) {
+                $result['whois_server'] = $page['whois_server'];
             }
-            if ($lastUpdated) {
-                $result['record_last_updated'] = $this->normalizeDate($lastUpdated);
+            if ($page['record_last_updated']) {
+                $result['record_last_updated'] = $this->normalizeDate($page['record_last_updated']);
             }
-            if ($registryUrl) {
-                $result['registry_url'] = $registryUrl;
+            if ($page['registry_url']) {
+                $result['registry_url'] = $page['registry_url'];
             }
-            if ($registrationDate) {
-                $result['registration_date'] = $this->normalizeDate($registrationDate);
+            if ($page['registration_date']) {
+                $result['registration_date'] = $this->normalizeDate($page['registration_date']);
             }
 
             return !empty($result) ? $result : null;
@@ -1526,68 +1530,52 @@ class TldRegistryService
     }
 
     /**
-     * Extract WHOIS server from IANA HTML
+     * Read IANA's page for a TLD (https://www.iana.org/domains/root/db/xx.html): its WHOIS server,
+     * RDAP servers, registry URL and dates. Each value follows its label with nothing but markup
+     * in between, and "-" stands for none. Nothing else about the layout is relied on, as IANA
+     * has changed it before: both "<b>WHOIS Server:</b> whois.example" and the label and value
+     * in two <div>s are read.
+     *
+     * @return array{whois_server: ?string, rdap_servers: string[], registry_url: ?string, record_last_updated: ?string, registration_date: ?string}
      */
-    private function extractWhoisServer(string $html): ?string
+    public static function parseIanaPage(string $html): array
     {
-        // Look for WHOIS Server pattern with HTML tags
-        if (preg_match('/<b>WHOIS Server:<\/b>\s*([^\s<]+)/i', $html, $matches)) {
-            return trim($matches[1]);
-        }
-        
-        // Fallback: Look for WHOIS Server pattern without HTML tags
-        if (preg_match('/WHOIS Server:\s*([^\s<]+)/i', $html, $matches)) {
-            return trim($matches[1]);
-        }
-        
-        return null;
-    }
+        // Markup and white space between a label and its value
+        $gap = '(?:\s*<[^>]+>)*\s*';
 
-    /**
-     * Extract last updated date from IANA HTML
-     */
-    private function extractLastUpdated(string $html): ?string
-    {
-        // Look for "Record last updated" pattern
-        if (preg_match('/Record last updated\s+(\d{4}-\d{2}-\d{2})/i', $html, $matches)) {
-            return $matches[1] . ' 00:00:00';
-        }
-        return null;
-    }
+        $page = [
+            'whois_server' => null,
+            'rdap_servers' => [],
+            'registry_url' => null,
+            'record_last_updated' => null,
+            'registration_date' => null,
+        ];
 
-    /**
-     * Extract registry URL from IANA HTML
-     */
-    private function extractRegistryUrl(string $html): ?string
-    {
-        // Look for "URL for registration services" pattern with <a> tag
-        if (preg_match('/<b>URL for registration services:<\/b>\s*<a[^>]*href="([^"]+)"[^>]*>/i', $html, $matches)) {
-            return trim($matches[1]);
+        if (preg_match('/WHOIS Server:?' . $gap . '([a-z0-9][a-z0-9.-]*\.[a-z][a-z0-9-]+)/i', $html, $matches)) {
+            $page['whois_server'] = strtolower($matches[1]);
         }
-        
-        // Look for "URL for registration services" pattern with HTML tags
-        if (preg_match('/<b>URL for registration services:<\/b>\s*([^\s<]+)/i', $html, $matches)) {
-            return trim($matches[1]);
-        }
-        
-        // Fallback: Look for "URL for registration services" pattern without HTML tags
-        if (preg_match('/URL for registration services:\s*([^\s<]+)/i', $html, $matches)) {
-            return trim($matches[1]);
-        }
-        
-        return null;
-    }
 
-    /**
-     * Extract registration date from IANA HTML
-     */
-    private function extractRegistrationDate(string $html): ?string
-    {
-        // Look for "Registration date" pattern
-        if (preg_match('/Registration date\s+(\d{4}-\d{2}-\d{2})/i', $html, $matches)) {
-            return $matches[1];
+        // One or more URLs, each in markup of its own. A link gives its URL twice, as address and as text.
+        if (preg_match('/RDAP (?:Base URLs?|Servers?):?((?:' . $gap . 'https?:\/\/[^\s<"]+)+)/i', $html, $matches)
+            && preg_match_all('/https?:\/\/[^\s<"]+/i', $matches[1], $urls)) {
+            $page['rdap_servers'] = array_values(array_unique($urls[0]));
         }
-        return null;
+
+        // The link's text is the URL; if it is worded otherwise, its address
+        if (preg_match('/(?:Website|URL for registration services):?' . $gap . '(https?:\/\/[^\s<"]+)/i', $html, $matches)
+            || preg_match('/(?:Website|URL for registration services):?(?:\s*<(?!a\b)[^>]+>)*\s*<a\b[^>]*\bhref="([^"]+)"/i', $html, $matches)) {
+            $page['registry_url'] = trim($matches[1]);
+        }
+
+        if (preg_match('/(?:Record )?last updated:?' . $gap . '(\d{4}-\d{2}-\d{2})/i', $html, $matches)) {
+            $page['record_last_updated'] = $matches[1] . ' 00:00:00';
+        }
+
+        if (preg_match('/Registration date:?' . $gap . '(\d{4}-\d{2}-\d{2})/i', $html, $matches)) {
+            $page['registration_date'] = $matches[1];
+        }
+
+        return $page;
     }
 
     /**

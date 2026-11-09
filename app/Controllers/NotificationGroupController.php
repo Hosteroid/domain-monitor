@@ -625,6 +625,14 @@ class NotificationGroupController extends Controller
 
     public function delete($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/groups');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/groups');
+
         $id = $params['id'] ?? 0;
         $group = $this->checkGroupAccess($id);
 
@@ -727,6 +735,14 @@ class NotificationGroupController extends Controller
 
     public function deleteChannel($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/groups');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/groups');
+
         $id = $params['id'] ?? 0;
         $groupId = $params['group_id'] ?? 0;
 
@@ -761,6 +777,14 @@ class NotificationGroupController extends Controller
 
     public function toggleChannel($params = [])
     {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/groups');
+            return;
+        }
+
+        // CSRF Protection
+        $this->verifyCsrf('/groups');
+
         $id = $params['id'] ?? 0;
         $groupId = $params['group_id'] ?? 0;
 

@@ -595,6 +595,44 @@
 
             <div class="border-t border-gray-200 dark:border-slate-700 my-6"></div>
 
+            <!-- DNS History -->
+            <div class="mb-6">
+                <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+                    <i class="fas fa-history text-primary mr-2"></i>
+                    DNS History
+                </h4>
+                <p class="text-sm text-gray-600 dark:text-slate-400 mb-4">Keeps the records a domain had before each change a DNS check or scan finds, and a domain's last records when it is deleted. Each entry can be downloaded as a zone file from <a href="/dns-history" class="text-primary hover:underline">DNS History</a>.</p>
+
+                {# Tells the save that this form has the checkbox: one without it (an older page) leaves the switch alone #}
+                <input type="hidden" name="dns_history_settings" value="1">
+                <label class="flex items-start cursor-pointer mb-4">
+                    <input type="checkbox"
+                           name="dns_history_enabled"
+                           value="1"
+                           {{ settings.dns_history_enabled|default('1') == '1' ? 'checked' : '' }}
+                           class="w-4 h-4 mt-0.5 text-primary border-gray-300 dark:border-slate-600 rounded focus:ring-primary cursor-pointer">
+                    <div class="ml-3">
+                        <span class="text-sm font-medium text-gray-900 dark:text-white">Save DNS history</span>
+                        <p class="text-xs text-gray-600 dark:text-slate-400 mt-1">Applies to every domain. A single domain can be left out on its Edit page. Turning this off stops saving; what is already saved stays until it is too old.</p>
+                    </div>
+                </label>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="dns_history_retention_days" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Keep For</label>
+                        <select class="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white"
+                                id="dns_history_retention_days" name="dns_history_retention_days">
+                            {% for choice in dnsHistoryRetentionChoices %}
+                                <option value="{{ choice.value }}" {{ choice.selected ? 'selected' : '' }}>{{ choice.label }}</option>
+                            {% endfor %}
+                        </select>
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Older entries are deleted when the DNS check runs. A domain keeps its newest {{ dnsHistoryMaxPerDomain }} entries at most.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border-t border-gray-200 dark:border-slate-700 my-6"></div>
+
             <!-- Check Interval -->
             <div class="mb-6">
                 <h4 class="text-base font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
