@@ -27,6 +27,7 @@ class UpdateService
     private Logger $logger;
     private Client $httpClient;
     private string $rootPath;
+    private array $addedPaths = [];
 
     public function __construct()
     {
@@ -168,7 +169,10 @@ class UpdateService
             'backup_path' => null,
             'errors' => [],
         ];
+        $archivePath = null;
+        $stagingDir = null;
 
+        $this->throwOnPhpErrors();
         try {
             // Step 1: Pre-flight checks
             $this->logger->info('Running pre-flight checks');
@@ -185,7 +189,29 @@ class UpdateService
                 return $result;
             }
 
-            // Step 3a: Create database backup
+            // Step 3: Download the archive
+            $this->logger->info('Downloading update', ['url' => $downloadUrl]);
+            $archivePath = $this->downloadArchive($downloadUrl);
+
+            // Step 4: Extract to staging directory
+            $this->logger->info('Extracting archive');
+            $stagingDir = $this->extractArchive($archivePath);
+
+            // Step 4b: Verify extracted archive matches expected commit (integrity check)
+            $this->verifyExtractedCommitSha($stagingDir, $type);
+
+            // Step 4c: Check if composer dependencies changed (before we overwrite root)
+            $composerChanged = $this->checkComposerChanged($stagingDir);
+
+            // Step 4d: Stop before changing anything if a file the update writes isn't writable
+            $unwritable = $this->findUnwritablePaths($stagingDir);
+            if ($unwritable) {
+                $this->logger->warning('Update stopped: paths not writable', ['paths' => $unwritable]);
+                $result['errors'][] = $this->describeUnwritable($unwritable);
+                return $result;
+            }
+
+            // Step 5a: Create database backup
             $this->logger->info('Creating database backup');
             $dbBackupResult = $this->createDatabaseBackup();
             if ($dbBackupResult['success']) {
@@ -197,25 +223,11 @@ class UpdateService
                 $result['db_backup_warning'] = $dbBackupResult['reason'];
             }
 
-            // Step 3b: Create file backup
+            // Step 5b: Create file backup
             $this->logger->info('Creating file backup');
             $backupPath = $this->createBackup();
             $result['backup_path'] = $backupPath;
             $this->settingModel->setValue('update_backup_path', $backupPath);
-
-            // Step 4: Download the archive
-            $this->logger->info('Downloading update', ['url' => $downloadUrl]);
-            $archivePath = $this->downloadArchive($downloadUrl);
-
-            // Step 5: Extract to staging directory
-            $this->logger->info('Extracting archive');
-            $stagingDir = $this->extractArchive($archivePath);
-
-            // Step 5b: Verify extracted archive matches expected commit (integrity check)
-            $this->verifyExtractedCommitSha($stagingDir, $type);
-
-            // Step 5c: Check if composer dependencies changed (before we overwrite root)
-            $composerChanged = $this->checkComposerChanged($stagingDir);
 
             // Step 6: Copy files (respecting protected paths)
             $this->logger->info('Applying update files');
@@ -238,9 +250,6 @@ class UpdateService
 
             // Step 8: Update commit SHA tracking
             $this->updateCommitSha();
-
-            // Step 9: Clean up
-            $this->cleanup($archivePath, $stagingDir);
 
             $result['success'] = true;
             // Report the version we actually applied (DB app_version only changes after migrations)
@@ -269,11 +278,16 @@ class UpdateService
                 $this->logger->info('Attempting rollback');
                 try {
                     $this->restoreBackup($result['backup_path']);
+                    $this->removeAddedPaths();
                     $result['errors'][] = 'Update failed but rollback was successful';
                 } catch (\Exception $rollbackError) {
                     $result['errors'][] = 'Rollback also failed: ' . $rollbackError->getMessage();
                 }
             }
+        } finally {
+            // Step 9: Clean up, after a failed update too
+            $this->cleanup($archivePath, $stagingDir);
+            restore_error_handler();
         }
 
         return $result;
@@ -293,6 +307,7 @@ class UpdateService
             ];
         }
 
+        $this->throwOnPhpErrors();
         try {
             $this->logger->startOperation('Rollback');
 
@@ -319,6 +334,8 @@ class UpdateService
                 'success' => false,
                 'error' => 'Rollback failed: ' . $e->getMessage(),
             ];
+        } finally {
+            restore_error_handler();
         }
     }
 
@@ -464,6 +481,20 @@ class UpdateService
     // ========================================================================
 
     /**
+     * Make PHP warnings and notices throw until restore_error_handler(). The app's error handler shows the error
+     * page and stops the request, so a copy that failed part-way never reached the rollback (#109).
+     */
+    private function throwOnPhpErrors(): void
+    {
+        set_error_handler(static function (int $errno, string $errstr, string $errfile, int $errline): bool {
+            if (!(error_reporting() & $errno)) {
+                return false;
+            }
+            throw new \ErrorException($errstr, 0, $errno, $errfile, $errline);
+        });
+    }
+
+    /**
      * Run pre-flight checks before updating
      */
     private function preflightChecks(): array
@@ -528,7 +559,8 @@ class UpdateService
      */
     private function downloadArchive(string $url): string
     {
-        $tempFile = tempnam(sys_get_temp_dir(), 'dm_update_') . '.zip';
+        // Download into the file tempnam() creates: a name with ".zip" added would leave that empty file behind
+        $tempFile = tempnam(sys_get_temp_dir(), 'dm_update_');
 
         $response = $this->httpClient->get($url, [
             'sink' => $tempFile,
@@ -675,11 +707,11 @@ class UpdateService
     }
 
     /**
-     * Copy files from staging to the application root, respecting protected paths
+     * Files and folders in the staging directory that the update copies, keyed by their path relative to the
+     * application root. Protected paths are left out.
      */
-    private function applyFiles(string $stagingDir): int
+    private function stagedItems(string $stagingDir): \Generator
     {
-        $count = 0;
         $iterator = new \RecursiveIteratorIterator(
             new \RecursiveDirectoryIterator($stagingDir, \RecursiveDirectoryIterator::SKIP_DOTS),
             \RecursiveIteratorIterator::SELF_FIRST
@@ -689,16 +721,80 @@ class UpdateService
             $relativePath = str_replace($stagingDir . DIRECTORY_SEPARATOR, '', $item->getPathname());
             $relativePath = str_replace('\\', '/', $relativePath); // Normalize for Windows
 
-            // Skip protected paths
-            if ($this->isProtected($relativePath)) {
+            if (!$this->isProtected($relativePath)) {
+                yield $relativePath => $item;
+            }
+        }
+    }
+
+    /**
+     * Paths the update has to write but the web server user can't: files it replaces, and the nearest existing
+     * folder of anything it adds. Checked before anything is changed, so the update doesn't stop part-way (#109).
+     */
+    private function findUnwritablePaths(string $stagingDir): array
+    {
+        $unwritable = [];
+        foreach ($this->stagedItems($stagingDir) as $relativePath => $item) {
+            $targetPath = $this->rootPath . '/' . $relativePath;
+            if (file_exists($targetPath)) {
+                // A folder that's already there only needs to be writable when something is added to it
+                if (!$item->isDir() && !is_writable($targetPath)) {
+                    $unwritable[$relativePath] = true;
+                }
                 continue;
             }
 
+            $parent = dirname($relativePath);
+            while ($parent !== '.' && !file_exists($this->rootPath . '/' . $parent)) {
+                $parent = dirname($parent);
+            }
+            if (!is_writable($this->rootPath . '/' . $parent)) {
+                $unwritable[$parent === '.' ? $this->rootPath : $parent] = true;
+            }
+        }
+
+        return array_keys($unwritable);
+    }
+
+    /**
+     * Error message naming the paths the web server user can't write, with a command that gives it ownership
+     */
+    private function describeUnwritable(array $paths): string
+    {
+        $list = implode(', ', array_slice($paths, 0, 5));
+        if (count($paths) > 5) {
+            $list .= ' and ' . (count($paths) - 5) . ' more';
+        }
+
+        $user = null;
+        if (function_exists('posix_geteuid') && function_exists('posix_getpwuid')) {
+            $info = posix_getpwuid(posix_geteuid());
+            $user = is_array($info) ? $info['name'] : null;
+        }
+
+        if ($user === null) {
+            return "The web server user can't write to $list, so nothing was changed. Give it write access and try again.";
+        }
+
+        return "The web server user ($user) can't write to $list, so nothing was changed. "
+            . "Fix the ownership and try again, for example: sudo chown -R $user {$this->rootPath}";
+    }
+
+    /**
+     * Copy files from staging to the application root, respecting protected paths
+     */
+    private function applyFiles(string $stagingDir): int
+    {
+        $count = 0;
+        $this->addedPaths = [];
+
+        foreach ($this->stagedItems($stagingDir) as $relativePath => $item) {
             $targetPath = $this->rootPath . '/' . $relativePath;
 
             if ($item->isDir()) {
                 if (!is_dir($targetPath)) {
                     mkdir($targetPath, 0755, true);
+                    $this->addedPaths[] = $targetPath;
                 }
             } else {
                 // Ensure parent directory exists
@@ -707,7 +803,12 @@ class UpdateService
                     mkdir($parentDir, 0755, true);
                 }
 
-                copy($item->getPathname(), $targetPath);
+                if (!file_exists($targetPath)) {
+                    $this->addedPaths[] = $targetPath;
+                }
+                if (!copy($item->getPathname(), $targetPath)) {
+                    throw new \RuntimeException("Could not write $relativePath");
+                }
                 $count++;
             }
         }
@@ -1167,10 +1268,28 @@ class UpdateService
             throw new \RuntimeException("Failed to open backup archive: $backupPath");
         }
 
-        $zip->extractTo($this->rootPath);
+        if (!$zip->extractTo($this->rootPath)) {
+            $zip->close();
+            throw new \RuntimeException("Could not restore every file from $backupPath");
+        }
         $zip->close();
 
         $this->logger->info('Backup restored', ['path' => $backupPath]);
+    }
+
+    /**
+     * Remove the files and folders a failed update added, last first so each folder is empty by then
+     */
+    private function removeAddedPaths(): void
+    {
+        foreach (array_reverse($this->addedPaths) as $path) {
+            if (is_dir($path)) {
+                rmdir($path);
+            } elseif (file_exists($path)) {
+                unlink($path);
+            }
+        }
+        $this->addedPaths = [];
     }
 
     // ========================================================================
@@ -1192,24 +1311,32 @@ class UpdateService
     }
 
     /**
-     * Clean up temporary files
+     * Clean up temporary files. Also runs after a failed update, so what it can't remove is only logged.
      */
-    private function cleanup(string $archivePath, string $stagingDir): void
+    private function cleanup(?string $archivePath, ?string $stagingDir): void
     {
-        // Remove archive
-        if (file_exists($archivePath)) {
-            unlink($archivePath);
-        }
+        try {
+            // Remove archive
+            if ($archivePath !== null && file_exists($archivePath)) {
+                unlink($archivePath);
+            }
 
-        // Remove staging directory
-        if (is_dir($stagingDir)) {
-            $this->removeDirectory($stagingDir);
-        }
+            if ($stagingDir === null) {
+                return;
+            }
 
-        // Also clean parent staging dir if it exists
-        $parentStaging = dirname($stagingDir);
-        if (strpos(basename($parentStaging), 'dm_staging_') === 0 && is_dir($parentStaging)) {
-            $this->removeDirectory($parentStaging);
+            // Remove staging directory
+            if (is_dir($stagingDir)) {
+                $this->removeDirectory($stagingDir);
+            }
+
+            // Also clean parent staging dir if it exists
+            $parentStaging = dirname($stagingDir);
+            if (strpos(basename($parentStaging), 'dm_staging_') === 0 && is_dir($parentStaging)) {
+                $this->removeDirectory($parentStaging);
+            }
+        } catch (\Exception $e) {
+            $this->logger->warning('Could not remove temporary update files', ['error' => $e->getMessage()]);
         }
     }
 

@@ -5,6 +5,12 @@ All notable changes to Domain Monitor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Updates Stopping Part-Way** - When the web server user couldn't write one of the files an update replaces, the update copied files until it reached that one, then showed an error page without rolling back, leaving a mix of old and new files (#109). The updater now checks every file before it changes anything; if some can't be written, it stops with nothing changed, names them and shows the command to fix their ownership. This takes effect from the next update on, because each update is run by the version you're updating from
+- **Updater Rollback** - A PHP warning during an update or a rollback showed the error page and stopped the request. It now goes to the updater's own error handling, so a copy that fails part-way restores the backup and removes the files the update had added, and the Rollback button says what went wrong. Backups are made only once the update is ready to copy files. The downloaded update is deleted after a failed update too, and updates no longer leave an empty temporary file behind
+
 ## [1.1.6] - 2026-11-04
 
 ### Upgrade Notes
