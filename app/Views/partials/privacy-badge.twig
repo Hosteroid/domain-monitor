@@ -1,0 +1,21 @@
+{#
+    Whether a domain's lookup answer shows who registered it.
+
+    Variables:
+        privacy - hidden, public or unknown; empty when no check has read it yet
+        compact - true for the small form used on the domain page
+#}
+{% set badges = {
+    hidden: {label: 'Hidden', icon: 'fa-user-shield', class: 'bg-green-100 dark:bg-green-500/20 text-green-800 dark:text-green-400', title: 'The lookup answer does not show who registered the domain'},
+    public: {label: 'Public', icon: 'fa-eye', class: 'bg-blue-100 dark:bg-blue-500/20 text-blue-800 dark:text-blue-400', title: "The lookup answer shows the registrant's name or organisation"},
+    unknown: {label: 'Unknown', icon: 'fa-question', class: 'bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300', title: 'The lookup answer does not say who registered the domain, or whether that is hidden'},
+} %}
+{% set badge = privacy ? (badges[privacy] ?? null) : null %}
+{% if badge %}
+    <span class="inline-flex items-center {{ compact|default(false) ? 'px-2 py-0.5 rounded font-semibold' : 'px-3 py-1 rounded-full font-medium' }} text-xs {{ badge.class }}" title="{{ badge.title }}">
+        <i class="fas {{ badge.icon }} mr-1"{% if compact|default(false) %} style="font-size: 9px;"{% endif %}></i>
+        {{ badge.label }}
+    </span>
+{% else %}
+    <span class="text-gray-400 dark:text-slate-500">-</span>
+{% endif %}

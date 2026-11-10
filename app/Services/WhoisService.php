@@ -26,6 +26,18 @@ class WhoisService
         'ネームサーバ' => 'Name Server',
     ];
 
+    // Wording that stands where a registrant's name would be when it is not published.
+    // General phrases only: no privacy service or registry is listed by name.
+    private const HIDDEN_WORDING = '/redacted|withheld|privacy|disclos|obfuscat|confidential|anonym|prox(?:y|ies)\b'
+        . '|\bgdpr\b|\bmask(?:ed|ing)\b|\bon\s+behalf\s+of\b|\brdds\b|\bregistrar\s+of\s+record\b|^https?:\/\/'
+        . '|\b(?:not|non|un)[\s-]*(?:published|public|shown|displayed|provided|available|applicable)\b'
+        . '|^(?:private?|hidden|restricted|protected|unknown|none|n\/?a|[-*x.]+|not?\s+(?:\w+\s+)?found\W*)$'
+        . '|\bhidden\s+(?:upon|by|for|per|due)\b|\bregistry\s+escrow\b'
+        . '|\bprivate?\W*(?:person|individual|registra\w*|customer|name|owner|whois|domain|contact|by\s+design)'
+        . '|\bregistra\w*\W+private\b|\bwhois\W*agent\b|\bdata\W*protect'
+        . '|\b(?:whois|domain|identity|contact|registra\w*)\W*(?:protect|shield|guard|mask)'
+        . '|\bprotect\w*\W+(?:domain|whois|registra|contact)/i';
+
     private TldRegistry $tldModel;
     
     // Track last error type for rate limit detection
@@ -606,6 +618,7 @@ class WhoisService
                     'nameservers' => [],
                     'status' => ['AVAILABLE'],
                     'owner' => 'Unknown',
+                    'privacy' => 'unknown',
                     'whois_server' => $rdapHost . ' (RDAP)',
                     'raw_data' => [
                         'states' => ['AVAILABLE'],
@@ -628,6 +641,7 @@ class WhoisService
                             'nameservers' => [],
                             'status' => ['AVAILABLE'],
                             'owner' => 'Unknown',
+                            'privacy' => 'unknown',
                             'whois_server' => $rdapHost . ' (RDAP)',
                             'raw_data' => [
                                 'states' => ['AVAILABLE'],
@@ -651,7 +665,28 @@ class WhoisService
         // Extract the RDAP host for display
         $rdapHost = parse_url($rdapBaseUrl, PHP_URL_HOST);
         
-        return $this->parseRDAPData($domain, $data, $rdapHost);
+        $info = $this->parseRDAPData($domain, $data, $rdapHost);
+        $registered = !in_array('AVAILABLE', $info['status'], true);
+
+        // The registry may leave the registrant to the registrar's own RDAP server (.com, .net, .org)
+        $registrarUrl = $registered && $info['privacy'] !== 'public' ? self::registrarRdapLink($data, $rdapUrl) : null;
+        if ($registrarUrl !== null) {
+            $registrarData = $this->queryRegistrarRdap($registrarUrl);
+            if ($registrarData === null) {
+                // Nothing said by the registry, and the registrar could not be asked
+                $info['privacy'] ??= 'unknown';
+            } else {
+                $registrant = self::rdapRegistrant($registrarData);
+                if ($registrant['privacy'] === 'public' || ($registrant['privacy'] !== null && $info['privacy'] !== 'hidden')) {
+                    $info = self::withRegistrant($info, $registrant);
+                }
+            }
+        }
+
+        // An answer without a word about the registrant publishes none
+        $info['privacy'] ??= $registered ? 'hidden' : 'unknown';
+
+        return $info;
     }
 
 
@@ -671,6 +706,7 @@ class WhoisService
             'nameservers' => [],
             'status' => [],
             'owner' => 'Unknown',
+            'privacy' => null,
             'whois_server' => $rdapHost . ' (RDAP)',
             'raw_data' => []
         ];
@@ -772,6 +808,9 @@ class WhoisService
             }
         }
         
+        // What the answer shows of the registrant; null when it says nothing about one
+        $info = self::withRegistrant($info, self::rdapRegistrant($rdapData));
+
         // Set default registrar if not found
         if ($info['registrar'] === null) {
             $info['registrar'] = 'Unknown';
@@ -783,6 +822,317 @@ class WhoisService
         ];
         
         return $info;
+    }
+
+    /**
+     * Whether a value stands where a registrant's name would be, saying that it is not published
+     */
+    private static function isHiddenWording(string $value): bool
+    {
+        return preg_match(self::HIDDEN_WORDING, trim($value)) === 1;
+    }
+
+    /**
+     * What an RDAP answer shows of the registrant: 'public' with the name or organisation,
+     * 'hidden', 'unknown' for a contact handle alone, or null when it says nothing about one
+     */
+    private static function rdapRegistrant(array $rdapData): array
+    {
+        $found = ['privacy' => null, 'name' => null, 'org' => null];
+        $hasEntity = $hasCard = $hasHandle = $hiddenRemark = false;
+
+        foreach ((array)($rdapData['entities'] ?? []) as $entity) {
+            if (!is_array($entity) || !in_array('registrant', (array)($entity['roles'] ?? []), true)) {
+                continue;
+            }
+            $hasEntity = true;
+            $hasHandle = $hasHandle || (is_string($entity['handle'] ?? null) && trim($entity['handle']) !== '');
+
+            foreach ((array)($entity['vcardArray'][1] ?? []) as $field) {
+                if (!is_array($field) || count($field) < 4) {
+                    continue;
+                }
+                $hasCard = true;
+                // An organisation can come as a list: its name, then its units
+                $value = is_array($field[3]) ? implode(' ', array_filter($field[3], 'is_string')) : $field[3];
+                if (!is_string($value) || trim($value) === '' || self::isHiddenWording($value)) {
+                    continue;
+                }
+                if ($field[0] === 'fn') {
+                    $found['name'] ??= trim($value);
+                } elseif ($field[0] === 'org') {
+                    $found['org'] ??= trim($value);
+                }
+            }
+
+            foreach ((array)($entity['remarks'] ?? []) as $remark) {
+                $title = is_array($remark) && is_string($remark['title'] ?? null) ? $remark['title'] : '';
+                $hiddenRemark = $hiddenRemark || self::isHiddenWording($title);
+            }
+        }
+
+        if ($found['name'] !== null || $found['org'] !== null) {
+            $found['privacy'] = 'public';
+        } elseif ($hasCard || $hiddenRemark || self::redactsRegistrant($rdapData)) {
+            $found['privacy'] = 'hidden';
+        } elseif ($hasEntity) {
+            // A handle alone leads to a name only through another query
+            $found['privacy'] = $hasHandle ? 'unknown' : 'hidden';
+        }
+
+        return $found;
+    }
+
+    /**
+     * Whether the answer's list of redacted fields (RFC 9537) names the registrant or its name
+     */
+    private static function redactsRegistrant(array $rdapData): bool
+    {
+        foreach ((array)($rdapData['redacted'] ?? []) as $entry) {
+            $name = is_array($entry) && is_array($entry['name'] ?? null) ? $entry['name'] : [];
+            $label = $name['description'] ?? $name['type'] ?? '';
+            if (is_string($label) && preg_match('/^registrant(\s+(contact|name|organi[sz]ation))?$/i', trim($label))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The registrar's RDAP address for the same domain, as the registry's answer links to it
+     */
+    private static function registrarRdapLink(array $rdapData, string $askedUrl): ?string
+    {
+        foreach ((array)($rdapData['links'] ?? []) as $link) {
+            if (!is_array($link) || ($link['rel'] ?? null) !== 'related' || !is_string($link['href'] ?? null)
+                || !is_string($link['type'] ?? null) || stripos($link['type'], 'rdap') === false) {
+                continue;
+            }
+
+            $href = trim($link['href']);
+            $host = parse_url($href, PHP_URL_HOST);
+            // Only a public host name over HTTPS: the address comes from someone else's answer
+            if (stripos($href, 'https://') !== 0 || !is_string($host) || strpos($host, '.') === false
+                || filter_var(trim($host, '[]'), FILTER_VALIDATE_IP) !== false) {
+                continue;
+            }
+            // Some answers link to themselves
+            if (strcasecmp(rtrim($href, '/'), rtrim($askedUrl, '/')) === 0) {
+                continue;
+            }
+
+            return $href;
+        }
+
+        return null;
+    }
+
+    /**
+     * Ask the registrar's RDAP server for the domain. A failure is not a failed lookup: it
+     * only leaves the registrant unknown.
+     */
+    private function queryRegistrarRdap(string $url): ?array
+    {
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 3,
+            CURLOPT_TIMEOUT => 5,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 3,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_HTTPHEADER => [
+                'Accept: application/rdap+json, application/json, */*',
+                'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ],
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+        $data = $httpCode === 200 && is_string($response) ? json_decode($response, true) : null;
+        $usable = is_array($data) && !isset($data['errorCode']);
+
+        $logger = new \App\Services\Logger();
+        $logger->debug('Registrar RDAP request', [
+            'url' => $url,
+            'http_code' => $httpCode,
+            'usable' => $usable
+        ]);
+
+        return $usable ? $data : null;
+    }
+
+    /**
+     * Put what was read of the registrant into a lookup record
+     */
+    private static function withRegistrant(array $record, array $registrant): array
+    {
+        $record['privacy'] = $registrant['privacy'];
+
+        if ($registrant['privacy'] === 'public') {
+            $record['owner'] = $registrant['name'] ?? $registrant['org'];
+            if ($registrant['org'] !== null) {
+                $record['organization'] = $registrant['org'];
+            }
+        }
+
+        return $record;
+    }
+
+    /**
+     * What a WHOIS answer shows of the registrant: 'public' with the name or organisation,
+     * 'hidden', or null when it cannot be told. Reads lines such as "Registrant Name: x" and
+     * the lines under a heading such as "Registrant:", "Holder" or "Owner Contact".
+     */
+    private static function whoisRegistrant(string $whoisData): array
+    {
+        $found = ['privacy' => null, 'name' => null, 'org' => null];
+        $hidden = false;
+        $inBlock = false;   // under a registrant heading
+        $blockLines = 0;    // lines read under it
+        $gap = false;       // an empty line came between the heading and its lines
+        $seen = [];         // kinds of field already read under it
+
+        foreach (explode("\n", str_replace("\r", '', $whoisData)) as $line) {
+            $line = trim($line);
+
+            if ($line === '') {
+                // An empty line ends the block, unless it comes straight after the heading
+                $inBlock = $inBlock && $blockLines === 0;
+                $gap = $inBlock;
+                continue;
+            }
+            if ($line[0] === '%' || $line[0] === '#') {
+                continue;
+            }
+
+            // "[Registrant] Example Inc." reads as "Registrant: Example Inc."
+            if (preg_match('/^(?:[a-z]\.\s+)?\[(\S[^\]]*)\]\s+(\S.*)$/iu', $line, $matches)) {
+                $line = $matches[1] . ': ' . $matches[2];
+            }
+
+            // A heading: the word alone on its line, as "Registrant:", "[Holder]" or "** Registrant:"
+            if (preg_match('/^(?:domain\s+)?(?:registrant|owner|holder|titular)(?:\s+(?:contact|details|information|info|data))*$/i', trim($line, " \t*[]:"))) {
+                $inBlock = true;
+                $blockLines = 0;
+                $gap = false;
+                $seen = [];
+                continue;
+            }
+
+            // "Name: value", also written "Name.........: value"
+            $key = null;
+            $value = $line;
+            if (preg_match('/^([^:]*?)[.\s]*:\s*(.*)$/', $line, $matches)) {
+                $key = strtolower(trim($matches[1]));
+                $value = trim($matches[2]);
+            }
+
+            $kind = null;
+            $fromBlock = true;
+            if ($key === null) {
+                // Straight under a heading, the first line is the name
+                $kind = $inBlock && $blockLines === 0 && !$gap ? 'name' : null;
+            } elseif (preg_match('/\b(?:registrant|owner|holder|titular)\b/', $key)) {
+                // What the field holds is told by the words that are left
+                $rest = trim(preg_replace('/\b(?:registrant|owner|holder|titular|domain|contact|registry)\b|[^a-z]+/', ' ', $key));
+                $fromBlock = false;
+                $kind = match (true) {
+                    $rest === '' => 'either',
+                    $rest === 'name' => 'name',
+                    in_array($rest, ['org', 'organization', 'organisation', 'company'], true) => 'org',
+                    $rest === 'c' => 'handle',
+                    default => null,
+                };
+            } elseif ($inBlock && !preg_match('/\b(?:id|no|nr|number|code|type|domain|servers?|hosts?|user|account|login|zone)\b/', $key)) {
+                // "org id" and "name server" are neither
+                if (preg_match('/\b(?:org|organi[sz]ation|company)\b/', $key)) {
+                    $kind = 'org';
+                } elseif (preg_match('/\bname\b/', $key)) {
+                    $kind = 'name';
+                }
+            }
+
+            // Under a heading only the first of each kind counts: a later one may belong to the next contact
+            if ($kind !== null && $fromBlock) {
+                $kind = isset($seen[$kind]) ? null : $kind;
+                if ($kind !== null) {
+                    $seen[$kind] = true;
+                }
+            }
+
+            if ($inBlock) {
+                $blockLines++;
+            }
+
+            if ($kind === null) {
+                // Another heading ends the block
+                if ($key !== null && $value === '') {
+                    $inBlock = false;
+                }
+                continue;
+            }
+
+            if ($value === '') {
+                // A name field left empty
+                $hidden = $hidden || $kind === 'name';
+            } elseif (self::isHiddenWording($value)) {
+                $hidden = true;
+            } elseif ($kind === 'org') {
+                $found['org'] ??= $value;
+            } elseif ($kind === 'name' || ($kind === 'either' && !self::looksLikeHandle($value))) {
+                $found['name'] ??= $value;
+            }
+        }
+
+        if ($found['name'] !== null || $found['org'] !== null) {
+            $found['privacy'] = 'public';
+        } elseif ($hidden) {
+            $found['privacy'] = 'hidden';
+        }
+
+        return $found;
+    }
+
+    /**
+     * Whether a value is a contact handle ("NG8867695-NICAT", "ADMIN-LSNIC") and not a name
+     */
+    private static function looksLikeHandle(string $value): bool
+    {
+        return !preg_match('/\s/', $value)
+            && (preg_match('/\d/', $value) || preg_match('/^[A-Z0-9]+(?:[-_][A-Z0-9]+)+$/', $value));
+    }
+
+    /**
+     * Keep the registrant privacy found by the last check when this one could not tell,
+     * as long as the registrar is the same
+     */
+    public function keepKnownPrivacy(array $existingDomain, array $whoisData): array
+    {
+        if (($whoisData['privacy'] ?? 'unknown') !== 'unknown') {
+            return $whoisData;
+        }
+
+        $previous = json_decode($existingDomain['whois_data'] ?? '', true);
+        if (!is_array($previous) || !in_array($previous['privacy'] ?? null, ['hidden', 'public'], true)
+            || ($previous['registrar'] ?? null) !== ($whoisData['registrar'] ?? null)) {
+            return $whoisData;
+        }
+
+        $whoisData['privacy'] = $previous['privacy'];
+        if ($previous['privacy'] === 'public') {
+            foreach (['owner', 'organization'] as $field) {
+                if (isset($previous[$field])) {
+                    $whoisData[$field] = $previous[$field];
+                }
+            }
+        }
+
+        return $whoisData;
     }
 
     /**
@@ -1033,6 +1383,7 @@ class WhoisService
             'nameservers' => [],
             'status' => [],
             'owner' => 'Unknown',
+            'privacy' => 'unknown',
             'whois_server' => $server,
             'raw_data' => [
                 'states' => [],
@@ -1075,6 +1426,7 @@ class WhoisService
             'nameservers' => [],
             'status' => [],
             'owner' => 'Unknown',
+            'privacy' => 'unknown',
             'whois_server' => $whoisServer,
             'raw_data' => []
         ];
@@ -1106,9 +1458,16 @@ class WhoisService
         
         $registrarFound = false;
         $currentSection = null;
+        $nameServerListStarted = false;
 
         foreach ($lines as $index => $line) {
             $line = trim($line);
+
+            // An empty line ends a list of name servers: .gg and .je go on with their terms of use
+            if ($line === '' && $nameServerListStarted) {
+                $currentSection = null;
+                $nameServerListStarted = false;
+            }
 
             // Skip empty lines and comments
             if (empty($line) || $line[0] === '%' || $line[0] === '#') {
@@ -1136,11 +1495,14 @@ class WhoisService
             // Check for section headers (UK format - lines ending with colon, no value)
             if (preg_match('/^([^:]+):\s*$/', $line, $matches)) {
                 $currentSection = strtolower(trim($matches[1]));
+                $nameServerListStarted = false;
                 
                 // For UK domains: Registrar section - next line has the actual registrar
                 if ($currentSection === 'registrar' && !$registrarFound && isset($lines[$index + 1])) {
                     $nextLine = trim($lines[$index + 1]);
-                    if (!empty($nextLine)) {
+                    // A field of its own is not the name: .at leaves "registrar:" empty for some
+                    // names and goes on with "registrant: XX123-NICAT". "Name: ..." is, as .eu answers.
+                    if (!empty($nextLine) && !preg_match('/^(?!name\s*:)[^:]+:(?:\s|$)/i', $nextLine)) {
                         // Extract registrar name (remove [Tag = XXX] part)
                         $registrarName = preg_replace('/\s*\[Tag\s*=\s*[^\]]+\]/i', '', $nextLine);
                         $registrarName = trim($registrarName);
@@ -1162,6 +1524,7 @@ class WhoisService
                 // Extract nameserver (format: "ns1.example.com    192.168.1.1")
                 if (!preg_match('/^(This|--|\d+\.)/', $line)) {
                     $ns = preg_split('/\s+/', $line)[0]; // Get first part (nameserver)
+                    $nameServerListStarted = $nameServerListStarted || strpos($ns, '.') !== false;
                     if (!empty($ns) && strpos($ns, '.') !== false && !in_array(strtolower($ns), $data['nameservers'])) {
                         $data['nameservers'][] = strtolower($ns);
                     }
@@ -1172,7 +1535,8 @@ class WhoisService
             if (strpos($line, ':') !== false) {
                 list($key, $value) = explode(':', $line, 2);
                 $key = trim(strtolower($key));
-                $value = trim($value);
+                // "Registrar:..........Name": dots that line the values up are not part of them
+                $value = trim(preg_replace('/^\.{2,}(?!\.)/', '', trim($value)));
 
                 // For UK format - check for URL in registrar section
                 if ($key === 'url' && $currentSection === 'registrar' && !empty($value)) {
@@ -1303,6 +1667,12 @@ class WhoisService
             $data['registrar'] = 'Unknown';
         }
         
+        // What the answer shows of the registrant
+        $registrant = self::whoisRegistrant($whoisData);
+        if ($registrant['privacy'] !== null) {
+            $data = self::withRegistrant($data, $registrant);
+        }
+
         $data['raw_data'] = [
             'states' => $data['status'],
             'nameServers' => $data['nameservers'],

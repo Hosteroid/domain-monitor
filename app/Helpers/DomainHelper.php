@@ -189,6 +189,43 @@ class DomainHelper
     {
         return array_map([self::class, 'formatForDisplay'], $domains);
     }
+
+    /**
+     * What the saved lookup record holds beyond the domain's own columns: creation date,
+     * nameservers, and whether the registrant is published (hidden, public or unknown).
+     * Privacy is null until a check has read it, and for a name that is not registered.
+     */
+    public static function lookupFields(array $domain): array
+    {
+        $saved = $domain['whois_data'] ?? null;
+        $data = is_string($saved) ? json_decode($saved, true) : null;
+        if (!is_array($data)) {
+            $data = [];
+        }
+
+        $created = $data['creation_date'] ?? null;
+        $nameservers = [];
+        foreach ((array)($data['nameservers'] ?? []) as $ns) {
+            // Host names only: a saved answer can hold a stray word, or dots around the name
+            $ns = is_string($ns) ? mb_strtolower(trim($ns, " \t\r\n."), 'UTF-8') : '';
+            if (preg_match('/^[\p{L}\p{N}][\p{L}\p{N}_-]*(?:\.[\p{L}\p{N}][\p{L}\p{N}_-]*)+$/u', $ns)) {
+                $nameservers[] = $ns;
+            }
+        }
+        $nameservers = array_values(array_unique($nameservers));
+        sort($nameservers, SORT_NATURAL);
+
+        $privacy = $data['privacy'] ?? null;
+        if (!in_array($privacy, ['hidden', 'public', 'unknown'], true) || ($domain['status'] ?? '') === 'available') {
+            $privacy = null;
+        }
+
+        return [
+            'creation_date' => is_string($created) && strtotime($created) !== false ? $created : null,
+            'nameservers' => $nameservers,
+            'privacy' => $privacy,
+        ];
+    }
     
     /**
      * Parse and clean WHOIS status array

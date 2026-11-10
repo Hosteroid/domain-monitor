@@ -322,6 +322,7 @@ foreach ($domains as $domain) {
         // Update domain information
         $status = $whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
         $renewal = $whoisService->detectRenewal($domain, $whoisData, $status);
+        $whoisData = $whoisService->keepKnownPrivacy($domain, $whoisData);
         $domainModel->update($domain['id'], [
             'registrar' => $whoisData['registrar'],
             'registrar_url' => $whoisData['registrar_url'] ?? null,
@@ -491,6 +492,7 @@ if (!empty($retryQueue)) {
                     $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
                     $status = $whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
                     $renewal = $whoisService->detectRenewal($domain, $whoisData, $status);
+                    $whoisData = $whoisService->keepKnownPrivacy($domain, $whoisData);
 
                     $domainModel->update($domain['id'], [
                         'registrar' => $whoisData['registrar'],

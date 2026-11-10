@@ -157,7 +157,7 @@ class NotificationGroupController extends Controller
                     }
                 }
 
-                $csvContent = $this->buildCsv($csvRows, array_merge(['group_name', 'group_description', 'purpose'], self::ALERT_TYPE_COLUMNS, ['channel_type', 'channel_config', 'is_active']));
+                $csvContent = \App\Helpers\CsvHelper::build($csvRows, array_merge(['group_name', 'group_description', 'purpose'], self::ALERT_TYPE_COLUMNS, ['channel_type', 'channel_config', 'is_active']));
                 $logger->info("CSV content built", ['bytes' => strlen($csvContent)]);
 
                 header('Content-Type: text/csv; charset=utf-8');
@@ -179,22 +179,6 @@ class NotificationGroupController extends Controller
             $_SESSION['error'] = 'Export failed: ' . $e->getMessage();
             $this->redirect('/groups');
         }
-    }
-
-    /**
-     * Build CSV string in memory from array data
-     */
-    private function buildCsv(array $rows, array $headers): string
-    {
-        $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, $headers, ',', '"', '\\');
-        foreach ($rows as $row) {
-            fputcsv($handle, array_values($row), ',', '"', '\\');
-        }
-        rewind($handle);
-        $csv = stream_get_contents($handle);
-        fclose($handle);
-        return $csv;
     }
 
     /**
@@ -301,20 +285,9 @@ class NotificationGroupController extends Controller
             }
         } else {
             // CSV: group rows by group_name
-            $lines = array_filter(explode("\n", $content));
-            $header = null;
             $csvGroups = [];
 
-            foreach ($lines as $line) {
-                $row = str_getcsv(trim($line), ',', '"', '\\');
-                if (!$header) {
-                    $header = array_map('strtolower', array_map('trim', $row));
-                    continue;
-                }
-                $item = [];
-                foreach ($header as $i => $col) {
-                    $item[$col] = $row[$i] ?? '';
-                }
+            foreach (\App\Helpers\CsvHelper::parse($content) as $item) {
                 $gName = trim($item['group_name'] ?? '');
                 if (empty($gName)) continue;
 

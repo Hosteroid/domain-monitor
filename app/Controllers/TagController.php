@@ -123,7 +123,7 @@ class TagController extends Controller
                 echo json_encode($tags, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
             } else {
                 // Build CSV in memory to avoid fopen('php://output') issues
-                $csvContent = $this->buildCsv($tags, ['name', 'color', 'description']);
+                $csvContent = \App\Helpers\CsvHelper::build($tags, ['name', 'color', 'description']);
                 $logger->info("CSV content built", ['bytes' => strlen($csvContent)]);
 
                 header('Content-Type: text/csv; charset=utf-8');
@@ -146,22 +146,6 @@ class TagController extends Controller
             $_SESSION['error'] = 'Export failed: ' . $e->getMessage();
             $this->redirect('/tags');
         }
-    }
-
-    /**
-     * Build CSV string in memory from array data
-     */
-    private function buildCsv(array $rows, array $headers): string
-    {
-        $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, $headers, ',', '"', '\\');
-        foreach ($rows as $row) {
-            fputcsv($handle, array_values($row), ',', '"', '\\');
-        }
-        rewind($handle);
-        $csv = stream_get_contents($handle);
-        fclose($handle);
-        return $csv;
     }
 
     /**
@@ -223,20 +207,7 @@ class TagController extends Controller
             }
             $tagsData = $parsed;
         } else {
-            $lines = array_filter(explode("\n", $content));
-            $header = null;
-            foreach ($lines as $line) {
-                $row = str_getcsv(trim($line), ',', '"', '\\');
-                if (!$header) {
-                    $header = array_map('strtolower', array_map('trim', $row));
-                    continue;
-                }
-                $item = [];
-                foreach ($header as $i => $col) {
-                    $item[$col] = $row[$i] ?? '';
-                }
-                $tagsData[] = $item;
-            }
+            $tagsData = \App\Helpers\CsvHelper::parse($content);
         }
 
         if (empty($tagsData)) {

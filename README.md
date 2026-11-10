@@ -315,6 +315,8 @@ The **Dashboard** shows:
 - SSL certificates closest to expiry (for domains with SSL monitoring enabled)
 - Recent notifications sent
 
+The **Domains** list has a **Columns** menu to show or hide columns, including Nameservers, Creation Date, Date Added and Privacy (whether the registrant is hidden or public in WHOIS/RDAP). CSV and JSON exports always contain every field.
+
 ### Notification Schedule
 
 By default, notifications are sent at these intervals before expiration:

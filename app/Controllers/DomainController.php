@@ -17,6 +17,22 @@ class DomainController extends Controller
     private SslCertificate $sslCertificateModel;
     private SslService $sslService;
 
+    /** Optional columns of the domains list, in the order of its cells; each key is also the sort key */
+    private const LIST_COLUMNS = [
+        'registrar' => 'Registrar',
+        'nameservers' => 'Nameservers',
+        'privacy' => 'Privacy',
+        'creation_date' => 'Creation Date',
+        'expiration_date' => 'Expiration',
+        'status' => 'Status',
+        'group_name' => 'Group',
+        'created_at' => 'Date Added',
+        'last_checked' => 'Last Checked',
+    ];
+
+    /** The columns shown until someone picks their own */
+    private const DEFAULT_LIST_COLUMNS = ['registrar', 'expiration_date', 'status', 'group_name', 'last_checked'];
+
     public function __construct()
     {
         $this->domainModel = new Domain();
@@ -63,6 +79,19 @@ class DomainController extends Controller
             setcookie('domains_per_page', (string)$perPage, time() + 365 * 24 * 60 * 60, '/');
         } else {
             $perPage = max(10, min(100, (int)($_COOKIE['domains_per_page'] ?? 25)));
+        }
+
+        // Remember the picked columns the same way, then drop the choice from the address
+        if (isset($_GET['columns_set'])) {
+            $picked = array_filter((array)($_GET['columns'] ?? []), 'is_string');
+            $picked = array_intersect(array_keys(self::LIST_COLUMNS), $picked);
+            if ($_GET['columns_set'] === 'default') {
+                setcookie('domains_columns', '', time() - 3600, '/');
+            } else {
+                setcookie('domains_columns', $picked ? implode(',', $picked) : 'none', time() + 365 * 24 * 60 * 60, '/');
+            }
+            $query = array_filter(array_diff_key($_GET, ['columns' => 1, 'columns_set' => 1]), fn($value) => $value !== '');
+            $this->redirect('/domains' . ($query ? '?' . http_build_query($query) : ''));
         }
 
         // Get expiring threshold from settings
@@ -114,6 +143,8 @@ class DomainController extends Controller
         );
         foreach ($formattedDomains as &$formattedDomain) {
             $formattedDomain['ssl_summary'] = $sslSummaries[(int)$formattedDomain['id']] ?? null;
+            // Creation date, nameservers and privacy for the optional columns
+            $formattedDomain = array_merge($formattedDomain, \App\Helpers\DomainHelper::lookupFields($formattedDomain));
         }
         unset($formattedDomain);
 
@@ -139,8 +170,24 @@ class DomainController extends Controller
                 'order' => $sortOrder
             ],
             'pagination' => $result['pagination'],
+            'columns' => $this->listColumns(),
+            'columnChoices' => self::LIST_COLUMNS,
             'title' => 'Domains'
         ]);
+    }
+
+    /**
+     * The optional columns to show in the domains list: the saved choice, or the defaults.
+     */
+    private function listColumns(): array
+    {
+        $saved = $_COOKIE['domains_columns'] ?? '';
+        if ($saved === 'none') {
+            return [];
+        }
+
+        $picked = is_string($saved) ? array_intersect(array_keys(self::LIST_COLUMNS), explode(',', $saved)) : [];
+        return $picked ? array_values($picked) : self::DEFAULT_LIST_COLUMNS;
     }
 
     /**
@@ -168,6 +215,7 @@ class DomainController extends Controller
 
             $exportData = [];
             foreach ($domains as $domain) {
+                $lookup = \App\Helpers\DomainHelper::lookupFields($domain);
                 $exportData[] = [
                     'domain_name' => $domain['domain_name'],
                     'status' => $domain['status'] ?? '',
@@ -175,7 +223,11 @@ class DomainController extends Controller
                     'expiration_date' => $domain['expiration_date'] ?? '',
                     'tags' => $domain['tags'] ?? '',
                     'notification_group' => $domain['group_name'] ?? '',
-                    'notes' => $domain['notes'] ?? ''
+                    'notes' => $domain['notes'] ?? '',
+                    'creation_date' => $lookup['creation_date'] ?? '',
+                    'date_added' => $domain['created_at'] ?? '',
+                    'nameservers' => implode(',', $lookup['nameservers']),
+                    'privacy' => $lookup['privacy'] ?? ''
                 ];
             }
 
@@ -195,7 +247,7 @@ class DomainController extends Controller
                 echo json_encode($exportData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
             } else {
                 // Build CSV in memory to avoid fopen('php://output') issues
-                $csvContent = $this->buildCsv($exportData, ['domain_name', 'status', 'registrar', 'expiration_date', 'tags', 'notification_group', 'notes']);
+                $csvContent = \App\Helpers\CsvHelper::build($exportData, ['domain_name', 'status', 'registrar', 'expiration_date', 'tags', 'notification_group', 'notes', 'creation_date', 'date_added', 'nameservers', 'privacy']);
                 $logger->info("CSV content built", ['bytes' => strlen($csvContent)]);
 
                 header('Content-Type: text/csv; charset=utf-8');
@@ -217,22 +269,6 @@ class DomainController extends Controller
             $_SESSION['error'] = 'Export failed: ' . $e->getMessage();
             $this->redirect('/domains');
         }
-    }
-
-    /**
-     * Build CSV string in memory from array data
-     */
-    private function buildCsv(array $rows, array $headers): string
-    {
-        $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, $headers, ',', '"', '\\');
-        foreach ($rows as $row) {
-            fputcsv($handle, array_values($row), ',', '"', '\\');
-        }
-        rewind($handle);
-        $csv = stream_get_contents($handle);
-        fclose($handle);
-        return $csv;
     }
 
     /**
@@ -293,20 +329,7 @@ class DomainController extends Controller
             }
             $domainsData = $parsed;
         } else {
-            $lines = array_filter(explode("\n", $content));
-            $header = null;
-            foreach ($lines as $line) {
-                $row = str_getcsv(trim($line), ',', '"', '\\');
-                if (!$header) {
-                    $header = array_map('strtolower', array_map('trim', $row));
-                    continue;
-                }
-                $item = [];
-                foreach ($header as $i => $col) {
-                    $item[$col] = $row[$i] ?? '';
-                }
-                $domainsData[] = $item;
-            }
+            $domainsData = \App\Helpers\CsvHelper::parse($content);
         }
 
         if (empty($domainsData)) {
@@ -803,6 +826,7 @@ class DomainController extends Controller
         $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
         $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
         $renewal = $this->whoisService->detectRenewal($domain, $whoisData, $status);
+        $whoisData = $this->whoisService->keepKnownPrivacy($domain, $whoisData);
 
         $this->domainModel->update($id, [
             'registrar' => $whoisData['registrar'],
@@ -1342,6 +1366,7 @@ class DomainController extends Controller
         
         // Format domain for display
         $formattedDomain = \App\Helpers\DomainHelper::formatForDisplay($domain);
+        $formattedDomain['privacy'] = \App\Helpers\DomainHelper::lookupFields($domain)['privacy'];
         
         // Parse WHOIS data for display
         $whoisData = json_decode($domain['whois_data'] ?? '{}', true);
@@ -1744,6 +1769,7 @@ class DomainController extends Controller
             
             $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
             $renewal = $this->whoisService->detectRenewal($domain, $whoisData, $status);
+            $whoisData = $this->whoisService->keepKnownPrivacy($domain, $whoisData);
 
             $this->domainModel->update($id, [
                 'registrar' => $whoisData['registrar'],

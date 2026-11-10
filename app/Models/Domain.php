@@ -356,6 +356,15 @@ class Domain extends Model
         // Get total count after filtering
         $totalDomains = count($domains);
 
+        // Creation date, nameservers and privacy are read from the saved lookup record
+        if (in_array($sortBy, ['creation_date', 'nameservers', 'privacy'], true)) {
+            foreach ($domains as &$domain) {
+                $value = \App\Helpers\DomainHelper::lookupFields($domain)[$sortBy];
+                $domain[$sortBy] = is_array($value) ? implode(', ', $value) : (string)$value;
+            }
+            unset($domain);
+        }
+
         // Apply sorting
         usort($domains, function($a, $b) use ($sortBy, $sortOrder, $expiringThreshold) {
             $aVal = $a[$sortBy] ?? '';

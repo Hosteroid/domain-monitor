@@ -689,7 +689,7 @@ class TldRegistryController extends Controller
                 header('Pragma: no-cache');
                 echo json_encode($tlds, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
             } else {
-                $csvContent = $this->buildCsv($tlds, ['tld', 'whois_server', 'rdap_servers', 'registry_url', 'is_active']);
+                $csvContent = \App\Helpers\CsvHelper::build($tlds, ['tld', 'whois_server', 'rdap_servers', 'registry_url', 'is_active']);
                 $logger->info('CSV content built', ['bytes' => strlen($csvContent)]);
 
                 header('Content-Type: text/csv; charset=utf-8');
@@ -712,19 +712,6 @@ class TldRegistryController extends Controller
             $_SESSION['error'] = 'Export failed: ' . $e->getMessage();
             $this->redirect('/tld-registry');
         }
-    }
-
-    private function buildCsv(array $rows, array $headers): string
-    {
-        $handle = fopen('php://temp', 'r+');
-        fputcsv($handle, $headers, ',', '"', '\\');
-        foreach ($rows as $row) {
-            fputcsv($handle, array_values($row), ',', '"', '\\');
-        }
-        rewind($handle);
-        $csv = stream_get_contents($handle);
-        fclose($handle);
-        return $csv;
     }
 
     /**
@@ -788,20 +775,7 @@ class TldRegistryController extends Controller
             }
             $tldsData = $parsed;
         } else {
-            $lines = array_filter(explode("\n", $content));
-            $header = null;
-            foreach ($lines as $line) {
-                $row = str_getcsv(trim($line), ',', '"', '\\');
-                if (!$header) {
-                    $header = array_map('strtolower', array_map('trim', $row));
-                    continue;
-                }
-                $item = [];
-                foreach ($header as $i => $col) {
-                    $item[$col] = $row[$i] ?? '';
-                }
-                $tldsData[] = $item;
-            }
+            $tldsData = \App\Helpers\CsvHelper::parse($content);
         }
 
         if (empty($tldsData)) {

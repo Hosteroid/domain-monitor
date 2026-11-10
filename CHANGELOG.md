@@ -18,11 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DNS History** - Saves a domain's DNS records before every change; per-domain and global view, 90-day retention by default (#75)
 - **Zone File Export** - Export current records or any DNS History entry as a BIND zone file
 - **Lookup Notes** - Domain page shows why a WHOIS/RDAP lookup couldn't be read
+- **Domain List Columns** - Columns menu to show or hide columns, remembered via cookie; new Nameservers, Privacy, Creation Date and Date Added (#85)
+- **Registrant Privacy** - Hidden, Public or Unknown, read from WHOIS/RDAP on each domain's next check
 
 ### Changed
 - **Zone Import** - Handles multi-string TXT records, escaped quotes and comments containing quotes
 - **TLD Refresh** - Fetches the same data as an import, including registration date
 - **Lookup Servers** - Servers not listed by IANA are added in TLD Registry; removed hard-coded .pro WHOIS server
+- **Domain Export** - CSV and JSON include creation date, date added, nameservers and privacy
+- **RDAP Lookup** - Asks the registrar's RDAP server for the registrant when the registry has none
 
 ### Fixed
 - **Quick Scan** - Fixed removal of subdomains found by a Deep Scan
@@ -30,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **DNS Change Detection** - Fixed repeated alerts for records returned in different letter case
 - **.be Domains** - Fixed registered domains shown as Available
 - **.de, .jp, .hu, .mo, .bo Domains** - Fixed registered domains shown as Error
+- **.at Domains** - Fixed "registrant:" line shown as registrar when the registry names none
+- **.gg, .je, .tg Domains** - Fixed stray text in nameservers and leading dots in registrar
+- **WHOIS Tab** - Fixed Privacy Protection always shown as Enabled
+- **Domain List** - Fixed tag filter lost when changing page size
 - **Availability Detection** - Unregistered domains detected on about 60 more registries
 - **TLDs Without a Lookup Server** - Fixed IANA's TLD record being saved as domain data
 - **WHOIS Rate Limits** - Long rate-limit responses (.lu) no longer overwrite saved data
@@ -37,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Created Date** - Fixed today's date shown when the registry returns none
 - **TLD Import** - Fixed WHOIS servers missing after IANA redesigned its TLD pages
 - **Zone Import** - Fixed hosts named like a record type and records spanning several lines
+- **CSV Import** - Fixed files saved by Excel as "CSV UTF-8" and cells with line breaks
 - **Updater** - Checks file permissions before applying, rolls back on errors, cleans up temporary files (#109)
 - **Template Cache** - Fixed stale pages after an update in production mode
 
@@ -44,12 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CSRF Protection** - Added to domain delete, group delete, channel delete/toggle and update check
 - **POST Method Enforced** - TLD toggle/refresh, notification mark-read, resend verification and logout changed from GET to POST
 - **TLD Import Progress** - Requires admin and a CSRF token
+- **CSV Export** - Cells starting with =, +, - or @ are escaped against spreadsheet formulas
 
 ### Technical
 - **Core** - `Core\TemplateLoader`, `TwigService::clearCache()`
-- **Services** - `DnsHistoryService`, `DnsService::buildBindZone()`, `TldRegistryService::parseIanaPage()`
+- **Services** - `DnsHistoryService`, `DnsService::buildBindZone()`, `TldRegistryService::parseIanaPage()`, `WhoisService::keepKnownPrivacy()`
+- **Helpers** - `CsvHelper`; `DomainHelper::lookupFields()`
 - **Models** - `DnsHistory`; `Setting::isDnsHistoryOn()`, `Setting::getDnsHistoryRetentionDays()`
-- **Views** - `partials/lookup-note.twig`; `postTo()`, `data-method="post"` and `data-mark-read` links
+- **Views** - `partials/lookup-note.twig`, `partials/privacy-badge.twig`; `postTo()`, `data-method="post"` and `data-mark-read` links
 - **Routes** - `GET /dns-history`, `POST /dns-history/delete`, `GET /dns-history/{id}/export`, `GET /domains/{id}/dns-export`
 - **Database** - `dns_history` table, `domains.dns_history_enabled`, settings `dns_history_enabled` and `dns_history_retention_days`
 
