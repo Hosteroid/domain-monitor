@@ -96,6 +96,10 @@ class SlackChannel implements NotificationChannelInterface
                     // Renewal alerts
                     $fields[] = ['type' => 'mrkdwn', 'text' => "*Previous Expiration:*\n" . $data['previous_expiration_date']];
                 }
+                if (!empty($data['renewal_cost'])) {
+                    // Expiry reminders, when billing knows the price
+                    $fields[] = ['type' => 'mrkdwn', 'text' => "*Renewal Cost:*\n" . $data['renewal_cost']];
+                }
                 $fields[] = ['type' => 'mrkdwn', 'text' => "*Registrar:*\n" . ($data['registrar'] ?? 'N/A')];
             }
             if (isset($data['new_status'])) {

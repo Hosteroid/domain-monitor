@@ -1,77 +1,103 @@
-<!-- BILLING TAB CONTENT -->
+{# BILLING TAB: what this domain has cost, its payments and what the next renewal will cost #}
+{% set typeBadges = {
+    purchase: ['bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400', 'fa-shopping-cart', 'Purchase'],
+    renewal: ['bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400', 'fa-redo', 'Renewal'],
+    transfer: ['bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400', 'fa-exchange-alt', 'Transfer'],
+    other: ['bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-300', 'fa-receipt', 'Other'],
+    sale: ['bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400', 'fa-hand-holding-usd', 'Sale'],
+    income: ['bg-teal-100 dark:bg-teal-500/10 text-teal-800 dark:text-teal-400', 'fa-coins', 'Income']
+} %}
+{% set sourceLabels = {own: "this domain's own price", list: 'from the price list', last: 'the last renewal payment'} %}
+{% set totals = billing.totals %}
+{% set expected = billing.expected %}
+{% set cardClass = 'bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3' %}
 
-<!-- Preview Banner -->
-<div class="mb-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+{% if billing.review_count > 0 %}
+<div class="mb-3 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
     <div class="flex items-center">
-        <i class="fas fa-flask text-amber-600 dark:text-amber-400 mr-2" style="font-size: 12px;"></i>
+        <i class="fas fa-robot text-blue-600 dark:text-blue-400 mr-2" style="font-size: 12px;"></i>
         <div>
-            <p class="text-xs font-semibold text-amber-900 dark:text-amber-300">Preview</p>
-            <p class="text-xs text-amber-800 dark:text-amber-400 mt-0.5">Financial tracking is coming soon. This is a design preview with sample data and might change in the future.</p>
+            <p class="text-xs font-semibold text-blue-900 dark:text-blue-300">{{ billing.review_count }} automatic payment{{ billing.review_count == 1 ? '' : 's' }} to confirm</p>
+            <p class="text-xs text-blue-800 dark:text-blue-400 mt-0.5">Logged when a check found the domain renewed. Confirm each one, or edit it to enter what you really paid.</p>
         </div>
     </div>
 </div>
+{% endif %}
 
-<!-- Purchase Source Info -->
+{% if billing.purchase %}
 <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 rounded-lg p-3 mb-3">
     <div class="flex items-center justify-between">
         <div class="flex items-center">
             <i class="fas fa-shopping-cart text-blue-600 dark:text-blue-400 mr-2" style="font-size: 14px;"></i>
             <div>
                 <p class="text-xs font-semibold text-blue-900 dark:text-blue-300">Purchased From</p>
-                <p class="text-xs text-blue-700 dark:text-blue-400 mt-0.5">Sedo Marketplace - $1,200.00 on Jan 15, 2020</p>
+                <p class="text-xs text-blue-700 dark:text-blue-400 mt-0.5">{{ billing.purchase.vendor ?: 'Seller not noted' }} - {{ billing.purchase.amount|money(billing.purchase.currency) }} on {{ billing.purchase.transaction_date|date('M d, Y') }}</p>
             </div>
         </div>
-        <a href="https://sedo.com/account" target="_blank" class="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-medium">
+        {% if billing.purchase.invoice_url %}
+        <a href="{{ billing.purchase.invoice_url|safe_url }}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs rounded hover:bg-blue-700 transition-colors font-medium">
             <i class="fas fa-external-link-alt mr-1" style="font-size: 9px;"></i>
-            Go to Seller
+            View Invoice
         </a>
+        {% endif %}
     </div>
-    </div>
+</div>
+{% endif %}
 
-<!-- Financial Summary Cards -->
+<!-- Summary Cards -->
 <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3">
+    <div class="{{ cardClass }}">
         <div class="flex items-center justify-between">
             <div>
                 <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Purchase Price</p>
-                <p class="text-lg font-semibold text-gray-900 dark:text-white mt-0.5">$1,200.00</p>
-                <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Jan 15, 2020</p>
+                {% if billing.purchase %}
+                <p class="text-lg font-semibold text-gray-900 dark:text-white mt-0.5">{{ totals.purchase|money }}</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{{ billing.purchase.transaction_date|date('M d, Y') }}</p>
+                {% else %}
+                <p class="text-lg font-semibold text-gray-400 dark:text-slate-500 mt-0.5">-</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Not recorded</p>
+                {% endif %}
             </div>
             <div class="w-8 h-8 bg-blue-50 dark:bg-blue-500/10 rounded flex items-center justify-center">
                 <i class="fas fa-shopping-cart text-blue-600 dark:text-blue-400" style="font-size: 14px;"></i>
             </div>
         </div>
     </div>
-    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3">
+    <div class="{{ cardClass }}">
         <div class="flex items-center justify-between">
             <div>
                 <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Total Renewals</p>
-                <p class="text-lg font-semibold text-orange-600 dark:text-orange-400 mt-0.5">$450.00</p>
-                <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">3 payments</p>
+                <p class="text-lg font-semibold text-orange-600 dark:text-orange-400 mt-0.5">{{ totals.renewals|money }}</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{{ totals.renewal_count }} payment{{ totals.renewal_count == 1 ? '' : 's' }}</p>
             </div>
             <div class="w-8 h-8 bg-orange-50 dark:bg-orange-500/10 rounded flex items-center justify-center">
                 <i class="fas fa-redo text-orange-600 dark:text-orange-400" style="font-size: 14px;"></i>
             </div>
         </div>
     </div>
-    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3">
+    <div class="{{ cardClass }}">
         <div class="flex items-center justify-between">
             <div>
                 <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Total Invested</p>
-                <p class="text-lg font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">$1,700.00</p>
-                <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">All expenses</p>
+                <p class="text-lg font-semibold text-indigo-600 dark:text-indigo-400 mt-0.5">{{ totals.invested|money }}</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{{ totals.pending != '0.00' ? 'Plus ' ~ totals.pending|money ~ ' pending' : 'All expenses' }}</p>
             </div>
             <div class="w-8 h-8 bg-indigo-50 dark:bg-indigo-500/10 rounded flex items-center justify-center">
                 <i class="fas fa-wallet text-indigo-600 dark:text-indigo-400" style="font-size: 14px;"></i>
             </div>
         </div>
     </div>
-    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3">
+    <div class="{{ cardClass }}">
         <div class="flex items-center justify-between">
             <div>
                 <p class="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">Profit/Loss</p>
+                {% if totals.income != '0.00' %}
+                <p class="text-lg font-semibold mt-0.5 {{ totals.profit starts with '-' ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' }}">{{ totals.profit|money }}</p>
+                <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{{ billing.sale ? 'Sold ' ~ billing.sale.transaction_date|date('M d, Y') : 'Income minus expenses' }}</p>
+                {% else %}
                 <p class="text-lg font-semibold text-gray-400 dark:text-slate-500 mt-0.5">-</p>
                 <p class="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Not sold</p>
+                {% endif %}
             </div>
             <div class="w-8 h-8 bg-gray-50 dark:bg-slate-700 rounded flex items-center justify-center">
                 <i class="fas fa-chart-line text-gray-600 dark:text-slate-400" style="font-size: 14px;"></i>
@@ -80,72 +106,170 @@
     </div>
 </div>
 
-<!-- Next Renewal Alert -->
+<!-- Next Renewal -->
+{% if billing.watched %}
+<div class="bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-lg p-3 mb-3">
+    <p class="text-xs text-gray-600 dark:text-slate-400"><i class="fas fa-eye mr-1.5"></i>This domain is on a watchlist, so its renewals are not forecast and not logged.</p>
+</div>
+{% elseif domain.expiration_date and not billing.sale %}
 <div class="bg-orange-50 dark:bg-orange-500/10 border border-orange-200 dark:border-orange-800 rounded-lg p-3 mb-3">
     <div class="flex items-center justify-between">
         <div class="flex items-center">
             <i class="fas fa-calendar-alt text-orange-600 dark:text-orange-400 mr-2" style="font-size: 14px;"></i>
             <div>
                 <p class="text-xs font-semibold text-orange-900 dark:text-orange-300">Next Renewal Due</p>
-                <p class="text-xs text-orange-700 dark:text-orange-400 mt-0.5">Jan 15, 2026 <span class="font-semibold">(65 days)</span> - Estimated: $150.00</p>
+                <p class="text-xs text-orange-700 dark:text-orange-400 mt-0.5">
+                    {{ domain.expiration_date|date('M d, Y') }}
+                    {% if domain.daysLeft is not null %}
+                    <span class="font-semibold">({{ domain.daysLeft >= 0 ? domain.daysLeft ~ ' days' : (domain.daysLeft|abs) ~ ' days ago' }})</span>
+                    {% endif %}
+                    -
+                    {% if expected %}
+                        Estimated: <span class="font-semibold">{{ expected.price|money(expected.currency) }}</span>{% if expected.base and expected.currency != billing.base %} ({{ expected.base|money }}){% endif %},
+                        {{ sourceLabels[expected.source] }}
+                    {% else %}
+                        no price known yet
+                    {% endif %}
+                </p>
             </div>
         </div>
-        <button class="inline-flex items-center px-3 py-1.5 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 transition-colors font-medium">
+        <button type="button" class="inline-flex items-center px-3 py-1.5 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 transition-colors font-medium"
+                data-payment="{{ {type: 'renewal', amount: expected ? expected.price : '', currency: expected ? expected.currency : billing.base, vendor: domain.registrar != 'Unknown' ? domain.registrar : ''}|json_encode }}"
+                onclick="openPaymentModal(JSON.parse(this.dataset.payment))">
             <i class="fas fa-plus mr-1" style="font-size: 9px;"></i>
             Add Payment
         </button>
     </div>
+</div>
+{% endif %}
+
+<!-- Own price -->
+{% if not billing.watched %}
+<form method="POST" action="/domains/{{ domain.id }}/billing-price" class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-3 mb-3">
+    {{ csrf_field() }}
+    <input type="hidden" name="return_to" value="/domains/{{ domain.id }}">
+    <div class="flex flex-wrap items-end gap-2">
+        <div>
+            <label for="own_renewal_price" class="block text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-1">Own renewal price per year</label>
+            <input type="text" id="own_renewal_price" name="renewal_price" value="{{ domain.renewal_price }}" inputmode="decimal" placeholder="From the price list" autocomplete="off"
+                   class="w-44 px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+        </div>
+        <select name="renewal_currency" aria-label="Currency" class="px-2 py-1.5 border border-gray-300 dark:border-slate-600 rounded text-xs bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent">
+            {% for currency in billing.currencies %}
+            <option value="{{ currency.code }}" {{ (domain.renewal_currency ?: billing.base) == currency.code ? 'selected' : '' }}>{{ currency.code }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+            <i class="fas fa-save mr-1" style="font-size: 9px;"></i>Save
+        </button>
+        <p class="text-xs text-gray-500 dark:text-slate-400 ml-1 pb-1.5">Leave empty to take the price from the <a href="/billing/prices" class="text-blue-600 dark:text-blue-400 hover:underline">price list</a>.</p>
     </div>
+</form>
+{% endif %}
 
 <!-- Action Buttons -->
-<div class="flex gap-2 mb-3">
-    <button class="inline-flex items-center px-3 py-2 bg-primary text-white text-xs rounded-lg hover:bg-primary-dark transition-colors font-medium"><i class="fas fa-plus mr-1.5" style="font-size: 10px;"></i>Add Transaction</button>
-    <button class="inline-flex items-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium"><i class="fas fa-hand-holding-usd mr-1.5" style="font-size: 10px;"></i>Record Sale</button>
-    <button class="inline-flex items-center px-3 py-2 bg-indigo-600 text-white text-xs rounded-lg hover:bg-indigo-700 transition-colors font-medium"><i class="fas fa-file-invoice-dollar mr-1.5" style="font-size: 10px;"></i>Export Report</button>
-    </div>
+<div class="flex flex-wrap gap-2 mb-3">
+    <button type="button" onclick="openPaymentModal({type: 'purchase', title: 'Add Payment'})" class="inline-flex items-center px-3 py-2 bg-primary text-white text-xs rounded-lg hover:bg-primary-dark transition-colors font-medium"><i class="fas fa-plus mr-1.5" style="font-size: 10px;"></i>Add Payment</button>
+    <button type="button" onclick="openPaymentModal({type: 'sale', title: 'Record Sale'})" class="inline-flex items-center px-3 py-2 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium"><i class="fas fa-hand-holding-usd mr-1.5" style="font-size: 10px;"></i>Record Sale</button>
+    {% if billing.transactions %}
+    <a href="/billing/export?domain_id={{ domain.id }}" class="inline-flex items-center px-3 py-2 bg-indigo-600 text-white text-xs rounded-lg hover:bg-indigo-700 transition-colors font-medium"><i class="fas fa-file-invoice-dollar mr-1.5" style="font-size: 10px;"></i>Export</a>
+    {% endif %}
+</div>
 
-<!-- Transaction History (static sample) -->
+<!-- Payments -->
 <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
     <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
         <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
             <i class="fas fa-history text-gray-400 dark:text-slate-500 mr-2" style="font-size: 10px;"></i>
-            Transaction History
-            <span class="ml-2 px-1.5 py-0.5 bg-primary text-white text-xs font-semibold rounded">5</span>
+            Payment History
+            <span class="ml-2 px-1.5 py-0.5 bg-primary text-white text-xs font-semibold rounded">{{ billing.transactions|length }}</span>
         </h3>
     </div>
+    {% if billing.transactions %}
     <div class="overflow-x-auto">
         <table class="min-w-full">
             <thead class="bg-gray-50 dark:bg-slate-900">
                 <tr>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Date</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Type</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Amount</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Company/Seller</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Invoice</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Payment Method</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Status</th>
-                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">Notes</th>
+                    {% for heading in ['Date', 'Type', 'Amount', 'Company/Seller', 'Invoice', 'Payment Method', 'Status', 'Notes', ''] %}
+                    <th class="px-4 py-2 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">{{ heading }}</th>
+                    {% endfor %}
                 </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                {% for row in billing.transactions %}
+                {% set badge = typeBadges[row.type]|default(typeBadges.other) %}
+                {% set missing = row.needs_review and row.amount == '0.00' %}
                 <tr class="hover:bg-gray-50 dark:hover:bg-slate-700">
-                    <td class="px-4 py-3 text-xs text-gray-900 dark:text-white whitespace-nowrap">Jan 15, 2020</td>
-                    <td class="px-4 py-3 whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded"><i class="fas fa-shopping-cart mr-1" style="font-size: 9px;"></i>Purchase</span></td>
-                    <td class="px-4 py-3 text-xs font-semibold text-gray-900 dark:text-white whitespace-nowrap">$1,200.00</td>
-                    <td class="px-4 py-3 text-xs text-gray-900 dark:text-white whitespace-nowrap">Sedo Marketplace</td>
-                    <td class="px-4 py-3 text-xs font-mono text-blue-600 dark:text-blue-400 whitespace-nowrap">SEDO-2020-001234</td>
-                    <td class="px-4 py-3 text-xs text-gray-600 dark:text-slate-400 whitespace-nowrap">Credit Card</td>
-                    <td class="px-4 py-3 whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded"><i class="fas fa-check-circle mr-1" style="font-size: 8px;"></i>Paid</span></td>
-                    <td class="px-4 py-3 text-xs text-gray-600 dark:text-slate-400">Initial domain purchase from Sedo marketplace</td>
+                    <td class="px-4 py-3 text-xs text-gray-900 dark:text-white whitespace-nowrap">{{ row.transaction_date|date('M d, Y') }}</td>
+                    <td class="px-4 py-3 whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 {{ badge[0] }} text-xs font-semibold rounded"><i class="fas {{ badge[1] }} mr-1" style="font-size: 9px;"></i>{{ badge[2] }}{% if row.term_years and row.term_years > 1 %} ({{ row.term_years }} years){% endif %}</span></td>
+                    <td class="px-4 py-3 text-xs font-semibold whitespace-nowrap {{ row.type in ['sale', 'income'] ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white' }}">
+                        {% if missing %}
+                        <span class="text-amber-600 dark:text-amber-400 font-medium">Amount missing</span>
+                        {% else %}
+                        {{ row.type in ['sale', 'income'] ? '+' : '' }}{{ row.amount|money(row.currency) }}
+                        {% if row.currency != billing.base %}<span class="block font-normal text-gray-500 dark:text-slate-400">{{ row.amount_base|money }}</span>{% endif %}
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-xs text-gray-900 dark:text-white">{{ row.vendor ?: '-' }}</td>
+                    <td class="px-4 py-3 text-xs font-mono whitespace-nowrap">
+                        {% if row.invoice_url %}
+                        <a href="{{ row.invoice_url|safe_url }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">{{ row.invoice_number ?: 'Open' }}<i class="fas fa-external-link-alt ml-1" style="font-size: 8px;"></i></a>
+                        {% else %}
+                        <span class="text-gray-700 dark:text-slate-300">{{ row.invoice_number ?: '-' }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-xs text-gray-600 dark:text-slate-400 whitespace-nowrap">{{ row.payment_method ?: '-' }}</td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        {% if row.needs_review %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded"><i class="fas fa-robot mr-1" style="font-size: 8px;"></i>To confirm</span>
+                        {% elseif row.status == 'pending' %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 text-xs font-semibold rounded"><i class="fas fa-clock mr-1" style="font-size: 8px;"></i>Pending</span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded"><i class="fas fa-check-circle mr-1" style="font-size: 8px;"></i>Paid</span>
+                        {% endif %}
+                        {% if row.needs_review and row.status == 'pending' %}
+                        <span class="block text-xs text-gray-500 dark:text-slate-400 mt-0.5">not counted yet</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-xs text-gray-600 dark:text-slate-400" style="min-width: 12rem;">{{ row.notes }}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-right">
+                        <div class="flex items-center justify-end gap-1">
+                            {% if row.needs_review and not missing %}
+                            <form method="POST" action="/billing/confirm" class="inline">
+                                {{ csrf_field() }}
+                                <input type="hidden" name="return_to" value="/domains/{{ domain.id }}">
+                                <input type="hidden" name="payment_ids[]" value="{{ row.id }}">
+                                <button type="submit" class="px-2 py-1 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-500/10 rounded" title="Confirm this payment"><i class="fas fa-check" style="font-size: 11px;"></i></button>
+                            </form>
+                            {% endif %}
+                            <button type="button" class="px-2 py-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded" title="Edit this payment"
+                                    data-payment="{{ {id: row.id, type: row.type, transaction_date: row.transaction_date, amount: missing ? '' : row.amount, currency: row.currency, amount_base: row.currency != billing.base and not missing ? row.amount_base : '', term_years: row.term_years, vendor: row.vendor, payment_method: row.payment_method, invoice_number: row.invoice_number, invoice_url: row.invoice_url, status: row.status, notes: row.notes}|json_encode }}"
+                                    onclick="openPaymentModal(JSON.parse(this.dataset.payment))"><i class="fas fa-pen" style="font-size: 11px;"></i></button>
+                            <form method="POST" action="/billing/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this payment?')">
+                                {{ csrf_field() }}
+                                <input type="hidden" name="return_to" value="/domains/{{ domain.id }}">
+                                <input type="hidden" name="payment_ids[]" value="{{ row.id }}">
+                                <button type="submit" class="px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded" title="Delete this payment"><i class="fas fa-trash" style="font-size: 11px;"></i></button>
+                            </form>
+                        </div>
+                    </td>
                 </tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
+    {% else %}
+    <div class="p-8 text-center">
+        <i class="fas fa-receipt text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>
+        <p class="text-sm font-medium text-gray-700 dark:text-slate-300">No payments yet</p>
+        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Add what you paid for this domain, and its renewals, to see what it costs.</p>
+    </div>
+    {% endif %}
 </div>
 
-<!-- Financial Charts -->
+{% if totals.invested != '0.00' %}
+<!-- Charts -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mt-3">
-    <!-- Expense Breakdown (Donut Chart) -->
     <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
         <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
             <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
@@ -153,12 +277,8 @@
                 Expense Breakdown
             </h3>
         </div>
-        <div class="p-4">
-            <canvas id="expenseChart" height="200"></canvas>
-        </div>
+        <div class="p-4" style="height: 240px;"><canvas id="expenseChart"></canvas></div>
     </div>
-
-    <!-- Expense Timeline (Line Chart) -->
     <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
         <div class="px-4 py-2 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
             <h3 class="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center">
@@ -166,114 +286,66 @@
                 Expense Timeline
             </h3>
         </div>
-        <div class="p-4">
-            <canvas id="timelineChart" height="200"></canvas>
-        </div>
+        <div class="p-4" style="height: 240px;"><canvas id="timelineChart"></canvas></div>
     </div>
 </div>
+<script type="application/json" id="billingChartData">{{ billing.chart_json|raw }}</script>
+{% endif %}
 
-<!-- Chart.js CDN -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-
+{% include 'partials/billing-payment-modal.twig' with {base: billing.base, currencies: billing.currencies, return_to: '/domains/' ~ domain.id, domain_id: domain.id} only %}
+{% include 'partials/billing-charts.twig' %}
 <script>
-// Expense Breakdown Donut Chart
-const expenseCtx = document.getElementById('expenseChart')?.getContext('2d');
-if (expenseCtx) {
-  new Chart(expenseCtx, {
-    type: 'doughnut',
-    data: {
-      labels: ['Initial Purchase', 'Renewals', 'Transfers', 'Other'],
-      datasets: [{
-        data: [1200, 450, 50, 0],
-        backgroundColor: [
-          'rgba(59, 130, 246, 0.8)',
-          'rgba(251, 146, 60, 0.8)',
-          'rgba(168, 85, 247, 0.8)',
-          'rgba(156, 163, 175, 0.8)'
-        ],
-        borderColor: [
-          'rgb(59, 130, 246)',
-          'rgb(251, 146, 60)',
-          'rgb(168, 85, 247)',
-          'rgb(156, 163, 175)'
-        ],
-        borderWidth: 2
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          position: 'bottom',
-          labels: {
-            padding: 15,
-            font: { size: 11 },
-            generateLabels: function(chart) {
-              const data = chart.data;
-              if (data.labels.length && data.datasets.length) {
-                return data.labels.map((label, i) => {
-                  const value = data.datasets[0].data[i];
-                  return { text: `${label}: $${value.toFixed(2)}`, fillStyle: data.datasets[0].backgroundColor[i], hidden: false, index: i };
-                });
-              }
-              return [];
-            }
-          }
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              const label = context.label || '';
-              const value = context.parsed || 0;
-              const total = context.dataset.data.reduce((a, b) => a + b, 0);
-              const percentage = ((value / total) * 100).toFixed(1);
-              return `${label}: $${value.toFixed(2)} (${percentage}%)`;
-            }
-          }
-        }
-      }
-    }
-  });
-}
+// Drawn when the tab is first opened: a chart cannot size itself inside a hidden tab
+var billingChartsDrawn = false;
+function initBillingCharts() {
+    var holder = document.getElementById('billingChartData');
+    if (billingChartsDrawn || !holder) { return; }
+    billingChartsDrawn = true;
+    var data = JSON.parse(holder.textContent);
+    var money = function (value) { return billingMoney(value, data.currency); };
 
-// Expense Timeline Chart
-const timelineCtx = document.getElementById('timelineChart')?.getContext('2d');
-if (timelineCtx) {
-  new Chart(timelineCtx, {
-    type: 'line',
-    data: {
-      labels: ['2020', '2021', '2022', '2023', '2024'],
-      datasets: [{
-        label: 'Cumulative Investment',
-        data: [1200, 1350, 1500, 1650, 1700],
-        borderColor: 'rgb(99, 102, 241)',
-        backgroundColor: 'rgba(99, 102, 241, 0.1)',
-        tension: 0.3,
-        fill: true,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        pointBackgroundColor: 'rgb(99, 102, 241)',
-        pointBorderColor: '#fff',
-        pointBorderWidth: 2
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(context) { return `Total Invested: $${context.parsed.y.toFixed(2)}`; } } } },
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: { callback: function(value) { return '$' + value; }, font: { size: 10 } },
-          grid: { color: 'rgba(0, 0, 0, 0.05)' }
+    billingChart('expenseChart', {
+        type: 'doughnut',
+        data: {
+            labels: data.breakdown.labels,
+            datasets: [{
+                data: data.breakdown.values,
+                backgroundColor: ['rgba(59, 130, 246, 0.8)', 'rgba(251, 146, 60, 0.8)', 'rgba(168, 85, 247, 0.8)', 'rgba(156, 163, 175, 0.8)'],
+                borderColor: ['rgb(59, 130, 246)', 'rgb(251, 146, 60)', 'rgb(168, 85, 247)', 'rgb(156, 163, 175)'],
+                borderWidth: 2
+            }]
         },
-        x: {
-          ticks: { font: { size: 10 } },
-          grid: { display: false }
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { padding: 15, font: { size: 11 } } },
+                tooltip: { callbacks: { label: function (context) { return context.label + ': ' + money(context.parsed); } } }
+            }
         }
-      }
-    }
-  });
+    });
+
+    billingChart('timelineChart', {
+        type: 'line',
+        data: {
+            labels: data.timeline.map(function (point) { return point.year; }),
+            datasets: [{
+                label: 'Total spent',
+                data: data.timeline.map(function (point) { return point.total; }),
+                borderColor: 'rgb(99, 102, 241)',
+                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                tension: 0.3,
+                fill: true,
+                pointRadius: 4,
+                pointBackgroundColor: 'rgb(99, 102, 241)'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: function (context) { return 'Total spent: ' + money(context.parsed.y); } } } },
+            scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } }, grid: { display: false } } }
+        }
+    });
 }
 </script>

@@ -1,0 +1,175 @@
+{#
+    Add or edit a payment. Used by a domain's Billing tab and by the Billing page.
+    Needs: base (currency code), currencies (rows with code and rate), return_to.
+    Optional: domain_id for a fixed domain, or ask_domain with domain_names for a free name.
+    Opens with openPaymentModal({...}): with an id it edits that payment, without one it adds a new one.
+#}
+{% set payInput = 'w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent' %}
+{% set payLabel = 'block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5' %}
+{% set rates = {} %}
+{% for currency in currencies %}
+    {% set rates = rates|merge({(currency.code): currency.rate}) %}
+{% endfor %}
+<div id="paymentModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-2xl max-h-full overflow-y-auto">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                <i class="fas fa-receipt text-primary mr-2"></i><span id="paymentModalTitle">Add Payment</span>
+            </h3>
+            <button type="button" onclick="closePaymentModal()" class="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="POST" action="/billing/store" id="paymentForm" data-base="{{ base }}" data-rates="{{ rates|json_encode }}">
+            {{ csrf_field() }}
+            <input type="hidden" name="return_to" value="{{ return_to }}">
+            {% if domain_id|default(null) %}
+            <input type="hidden" name="domain_id" value="{{ domain_id }}">
+            {% endif %}
+            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {% if ask_domain|default(false) %}
+                <div class="md:col-span-2">
+                    <label for="pay_domain_name" class="{{ payLabel }}">Domain</label>
+                    <input type="text" id="pay_domain_name" name="domain_name" list="payDomainNames" maxlength="255" placeholder="example.com" autocomplete="off" class="{{ payInput }}">
+                    <datalist id="payDomainNames">
+                        {% for name in domain_names|default([]) %}<option value="{{ name }}">{% endfor %}
+                    </datalist>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Leave empty for a cost that belongs to no domain. A name that is not in your list is kept as text.</p>
+                </div>
+                {% endif %}
+                <div>
+                    <label for="pay_type" class="{{ payLabel }}">Type</label>
+                    <select id="pay_type" name="type" class="{{ payInput }}" onchange="updatePaymentFields()">
+                        <optgroup label="Money out">
+                            <option value="purchase">Purchase</option>
+                            <option value="renewal">Renewal</option>
+                            <option value="transfer">Transfer</option>
+                            <option value="other">Other</option>
+                        </optgroup>
+                        <optgroup label="Money in">
+                            <option value="sale">Sale</option>
+                            <option value="income">Income</option>
+                        </optgroup>
+                    </select>
+                </div>
+                <div>
+                    <label for="pay_date" class="{{ payLabel }}">Date</label>
+                    <input type="date" id="pay_date" name="transaction_date" required class="{{ payInput }}">
+                </div>
+                <div>
+                    <label for="pay_amount" class="{{ payLabel }}">Amount</label>
+                    <input type="text" id="pay_amount" name="amount" inputmode="decimal" required placeholder="14.99" autocomplete="off" class="{{ payInput }}" oninput="updatePaymentFields(true)">
+                </div>
+                <div>
+                    <label for="pay_currency" class="{{ payLabel }}">Currency</label>
+                    <input type="text" id="pay_currency" name="currency" list="payCurrencies" maxlength="3" required autocomplete="off" class="{{ payInput }} uppercase" oninput="updatePaymentFields(true)">
+                    <datalist id="payCurrencies">
+                        {% for currency in currencies %}<option value="{{ currency.code }}">{% endfor %}
+                    </datalist>
+                </div>
+                <div id="payBaseWrap" class="hidden">
+                    <label for="pay_amount_base" class="{{ payLabel }}">Value in {{ base }}</label>
+                    <input type="text" id="pay_amount_base" name="amount_base" inputmode="decimal" autocomplete="off" class="{{ payInput }}">
+                    <p id="payBaseHint" class="text-xs text-gray-500 dark:text-slate-400 mt-1"></p>
+                </div>
+                <div id="payYearsWrap" class="hidden">
+                    <label for="pay_term_years" class="{{ payLabel }}">Years</label>
+                    <input type="number" id="pay_term_years" name="term_years" min="1" max="100" step="1" placeholder="1" class="{{ payInput }}">
+                </div>
+                <div>
+                    <label for="pay_vendor" class="{{ payLabel }}">Company / Seller</label>
+                    <input type="text" id="pay_vendor" name="vendor" maxlength="255" class="{{ payInput }}">
+                </div>
+                <div>
+                    <label for="pay_method" class="{{ payLabel }}">Payment Method</label>
+                    <input type="text" id="pay_method" name="payment_method" maxlength="100" placeholder="Credit card" class="{{ payInput }}">
+                </div>
+                <div>
+                    <label for="pay_invoice_number" class="{{ payLabel }}">Invoice Number</label>
+                    <input type="text" id="pay_invoice_number" name="invoice_number" maxlength="100" class="{{ payInput }}">
+                </div>
+                <div>
+                    <label for="pay_invoice_url" class="{{ payLabel }}">Invoice Link</label>
+                    <input type="url" id="pay_invoice_url" name="invoice_url" maxlength="500" placeholder="https://" class="{{ payInput }}">
+                </div>
+                <div>
+                    <label for="pay_status" class="{{ payLabel }}">Status</label>
+                    <select id="pay_status" name="status" class="{{ payInput }}">
+                        <option value="paid">Paid</option>
+                        <option value="pending">Pending (not counted in totals)</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label for="pay_notes" class="{{ payLabel }}">Notes</label>
+                    <textarea id="pay_notes" name="notes" rows="2" maxlength="2000" class="{{ payInput }}"></textarea>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="closePaymentModal()" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                    <i class="fas fa-save mr-1.5"></i>Save Payment
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+// Open the payment form. With an id the payment is edited, otherwise the given values are the defaults of a new one.
+function openPaymentModal(payment) {
+    payment = payment || {};
+    var form = document.getElementById('paymentForm');
+    var editing = !!payment.id;
+    form.action = editing ? '/billing/' + encodeURIComponent(payment.id) + '/update' : '/billing/store';
+    document.getElementById('paymentModalTitle').textContent = editing ? 'Edit Payment' : (payment.title || 'Add Payment');
+
+    var defaults = { type: 'renewal', transaction_date: new Date().toLocaleDateString('en-CA'), currency: form.dataset.base, status: 'paid' };
+    ['domain_name', 'type', 'transaction_date', 'amount', 'currency', 'amount_base', 'term_years', 'vendor', 'payment_method',
+     'invoice_number', 'invoice_url', 'status', 'notes'].forEach(function (name) {
+        var input = form.elements[name];
+        if (!input) return;
+        var value = payment[name];
+        input.value = (value === null || value === undefined || value === '') ? (defaults[name] || '') : value;
+    });
+    if (form.elements.domain_name) {
+        // A saved payment stays with its domain
+        form.elements.domain_name.readOnly = editing;
+    }
+    updatePaymentFields(false);
+    document.getElementById('paymentModal').classList.remove('hidden');
+    form.elements.amount.focus();
+}
+
+function closePaymentModal() {
+    document.getElementById('paymentModal').classList.add('hidden');
+}
+
+// Show the fields that fit the type and currency. After typing, suggest the value in the base currency.
+function updatePaymentFields(typed) {
+    var form = document.getElementById('paymentForm');
+    var base = form.dataset.base;
+    var rates = JSON.parse(form.dataset.rates || '{}');
+    var currency = (form.elements.currency.value || '').trim().toUpperCase();
+    var foreign = currency.length === 3 && currency !== base;
+    var type = form.elements.type.value;
+
+    document.getElementById('payYearsWrap').classList.toggle('hidden', type !== 'renewal' && type !== 'transfer');
+    document.getElementById('payBaseWrap').classList.toggle('hidden', !foreign);
+    form.elements.amount_base.required = foreign && !rates[currency];
+    if (!foreign) {
+        form.elements.amount_base.value = '';
+        return;
+    }
+    var rate = parseFloat(rates[currency]);
+    var amount = parseFloat((form.elements.amount.value || '').replace(',', '.'));
+    document.getElementById('payBaseHint').textContent = rate
+        ? 'Filled in with the saved rate: 1 ' + currency + ' = ' + rate + ' ' + base + '. Change it to what you were charged.'
+        : 'No rate is saved for ' + currency + ', so enter what you were charged in ' + base + '.';
+    if (typed && rate && !isNaN(amount)) {
+        form.elements.amount_base.value = (Math.round(amount * rate * 100) / 100).toFixed(2);
+    }
+}
+
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closePaymentModal(); }
+});
+</script>

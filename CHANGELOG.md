@@ -8,8 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Upgrade Notes
-- **Run the updater** - Open `/install/update` to apply migration 034
+- **Run the updater** - Open `/install/update` to apply migrations 034 and 035
 - **DNS History** - On by default, entries kept for 90 days (Settings → Monitoring)
+- **Billing** - On by default and replaces the preview tab; turn it off under Settings → Billing
 - **.ch and .li** - Add their RDAP server under TLD Registry, see [Lookup Servers](https://github.com/Hosteroid/domain-monitor/wiki/Lookup-Servers)
 - **TLDs Without a Lookup Server** - Domains on .gr, .ph, .vn and similar show Error instead of Active
 - **TLD Registry** - Run "Import TLDs from IANA" again if "With WHOIS" is low
@@ -20,12 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Lookup Notes** - Domain page shows why a WHOIS/RDAP lookup couldn't be read
 - **Domain List Columns** - Columns menu to show or hide columns, remembered via cookie; new Nameservers, Privacy, Creation Date and Date Added (#85)
 - **Registrant Privacy** - Hidden, Public or Unknown, read from WHOIS/RDAP on each domain's next check
+- **Billing** - Payments per domain with totals, charts and CSV import/export; can be turned off (#69)
+- **Billing Page** - Portfolio totals, yearly renewal cost, upcoming renewals, breakdown by registrar, TLD, tag or group
+- **Price List** - Registration, renewal and transfer price per TLD and registrar; a domain can have its own price
+- **Automatic Renewal Payments** - A detected renewal is logged with the expected price and waits for confirmation
+- **Currencies** - Payments in any currency, totals in one base currency with rates set in Settings
+- **Renewal Cost** - Renewal Cost and Total Spent list columns, dashboard card, optional line in expiry reminders
+- **Bulk Payment** - One payment for each selected domain, for an invoice that covers several
 
 ### Changed
 - **Zone Import** - Handles multi-string TXT records, escaped quotes and comments containing quotes
 - **TLD Refresh** - Fetches the same data as an import, including registration date
 - **Lookup Servers** - Servers not listed by IANA are added in TLD Registry; removed hard-coded .pro WHOIS server
-- **Domain Export** - CSV and JSON include creation date, date added, nameservers and privacy
+- **Domain Export** - CSV and JSON include creation date, date added, nameservers, privacy and own renewal price
+- **Billing Tab** - Shows real data instead of the preview; Chart.js loads only when the tab is opened
 - **RDAP Lookup** - Asks the registrar's RDAP server for the registrant when the registry has none
 
 ### Fixed
@@ -38,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **.gg, .je, .tg Domains** - Fixed stray text in nameservers and leading dots in registrar
 - **WHOIS Tab** - Fixed Privacy Protection always shown as Enabled
 - **Domain List** - Fixed tag filter lost when changing page size
+- **Domain Page** - Fixed broken tabs when the address names a tab that does not exist
+- **Edit Domain** - Fixed manual expiration date saved without checking that it is a date
 - **Availability Detection** - Unregistered domains detected on about 60 more registries
 - **TLDs Without a Lookup Server** - Fixed IANA's TLD record being saved as domain data
 - **WHOIS Rate Limits** - Long rate-limit responses (.lu) no longer overwrite saved data
@@ -57,15 +68,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Technical
 - **Core** - `Core\TemplateLoader`, `TwigService::clearCache()`
-- **Services** - `DnsHistoryService`, `DnsService::buildBindZone()`, `TldRegistryService::parseIanaPage()`, `WhoisService::keepKnownPrivacy()`
-- **Helpers** - `CsvHelper`; `DomainHelper::lookupFields()`
-- **Models** - `DnsHistory`; `Setting::isDnsHistoryOn()`, `Setting::getDnsHistoryRetentionDays()`
-- **Views** - `partials/lookup-note.twig`, `partials/privacy-badge.twig`; `postTo()`, `data-method="post"` and `data-mark-read` links
-- **Routes** - `GET /dns-history`, `POST /dns-history/delete`, `GET /dns-history/{id}/export`, `GET /domains/{id}/dns-export`
+- **Services** - `DnsHistoryService`, `BillingService`, `DnsService::buildBindZone()`, `TldRegistryService::parseIanaPage()`, `WhoisService::keepKnownPrivacy()`
+- **Helpers** - `CsvHelper`, `MoneyHelper`; `DomainHelper::lookupFields()`, `DomainHelper::suffixes()`
+- **Models** - `DnsHistory`, `BillingTransaction`, `BillingPrice`, `BillingCurrency`; `Setting::isDnsHistoryOn()`, `Setting::getDnsHistoryRetentionDays()`, `Setting::getValues()`
+- **Controllers** - `BillingController`, `BillingPriceController`
+- **Views** - `billing/index.twig`, `billing/prices.twig`, `partials/billing-*.twig`, `partials/lookup-note.twig`, `partials/privacy-badge.twig`; `money` filter; `postTo()`, `data-method="post"` and `data-mark-read` links
+- **Routes** - `GET /dns-history`, `POST /dns-history/delete`, `GET /dns-history/{id}/export`, `GET /domains/{id}/dns-export`, `/billing`, `/billing/prices`
 - **Database** - `dns_history` table, `domains.dns_history_enabled`, settings `dns_history_enabled` and `dns_history_retention_days`
+- **Billing Database** - `billing_transactions`, `billing_prices`, `billing_currencies`, `domains.renewal_price`, `domains.renewal_currency`, four `billing_*` settings
 
 ### Migrations
 - `034_add_dns_history.sql` - DNS history table, per-domain switch and settings
+- `035_add_billing.sql` - Billing tables, own renewal price columns and settings
 
 ## [1.1.6] - 2026-11-04
 

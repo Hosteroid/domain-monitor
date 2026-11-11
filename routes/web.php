@@ -5,6 +5,8 @@ use Core\Auth;
 use App\Controllers\DashboardController;
 use App\Controllers\DomainController;
 use App\Controllers\DnsHistoryController;
+use App\Controllers\BillingController;
+use App\Controllers\BillingPriceController;
 use App\Controllers\NotificationGroupController;
 use App\Controllers\AuthController;
 use App\Controllers\DebugController;
@@ -109,6 +111,22 @@ $router->get('/dns-history', [DnsHistoryController::class, 'index']);
 $router->post('/dns-history/delete', [DnsHistoryController::class, 'delete']);
 $router->get('/dns-history/{id}/export', [DnsHistoryController::class, 'export']);
 
+// Billing
+$router->get('/billing', [BillingController::class, 'index']);
+$router->get('/billing/export', [BillingController::class, 'export']);
+$router->post('/billing/import', [BillingController::class, 'import']);
+$router->post('/billing/store', [BillingController::class, 'store']);
+$router->post('/billing/bulk-store', [BillingController::class, 'bulkStore']);
+$router->post('/billing/delete', [BillingController::class, 'delete']);
+$router->post('/billing/confirm', [BillingController::class, 'confirm']);
+$router->post('/billing/{id}/update', [BillingController::class, 'update']);
+$router->get('/billing/prices', [BillingPriceController::class, 'prices']);
+$router->get('/billing/prices/export', [BillingPriceController::class, 'exportPrices']);
+$router->post('/billing/prices/save', [BillingPriceController::class, 'savePrice']);
+$router->post('/billing/prices/delete', [BillingPriceController::class, 'deletePrices']);
+$router->post('/billing/prices/import', [BillingPriceController::class, 'importPrices']);
+$router->post('/domains/{id}/billing-price', [BillingPriceController::class, 'saveDomainPrice']);
+
 // Notification Groups
 $router->get('/groups', [NotificationGroupController::class, 'index']);
 $router->get('/groups/export', [NotificationGroupController::class, 'export']);
@@ -160,6 +178,9 @@ $router->post('/settings/test-email', [SettingsController::class, 'testEmail']);
 $router->post('/settings/test-cron', [SettingsController::class, 'testCron']);
 $router->post('/settings/clear-logs', [SettingsController::class, 'clearLogs']);
 $router->post('/settings/toggle-isolation', [SettingsController::class, 'toggleIsolationMode']);
+$router->post('/settings/update-billing', [SettingsController::class, 'updateBilling']);
+$router->post('/settings/billing/currency', [SettingsController::class, 'saveBillingCurrency']);
+$router->post('/settings/billing/currency/delete', [SettingsController::class, 'deleteBillingCurrency']);
 
 // Updates (Admin Only)
 $router->post('/api/updates/check', [UpdateController::class, 'check']);

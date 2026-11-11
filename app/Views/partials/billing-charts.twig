@@ -1,0 +1,42 @@
+{#
+    Chart helpers of the billing pages. Chart.js is fetched only when a chart is first drawn.
+    billingMoney(value, currency) formats an amount, billingChart(canvasId, config) draws a chart.
+#}
+<script>
+var billingChartJs = null;
+
+// Load Chart.js once, then run the callback
+function loadChartJs(callback) {
+    if (window.Chart) { callback(); return; }
+    if (!billingChartJs) {
+        billingChartJs = [];
+        var script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+        script.onload = function () { billingChartJs.forEach(function (run) { run(); }); };
+        document.head.appendChild(script);
+    }
+    billingChartJs.push(callback);
+}
+
+// 1,200.50 with the symbol in front, or the code behind when the currency has no symbol
+function billingMoney(value, currency) {
+    var number = Number(value || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return currency.symbol ? currency.symbol + number : number + ' ' + currency.code;
+}
+
+function billingChartColors() {
+    var dark = document.documentElement.classList.contains('dark');
+    return { text: dark ? '#94a3b8' : '#4b5563', grid: dark ? 'rgba(148, 163, 184, 0.15)' : 'rgba(0, 0, 0, 0.06)' };
+}
+
+function billingChart(canvasId, config) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) { return; }
+    loadChartJs(function () {
+        var colors = billingChartColors();
+        Chart.defaults.color = colors.text;
+        Chart.defaults.borderColor = colors.grid;
+        new Chart(canvas.getContext('2d'), config);
+    });
+}
+</script>

@@ -14,7 +14,7 @@ class WhoisService
     private const CACHE_TTL = 86400;
 
     // A renewal adds at least a month; a smaller move of the expiration date is a correction
-    private const RENEWAL_MIN_DAYS = 28;
+    public const RENEWAL_MIN_DAYS = 28;
 
     // Field names that an answer gives in Japanese only, under the English names the parser reads
     private const FIELD_NAMES = [

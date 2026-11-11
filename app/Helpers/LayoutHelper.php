@@ -181,12 +181,15 @@ class LayoutHelper
     {
         try {
             $settingModel = new Setting();
-            $appSettings = $settingModel->getAppSettings();
+            // One query for what the layout needs on every page
+            $values = $settingModel->getValues(['app_name', 'app_timezone', 'app_version', 'billing_enabled']);
             
             return [
-                'app_name' => htmlspecialchars($appSettings['app_name']),
-                'app_timezone' => $appSettings['app_timezone'],
-                'app_version' => $appSettings['app_version']
+                'app_name' => htmlspecialchars($values['app_name'] ?? 'Domain Monitor'),
+                'app_timezone' => $values['app_timezone'] ?? 'UTC',
+                'app_version' => $values['app_version'] ?? '1.1.6',
+                // The row comes with the billing migration, so billing stays off until that has run
+                'billing_enabled' => ($values['billing_enabled'] ?? '0') === '1'
             ];
         } catch (\Exception $e) {
             // Fallback defaults
@@ -194,7 +197,8 @@ class LayoutHelper
             return [
                 'app_name' => 'Domain Monitor',
                 'app_timezone' => 'UTC',
-                'app_version' => $settingModel->getAppVersion()
+                'app_version' => $settingModel->getAppVersion(),
+                'billing_enabled' => false
             ];
         }
     }

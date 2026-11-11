@@ -250,6 +250,19 @@ class InputValidator
     }
 
     /**
+     * Validate a calendar date written as YYYY-MM-DD, within what a DATE column holds
+     *
+     * @param string $date Date to validate
+     * @return bool True if valid, false otherwise
+     */
+    public static function validateDate(string $date): bool
+    {
+        $parsed = \DateTime::createFromFormat('!Y-m-d', $date);
+
+        return $parsed !== false && $parsed->format('Y-m-d') === $date && $date >= '1000-01-01';
+    }
+
+    /**
      * Validate email format
      *
      * @param string $email Email to validate

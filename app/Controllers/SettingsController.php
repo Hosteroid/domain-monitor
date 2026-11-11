@@ -194,6 +194,7 @@ class SettingsController extends Controller
             'rollbackAvailable' => $rollbackAvailable,
             'domainCronStale' => $domainCronStale,
             'dnsCronStale' => $dnsCronStale,
+            'billing' => $this->billingSettingsForView(),
             'title' => 'Settings'
         ]);
     }
@@ -680,6 +681,163 @@ class SettingsController extends Controller
     }
 
     /**
+     * What the Billing tab shows. Before the billing migration has run it only says so.
+     */
+    private function billingSettingsForView(): array
+    {
+        try {
+            $billing = new \App\Services\BillingService();
+            if (!$billing->isAvailable()) {
+                return ['available' => false];
+            }
+
+            return [
+                'available' => true,
+                'base' => $billing->baseCurrency(),
+                'currencies' => array_values($billing->currencies()),
+                'locked' => (new \App\Models\BillingTransaction())->hasAny(),
+            ];
+        } catch (\Throwable $e) {
+            return ['available' => false];
+        }
+    }
+
+    /**
+     * The billing service for a save on the Billing tab, or null (with the message set) before the migration
+     */
+    private function billingForSave(): ?\App\Services\BillingService
+    {
+        $billing = new \App\Services\BillingService();
+        if (!$billing->isAvailable()) {
+            $_SESSION['error'] = 'Billing needs a database update first';
+            return null;
+        }
+
+        return $billing;
+    }
+
+    /**
+     * A currency symbol: up to 8 characters, none of them a space or part of HTML
+     */
+    private function validCurrencySymbol(string $symbol): bool
+    {
+        return preg_match('/^[^\s<>&"\'\x00-\x1F]{1,8}$/u', $symbol) === 1;
+    }
+
+    /**
+     * Save the Billing tab: the switches and the base currency
+     */
+    public function updateBilling()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/settings#billing');
+            return;
+        }
+        $this->verifyCsrf('/settings#billing');
+
+        try {
+            $billing = $this->billingForSave();
+            $currency = \App\Helpers\MoneyHelper::currency($_POST['billing_currency'] ?? '');
+            $symbol = is_string($_POST['billing_currency_symbol'] ?? null) ? trim($_POST['billing_currency_symbol']) : '';
+            if (!$billing) {
+                // The message is set
+            } elseif ($currency === null) {
+                $_SESSION['error'] = 'The base currency must be a three-letter code such as USD';
+            } elseif ($symbol !== '' && !$this->validCurrencySymbol($symbol)) {
+                $_SESSION['error'] = 'The symbol can have up to 8 characters, without spaces';
+            } elseif ($currency !== $billing->baseCurrency() && (new \App\Models\BillingTransaction())->hasAny()) {
+                $_SESSION['error'] = 'The base currency cannot be changed while payments exist. Export the payments, delete them, change it, and import them again.';
+            } else {
+                $changed = $currency !== $billing->baseCurrency();
+                $this->settingModel->setValue('billing_enabled', isset($_POST['billing_enabled']) ? '1' : '0');
+                $this->settingModel->setValue('billing_auto_log_renewals', isset($_POST['billing_auto_log_renewals']) ? '1' : '0');
+                $this->settingModel->setValue('billing_cost_in_reminders', isset($_POST['billing_cost_in_reminders']) ? '1' : '0');
+                $this->settingModel->setValue('billing_currency', $currency);
+                (new \App\Models\BillingCurrency())->save($currency, $symbol !== '' ? $symbol : null, '1');
+
+                $_SESSION['success'] = 'Billing settings updated successfully';
+                if ($changed) {
+                    $_SESSION['warning'] = "The base currency is now {$currency}. Check the rates of the other currencies: each is the value of one unit in {$currency}.";
+                }
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to update billing settings: ' . $e->getMessage();
+        }
+
+        $this->redirect('/settings#billing');
+    }
+
+    /**
+     * Add a currency or change its symbol and rate
+     */
+    public function saveBillingCurrency()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/settings#billing');
+            return;
+        }
+        $this->verifyCsrf('/settings#billing');
+
+        try {
+            $billing = $this->billingForSave();
+            $code = \App\Helpers\MoneyHelper::currency($_POST['code'] ?? '');
+            $rate = \App\Helpers\MoneyHelper::parseRate($_POST['rate'] ?? '');
+            $symbol = is_string($_POST['symbol'] ?? null) ? trim($_POST['symbol']) : '';
+            if (!$billing) {
+                // The message is set
+            } elseif ($code === null) {
+                $_SESSION['error'] = 'The currency code must be three letters, such as EUR';
+            } elseif ($code === $billing->baseCurrency()) {
+                $_SESSION['error'] = "{$code} is the base currency. Its symbol is set above.";
+            } elseif ($rate === null) {
+                $_SESSION['error'] = 'The rate must be a number above zero, such as 1.08';
+            } elseif ($symbol !== '' && !$this->validCurrencySymbol($symbol)) {
+                $_SESSION['error'] = 'The symbol can have up to 8 characters, without spaces';
+            } else {
+                (new \App\Models\BillingCurrency())->save($code, $symbol !== '' ? $symbol : null, $rate);
+                $_SESSION['success'] = "Currency {$code} saved";
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to save the currency: ' . $e->getMessage();
+        }
+
+        $this->redirect('/settings#billing');
+    }
+
+    /**
+     * Remove a currency that no price uses
+     */
+    public function deleteBillingCurrency()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/settings#billing');
+            return;
+        }
+        $this->verifyCsrf('/settings#billing');
+
+        try {
+            $billing = $this->billingForSave();
+            $code = \App\Helpers\MoneyHelper::currency($_POST['code'] ?? '');
+            if (!$billing) {
+                // The message is set
+            } elseif ($code === null) {
+                $_SESSION['error'] = 'Unknown currency';
+            } elseif ($code === $billing->baseCurrency()) {
+                $_SESSION['error'] = 'The base currency cannot be removed';
+            } elseif ((new \App\Models\BillingPrice())->usesCurrency($code)) {
+                $_SESSION['error'] = "{$code} is still used by the price list or by a domain's own price";
+            } else {
+                (new \App\Models\BillingCurrency())->remove($code);
+                $_SESSION['success'] = "Currency {$code} removed. Saved payments in {$code} keep their values.";
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to remove the currency: ' . $e->getMessage();
+        }
+
+        $this->redirect('/settings#billing');
+    }
+
+    /**
      * Get isolation settings
      */
     private function getIsolationSettings(): array
@@ -764,6 +922,17 @@ class SettingsController extends Controller
             // Assign all tags to admin
             $tagModel = new \App\Models\Tag();
             $tagCount = $tagModel->assignUnassignedTagsToUser($adminId);
+
+            // Billing: each payment goes to the owner of its domain, and prices without an owner to the admin
+            try {
+                if ((new \App\Services\BillingService())->isAvailable()) {
+                    (new \App\Models\BillingTransaction())->assignForIsolation($adminId);
+                    (new \App\Models\BillingPrice())->assignUnownedTo($adminId);
+                }
+            } catch (\Throwable $e) {
+                // The switch must not fail on billing
+                (new \App\Services\Logger('billing'))->warning('Billing rows not assigned for isolated mode', ['error' => $e->getMessage()]);
+            }
             
             // Set isolation mode
             $this->settingModel->setValue('user_isolation_mode', 'isolated');

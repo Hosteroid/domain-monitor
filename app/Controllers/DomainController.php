@@ -33,6 +33,9 @@ class DomainController extends Controller
     /** The columns shown until someone picks their own */
     private const DEFAULT_LIST_COLUMNS = ['registrar', 'expiration_date', 'status', 'group_name', 'last_checked'];
 
+    /** Optional columns that exist while billing is on */
+    private const BILLING_LIST_COLUMNS = ['renewal_cost' => 'Renewal Cost', 'total_spent' => 'Total Spent'];
+
     public function __construct()
     {
         $this->domainModel = new Domain();
@@ -84,7 +87,7 @@ class DomainController extends Controller
         // Remember the picked columns the same way, then drop the choice from the address
         if (isset($_GET['columns_set'])) {
             $picked = array_filter((array)($_GET['columns'] ?? []), 'is_string');
-            $picked = array_intersect(array_keys(self::LIST_COLUMNS), $picked);
+            $picked = array_intersect(array_keys($this->listColumnChoices()), $picked);
             if ($_GET['columns_set'] === 'default') {
                 setcookie('domains_columns', '', time() - 3600, '/');
             } else {
@@ -107,7 +110,7 @@ class DomainController extends Controller
         ];
 
         // Get filtered and paginated domains using model
-        $result = $this->domainModel->getFilteredPaginated($filters, $sortBy, $sortOrder, $page, $perPage, $expiringThreshold, $isolationMode === 'isolated' ? $userId : null);
+        $result = $this->domainModel->getFilteredPaginated($filters, $sortBy, $sortOrder, $page, $perPage, $expiringThreshold, $isolationMode === 'isolated' ? $userId : null, $this->billingColumns($sortBy));
 
         // Get groups and tags based on isolation mode
         if ($isolationMode === 'isolated') {
@@ -171,7 +174,10 @@ class DomainController extends Controller
             ],
             'pagination' => $result['pagination'],
             'columns' => $this->listColumns(),
-            'columnChoices' => self::LIST_COLUMNS,
+            'columnChoices' => $this->listColumnChoices(),
+            'billingOn' => $this->billingService()->isOn(),
+            'billingBase' => $this->billingService()->isOn() ? $this->billingService()->baseCurrency() : '',
+            'billingCurrencies' => $this->billingService()->isOn() ? array_values($this->billingService()->currencies()) : [],
             'title' => 'Domains'
         ]);
     }
@@ -186,8 +192,50 @@ class DomainController extends Controller
             return [];
         }
 
-        $picked = is_string($saved) ? array_intersect(array_keys(self::LIST_COLUMNS), explode(',', $saved)) : [];
+        $picked = is_string($saved) ? array_intersect(array_keys($this->listColumnChoices()), explode(',', $saved)) : [];
         return $picked ? array_values($picked) : self::DEFAULT_LIST_COLUMNS;
+    }
+
+    /**
+     * Every optional column of the domains list. The two cost columns exist while billing is on.
+     */
+    private function listColumnChoices(): array
+    {
+        return self::LIST_COLUMNS + ($this->billingService()->isOn() ? self::BILLING_LIST_COLUMNS : []);
+    }
+
+    /**
+     * The billing columns of the list, for the model to add and sort by. Null unless one of them is
+     * shown or sorted on, so the list costs nothing extra otherwise.
+     */
+    private function billingColumns($sortBy): ?callable
+    {
+        $wanted = array_keys(self::BILLING_LIST_COLUMNS);
+        $billing = $this->billingService();
+        if (!$billing->isOn() || !(array_intersect($wanted, $this->listColumns()) || in_array($sortBy, $wanted, true))) {
+            return null;
+        }
+        $scope = $billing->scopeFor(\Core\Auth::id());
+
+        return function (array $domains) use ($billing, $scope): array {
+            try {
+                return $billing->listValues($domains, $scope);
+            } catch (\Throwable $e) {
+                // The list works without the cost columns
+                (new \App\Services\Logger('billing'))->warning('Cost columns could not be read', ['error' => $e->getMessage()]);
+                return [];
+            }
+        };
+    }
+
+    /**
+     * One billing service per request
+     */
+    private function billingService(): \App\Services\BillingService
+    {
+        static $billing = null;
+
+        return $billing ??= new \App\Services\BillingService();
     }
 
     /**
@@ -214,6 +262,7 @@ class DomainController extends Controller
             $domains = $this->domainModel->getAllWithGroups($isolationMode === 'isolated' ? $userId : null);
 
             $exportData = [];
+            $billingOn = $this->billingService()->isOn();
             foreach ($domains as $domain) {
                 $lookup = \App\Helpers\DomainHelper::lookupFields($domain);
                 $exportData[] = [
@@ -228,7 +277,11 @@ class DomainController extends Controller
                     'date_added' => $domain['created_at'] ?? '',
                     'nameservers' => implode(',', $lookup['nameservers']),
                     'privacy' => $lookup['privacy'] ?? ''
-                ];
+                ] + ($billingOn ? [
+                    // The domain's own renewal price. Empty when it takes its price from the price list.
+                    'renewal_price' => $domain['renewal_price'] ?? '',
+                    'renewal_currency' => $domain['renewal_currency'] ?? ''
+                ] : []);
             }
 
             $date = date('Y-m-d');
@@ -247,7 +300,10 @@ class DomainController extends Controller
                 echo json_encode($exportData, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
             } else {
                 // Build CSV in memory to avoid fopen('php://output') issues
-                $csvContent = \App\Helpers\CsvHelper::build($exportData, ['domain_name', 'status', 'registrar', 'expiration_date', 'tags', 'notification_group', 'notes', 'creation_date', 'date_added', 'nameservers', 'privacy']);
+                $csvContent = \App\Helpers\CsvHelper::build($exportData, array_merge(
+                    ['domain_name', 'status', 'registrar', 'expiration_date', 'tags', 'notification_group', 'notes', 'creation_date', 'date_added', 'nameservers', 'privacy'],
+                    $billingOn ? ['renewal_price', 'renewal_currency'] : []
+                ));
                 $logger->info("CSV content built", ['bytes' => strlen($csvContent)]);
 
                 header('Content-Type: text/csv; charset=utf-8');
@@ -417,6 +473,22 @@ class DomainController extends Controller
                     'user_id' => $isolationMode === 'isolated' ? $userId : null
                 ]);
 
+                if ($domainId) {
+                    // Payments saved under this name before the domain was added
+                    $billing = $this->billingService();
+                    $billing->relinkDomain((int)$domainId, $domainName, $isolationMode === 'isolated' ? $userId : null);
+
+                    // The domain's own renewal price from the file, when billing is on and the price is valid
+                    $filePrice = is_scalar($row['renewal_price'] ?? null) ? trim((string)$row['renewal_price']) : '';
+                    if ($filePrice !== '' && $billing->isOn()) {
+                        $fileCurrency = is_scalar($row['renewal_currency'] ?? null) ? (string)$row['renewal_currency'] : '';
+                        [$ownPrice, $ownCurrency, $priceError] = $billing->readOwnPrice($filePrice, $fileCurrency);
+                        if ($priceError === null) {
+                            $this->domainModel->update((int)$domainId, ['renewal_price' => $ownPrice, 'renewal_currency' => $ownCurrency]);
+                        }
+                    }
+                }
+
                 // Handle tags from file
                 $fileTags = trim($row['tags'] ?? '');
                 if (!empty($fileTags) && $domainId) {
@@ -562,6 +634,9 @@ class DomainController extends Controller
             'user_id' => $userId
         ]);
 
+        // Payments saved under this name before the domain was added
+        (new \App\Services\BillingService())->relinkDomain((int)$id, $domainName, $userId);
+
         // Handle tags using the new tag system
         if (!empty($tags)) {
             $tagModel = new \App\Models\Tag();
@@ -642,7 +717,7 @@ class DomainController extends Controller
             'dnsHistoryAvailable' => (new \App\Services\DnsHistoryService())->isAvailable(),
             'dnsHistoryOn' => (new \App\Models\Setting())->isDnsHistoryOn(),
             'title' => 'Edit Domain'
-        ]);
+        ] + $this->getBillingForEdit());
     }
 
     public function update($params = [])
@@ -671,7 +746,18 @@ class DomainController extends Controller
         $dnsMonitoringEnabled = isset($_POST['dns_monitoring_enabled']) ? 1 : 0;
         $sslMonitoringEnabled = isset($_POST['ssl_monitoring_enabled']) ? 1 : 0;
         $tagsInput = trim($_POST['tags'] ?? '');
-        $manualExpirationDate = !empty($_POST['manual_expiration_date']) ? $_POST['manual_expiration_date'] : null;
+        // An empty date field clears the date. Anything else has to be a real date.
+        $manualExpirationDate = $_POST['manual_expiration_date'] ?? '';
+        if (is_string($manualExpirationDate)) {
+            $manualExpirationDate = trim($manualExpirationDate);
+        }
+        if ($manualExpirationDate === '') {
+            $manualExpirationDate = null;
+        } elseif (!is_string($manualExpirationDate) || !\App\Helpers\InputValidator::validateDate($manualExpirationDate)) {
+            $_SESSION['error'] = 'Enter a valid expiration date';
+            $this->redirect('/domains/' . $id . '/edit');
+            return;
+        }
         
         // Validate tags
         $tagValidation = \App\Helpers\InputValidator::validateTags($tagsInput);
@@ -714,7 +800,33 @@ class DomainController extends Controller
             $fields['dns_history_enabled'] = isset($_POST['dns_history_enabled']) ? 1 : 0;
         }
 
+        // The domain's own renewal price: only when the form has the fields and billing is on
+        $billing = new \App\Services\BillingService();
+        if (isset($_POST['billing_price_field']) && $billing->isOn()) {
+            [$ownPrice, $ownCurrency, $priceError] = $billing->readOwnPrice($_POST['renewal_price'] ?? '', $_POST['renewal_currency'] ?? '');
+            if ($priceError !== null) {
+                $_SESSION['error'] = $priceError;
+                $this->redirect('/domains/' . $id . '/edit');
+                return;
+            }
+            $fields['renewal_price'] = $ownPrice;
+            $fields['renewal_currency'] = $ownCurrency;
+        }
+
         $this->domainModel->update($id, $fields);
+
+        // An expiry date moved ahead by hand is a renewal no check can see, for TLDs whose lookup has no date
+        $savedLookup = json_decode((string)($domain['whois_data'] ?? ''), true);
+        $oldTime = strtotime((string)($domain['expiration_date'] ?? ''));
+        $newTime = is_string($manualExpirationDate) ? strtotime($manualExpirationDate) : false;
+        if (empty($savedLookup['expiration_date']) && $oldTime && $newTime && $newTime > time()
+            && $newTime - $oldTime >= \App\Services\WhoisService::RENEWAL_MIN_DAYS * 86400) {
+            $billing->logDetectedRenewal($domain, ['registrar' => $domain['registrar'] ?? null], [
+                'old_expiration' => $domain['expiration_date'],
+                'new_expiration' => date('Y-m-d', $newTime),
+                'auto_renew_period' => false,
+            ]);
+        }
 
         // Send notification if monitoring status changed and has notification group
         if ($statusChanged && $groupId) {
@@ -826,6 +938,10 @@ class DomainController extends Controller
         $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
         $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
         $renewal = $this->whoisService->detectRenewal($domain, $whoisData, $status);
+        if ($renewal) {
+            // Billing logs the payment for it. This never throws.
+            (new \App\Services\BillingService())->logDetectedRenewal($domain, $whoisData, $renewal);
+        }
         $whoisData = $this->whoisService->keepKnownPrivacy($domain, $whoisData);
 
         $this->domainModel->update($id, [
@@ -1323,8 +1439,10 @@ class DomainController extends Controller
         }
 
         $historyKept = (new \App\Services\DnsHistoryService())->recordDeletion($domain);
+        $paymentsKept = (new \App\Services\BillingService())->hasPayments($domain);
         $this->domainModel->delete($id);
-        $_SESSION['success'] = 'Domain deleted successfully' . ($historyKept ? '. ' . $this->dnsHistoryKeptNote(1) : '');
+        $_SESSION['success'] = 'Domain deleted successfully' . ($historyKept ? '. ' . $this->dnsHistoryKeptNote(1) : '')
+            . ($paymentsKept ? ($historyKept ? ' ' : '. ') . 'Its payments are kept in Billing.' : '');
         $this->redirect('/domains');
     }
 
@@ -1427,6 +1545,7 @@ class DomainController extends Controller
             'dnsHasWildcard' => $dnsHasWildcard,
             'dnsIpDetails' => $dnsIpDetails,
             'dnsHistory' => $this->getDnsHistoryForView((int)$id),
+            'billing' => $this->getBillingForView($formattedDomain),
             'sslCertificates' => $sslCertificates,
             'sslStats' => $sslStats,
             'title' => $domain['domain_name']
@@ -1469,6 +1588,68 @@ class DomainController extends Controller
         } catch (\Throwable $e) {
             (new \App\Services\Logger('dns'))->warning('DNS history could not be read', ['error' => $e->getMessage()]);
             return $history;
+        }
+    }
+
+    /**
+     * The own price fields of the Edit page. Only 'billingOn' => false while billing is off or its
+     * migration has not run.
+     */
+    private function getBillingForEdit(): array
+    {
+        try {
+            $billing = new \App\Services\BillingService();
+            if ($billing->isOn()) {
+                return ['billingOn' => true, 'billingBase' => $billing->baseCurrency(), 'billingCurrencies' => array_values($billing->currencies())];
+            }
+        } catch (\Throwable $e) {
+            // The Edit page works without billing
+        }
+
+        return ['billingOn' => false];
+    }
+
+    /**
+     * What the Billing tab and the Overview card show for a domain. Only 'on' => false while
+     * billing is off, before its migration has run, and whenever reading it fails: the domain page
+     * must not depend on it.
+     */
+    private function getBillingForView(array $domain): array
+    {
+        try {
+            $billing = new \App\Services\BillingService();
+            if (!$billing->isOn()) {
+                return ['on' => false];
+            }
+
+            $summary = $billing->domainSummary($domain, $billing->scopeFor(\Core\Auth::id()));
+            $totals = $summary['totals'];
+            $watched = $billing->isWatched($domain);
+            if ($watched || $summary['sale']) {
+                // Someone else pays the renewals of a watched or sold domain
+                $summary['expected'] = null;
+            }
+            $base = $billing->baseCurrency();
+            $currencies = $billing->currencies();
+
+            return $summary + [
+                'on' => true,
+                'base' => $base,
+                'currencies' => array_values($currencies),
+                'watched' => $watched,
+                // For the two charts. Hex-escaped, so it is safe inside a script tag.
+                'chart_json' => json_encode([
+                    'currency' => ['code' => $base, 'symbol' => (string)($currencies[$base]['symbol'] ?? '')],
+                    'breakdown' => [
+                        'labels' => ['Purchase', 'Renewals', 'Transfers', 'Other'],
+                        'values' => [(float)$totals['purchase'], (float)$totals['renewals'], (float)$totals['transfers'], (float)$totals['other']],
+                    ],
+                    'timeline' => array_map(fn(array $point): array => ['year' => $point['year'], 'total' => (float)$point['total']], $summary['timeline']),
+                ], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT),
+            ];
+        } catch (\Throwable $e) {
+            (new \App\Services\Logger('billing'))->warning('Billing could not be read', ['error' => $e->getMessage()]);
+            return ['on' => false];
         }
     }
 
@@ -1613,6 +1794,11 @@ class DomainController extends Controller
                     'ssl_monitoring_enabled' => $sslMonitoringEnabled,
                     'user_id' => \Core\Auth::id()
                 ]);
+
+                if ($domainId) {
+                    // Payments saved under this name before the domain was added
+                    (new \App\Services\BillingService())->relinkDomain((int)$domainId, $domainName, \Core\Auth::id());
+                }
 
                 // Handle tags using the new tag system
                 if (!empty($tags) && $domainId) {
@@ -1769,6 +1955,10 @@ class DomainController extends Controller
             
             $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
             $renewal = $this->whoisService->detectRenewal($domain, $whoisData, $status);
+            if ($renewal) {
+                // Billing logs the payment for it. This never throws.
+                (new \App\Services\BillingService())->logDetectedRenewal($domain, $whoisData, $renewal);
+            }
             $whoisData = $this->whoisService->keepKnownPrivacy($domain, $whoisData);
 
             $this->domainModel->update($id, [
@@ -1834,8 +2024,10 @@ class DomainController extends Controller
         $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
 
         $historyService = new \App\Services\DnsHistoryService();
+        $billingService = new \App\Services\BillingService();
         $deleted = 0;
         $historyKept = 0;
+        $paymentsKept = 0;
         foreach ($domainIds as $id) {
             if ($isolationMode === 'isolated') {
                 $domain = $this->domainModel->findWithIsolation($id, $userId);
@@ -1848,13 +2040,16 @@ class DomainController extends Controller
             }
 
             $kept = $historyService->recordDeletion($domain);
+            $hadPayments = $billingService->hasPayments($domain);
             if ($this->domainModel->delete($id)) {
                 $deleted++;
                 $historyKept += $kept ? 1 : 0;
+                $paymentsKept += $hadPayments ? 1 : 0;
             }
         }
 
-        $_SESSION['success'] = "Deleted $deleted domain(s)" . ($historyKept > 0 ? '. ' . $this->dnsHistoryKeptNote($historyKept) : '');
+        $_SESSION['success'] = "Deleted $deleted domain(s)" . ($historyKept > 0 ? '. ' . $this->dnsHistoryKeptNote($historyKept) : '')
+            . ($paymentsKept > 0 ? ($historyKept > 0 ? ' ' : '. ') . 'Their payments are kept in Billing.' : '');
         $this->redirect('/domains');
     }
 

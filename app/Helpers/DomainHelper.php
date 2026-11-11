@@ -274,5 +274,20 @@ class DomainHelper
     {
         return count(array_filter($channels, fn($ch) => $ch['is_active']));
     }
+
+    /**
+     * The suffixes of a domain name that could be its TLD, longest first:
+     * example.co.uk gives ['.co.uk', '.uk']
+     */
+    public static function suffixes(string $domain): array
+    {
+        $labels = array_values(array_filter(explode('.', strtolower(trim($domain))), fn(string $label): bool => $label !== ''));
+        $suffixes = [];
+        for ($i = 1; $i < count($labels); $i++) {
+            $suffixes[] = '.' . implode('.', array_slice($labels, $i));
+        }
+
+        return $suffixes;
+    }
 }
 

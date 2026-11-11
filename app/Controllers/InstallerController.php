@@ -65,6 +65,7 @@ class InstallerController extends Controller
             '032_add_renewal_notifications.sql',
             '033_add_watchlist_groups.sql',
             '034_add_dns_history.sql',
+            '035_add_billing.sql',
         ];
 
         try {
@@ -216,6 +217,7 @@ class InstallerController extends Controller
                     '032_add_renewal_notifications.sql',
                     '033_add_watchlist_groups.sql',
                     '034_add_dns_history.sql',
+                    '035_add_billing.sql',
                 ];
             }
 
@@ -450,6 +452,7 @@ class InstallerController extends Controller
                     '032_add_renewal_notifications.sql',
                     '033_add_watchlist_groups.sql',
                     '034_add_dns_history.sql',
+                    '035_add_billing.sql',
                 ];
 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");

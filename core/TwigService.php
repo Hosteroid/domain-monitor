@@ -158,6 +158,7 @@ class TwigService
                 'appName'             => $appSettings['app_name'],
                 'appTimezone'         => $appSettings['app_timezone'],
                 'appVersion'          => $appSettings['app_version'],
+                'billingEnabled'      => !empty($appSettings['billing_enabled']),
                 'avatar'              => $avatar,
                 'currentUrl'          => $_SERVER['REQUEST_URI'] ?? '/',
                 'appEnv'              => $_ENV['APP_ENV'] ?? 'development',
@@ -174,6 +175,7 @@ class TwigService
                 'appName'             => 'Domain Monitor',
                 'appTimezone'         => 'UTC',
                 'appVersion'          => '',
+                'billingEnabled'      => false,
                 'avatar'              => null,
                 'currentUrl'          => $_SERVER['REQUEST_URI'] ?? '/',
                 'appEnv'              => $_ENV['APP_ENV'] ?? 'development',
@@ -271,6 +273,11 @@ class TwigService
 
         $this->twig->addFilter(new TwigFilter('format_bytes', function (int $bytes, int $precision = 2): string {
             return \App\Helpers\ViewHelper::formatBytes($bytes, $precision);
+        }));
+
+        // Billing amount with its currency: the base currency unless another code is given
+        $this->twig->addFilter(new TwigFilter('money', function ($amount, ?string $currency = null): string {
+            return \App\Services\BillingService::formatMoney($amount, $currency);
         }));
 
         $this->twig->addFilter(new TwigFilter('safe_url', function (?string $url): string {

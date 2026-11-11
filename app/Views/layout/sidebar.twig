@@ -55,6 +55,13 @@
                     <i class="fas fa-tags text-sm mr-3 w-4 {{ is_active_prefix('/tags') ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400' }}"></i>
                     <span class="text-sm">Tag Management</span>
                 </a>
+                {% if billingEnabled|default(false) %}
+                <a href="/billing" class="sidebar-link group flex items-center px-3 py-2 rounded-lg transition-all duration-200
+                    {{ is_active_prefix('/billing') ? 'bg-blue-50 dark:bg-slate-800 text-blue-700 dark:text-blue-400 font-medium' : 'text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-900 dark:hover:text-white' }}">
+                    <i class="fas fa-wallet text-sm mr-3 w-4 {{ is_active_prefix('/billing') ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500 group-hover:text-blue-500 dark:group-hover:text-blue-400' }}"></i>
+                    <span class="text-sm">Billing</span>
+                </a>
+                {% endif %}
             </div>
 
             {# Tools Section #}

@@ -177,6 +177,56 @@ class Setting extends Model
     }
 
     /**
+     * Several settings in one query. A key that has no row is left out.
+     */
+    public function getValues(array $keys): array
+    {
+        if (!$keys) {
+            return [];
+        }
+        $stmt = $this->db->prepare(
+            'SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('
+            . implode(',', array_fill(0, count($keys), '?')) . ')'
+        );
+        $stmt->execute(array_values($keys));
+
+        return array_column($stmt->fetchAll(), 'setting_value', 'setting_key');
+    }
+
+    /**
+     * Whether billing is switched on. Off until the migration has added the setting.
+     */
+    public function isBillingOn(): bool
+    {
+        return $this->getValue('billing_enabled', '0') === '1';
+    }
+
+    /**
+     * Base currency of every billing total
+     */
+    public function getBillingCurrency(): string
+    {
+        $code = strtoupper((string)$this->getValue('billing_currency', 'USD'));
+        return preg_match('/^[A-Z]{3}$/', $code) ? $code : 'USD';
+    }
+
+    /**
+     * Whether a detected renewal is logged as a payment
+     */
+    public function isBillingAutoLogOn(): bool
+    {
+        return $this->getValue('billing_auto_log_renewals', '1') === '1';
+    }
+
+    /**
+     * Whether expiry reminders carry the renewal cost
+     */
+    public function isBillingCostInReminders(): bool
+    {
+        return $this->getValue('billing_cost_in_reminders', '1') === '1';
+    }
+
+    /**
      * Get check interval hours
      */
     public function getCheckIntervalHours(): int

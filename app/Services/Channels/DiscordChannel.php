@@ -93,6 +93,10 @@ class DiscordChannel implements NotificationChannelInterface
                     // Renewal alerts
                     $fields[] = ['name' => 'Previous Expiration', 'value' => $data['previous_expiration_date'], 'inline' => true];
                 }
+                if (!empty($data['renewal_cost'])) {
+                    // Expiry reminders, when billing knows the price
+                    $fields[] = ['name' => 'Renewal Cost', 'value' => $data['renewal_cost'], 'inline' => true];
+                }
             }
             if (isset($data['new_status'])) {
                 $fields[] = ['name' => 'Status', 'value' => $data['status_label'] ?? $data['new_status'], 'inline' => true];

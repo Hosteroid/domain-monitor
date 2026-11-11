@@ -19,6 +19,9 @@ class NotificationService
 
     private array $channels = [];
 
+    /** Renewal cost per domain id for the expiry reminders, read once per run */
+    private array $renewalCosts = [];
+
     public function __construct()
     {
         $this->channels = [
@@ -252,6 +255,8 @@ class NotificationService
                     'days_left' => $daysLeft,
                     'expiration_date' => $domain['expiration_date'],
                     'registrar' => $domain['registrar'],
+                    // Only there when billing knows a price for a domain of one's own
+                    ...(!$watchlist && $this->renewalCost($domain) !== null ? ['renewal_cost' => $this->renewalCost($domain)] : []),
                     // A lifecycle update about a domain someone wants to buy, not an urgent expiry
                     'watchlist' => $watchlist
                 ]
@@ -704,6 +709,11 @@ class NotificationService
         $domainName = $domain['domain_name'];
         $expirationDate = $domain['expiration_date'] ? date('F j, Y', strtotime($domain['expiration_date'])) : 'Unknown';
         $registrar = $domain['registrar'] ?? 'Unknown';
+        // The renewal cost follows the registrar line when billing knows it. Not for a watched domain.
+        $cost = $watchlist ? null : $this->renewalCost($domain);
+        if ($cost !== null) {
+            $registrar .= "\nRenewal cost: $cost";
+        }
 
         if ($daysLeft < 0) {
             $daysAgo = -$daysLeft . ' day' . ($daysLeft === -1 ? '' : 's');
@@ -740,6 +750,20 @@ class NotificationService
         return "ℹ️ REMINDER: Domain '$domainName' expires in $daysLeft days ($expirationDate).\n\n" .
                "Registrar: $registrar\n" .
                "Please plan for renewal.";
+    }
+
+    /**
+     * What billing expects the renewal to cost, such as "14.99 EUR", or null. Billing decides whether
+     * a cost is known and wanted, and never throws.
+     */
+    private function renewalCost(array $domain): ?string
+    {
+        $id = (int)($domain['id'] ?? 0);
+        if (!array_key_exists($id, $this->renewalCosts)) {
+            $this->renewalCosts[$id] = (new BillingService())->renewalCostText($domain);
+        }
+
+        return $this->renewalCosts[$id];
     }
 
     /**

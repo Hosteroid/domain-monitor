@@ -364,6 +364,48 @@
     {% endif %}
 </div>
 
+{# Renewal costs of the coming days, while billing is on and has something to show #}
+{% if billingCard|default(null) %}
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mb-4">
+    <div class="px-5 py-3 border-b border-gray-200 dark:border-slate-700">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="text-sm font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-wallet text-gray-400 dark:text-slate-500 mr-2 text-xs"></i>
+                Renewal Costs, Next {{ billingCard.days }} Days
+            </h2>
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-slate-400">
+                <span>
+                    <span class="font-semibold text-gray-900 dark:text-white">{{ billingCard.total|money }}</span>
+                    for {{ billingCard.count }} renewal{{ billingCard.count == 1 ? '' : 's' }}{% if billingCard.unknown > 0 %}, {{ billingCard.unknown }} without a price{% endif %}
+                </span>
+                {% if billingCard.review_count > 0 %}
+                <a href="/billing?status=review#payments" class="text-blue-600 dark:text-blue-400 hover:underline">{{ billingCard.review_count }} payment{{ billingCard.review_count == 1 ? '' : 's' }} to confirm</a>
+                {% endif %}
+                <a href="/billing" class="text-blue-600 dark:text-blue-400 hover:underline">Billing <i class="fas fa-arrow-right ml-1" style="font-size: 8px;"></i></a>
+            </div>
+        </div>
+    </div>
+    {% if billingCard.rows %}
+    <div class="divide-y divide-gray-100 dark:divide-slate-700">
+        {% for item in billingCard.rows %}
+        <a href="/domains/{{ item.id }}#billing" class="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors duration-150">
+            <span class="flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-white truncate">{{ item.domain_name }}</span>
+            <span class="hidden sm:block w-44 flex-shrink-0 text-xs text-gray-500 dark:text-slate-400">{{ item.expiration_date|date('M d, Y') }}, {{ item.days == 0 ? 'today' : 'in ' ~ item.days ~ (item.days == 1 ? ' day' : ' days') }}</span>
+            <span class="w-28 flex-shrink-0 text-right text-sm font-semibold text-gray-900 dark:text-white">
+                {% if item.expected %}{{ item.expected.price|money(item.expected.currency) }}{% else %}<span class="text-xs font-normal text-amber-600 dark:text-amber-400">No price</span>{% endif %}
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+    {% if billingCard.count > billingCard.rows|length %}
+    <p class="px-5 py-2 text-xs text-gray-500 dark:text-slate-400 border-t border-gray-100 dark:border-slate-700">The next {{ billingCard.rows|length }} of {{ billingCard.count }} renewals</p>
+    {% endif %}
+    {% else %}
+    <p class="px-5 py-3 text-sm text-gray-600 dark:text-slate-400">No renewals in the next {{ billingCard.days }} days.</p>
+    {% endif %}
+</div>
+{% endif %}
+
 {# Insights Row #}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
     {# Registrar Distribution #}

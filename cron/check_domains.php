@@ -36,6 +36,7 @@ $groupModel = new NotificationGroup();
 $settingModel = new Setting();
 $whoisService = new WhoisService();
 $notificationService = new NotificationService();
+$billingService = new \App\Services\BillingService();
 
 // Clear TLD cache to ensure fresh server discovery
 WhoisService::clearTldCache();
@@ -322,6 +323,10 @@ foreach ($domains as $domain) {
         // Update domain information
         $status = $whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
         $renewal = $whoisService->detectRenewal($domain, $whoisData, $status);
+        if ($renewal) {
+            // Billing logs the payment for it. This never throws.
+            $billingService->logDetectedRenewal($domain, $whoisData, $renewal);
+        }
         $whoisData = $whoisService->keepKnownPrivacy($domain, $whoisData);
         $domainModel->update($domain['id'], [
             'registrar' => $whoisData['registrar'],
@@ -492,6 +497,10 @@ if (!empty($retryQueue)) {
                     $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
                     $status = $whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
                     $renewal = $whoisService->detectRenewal($domain, $whoisData, $status);
+                    if ($renewal) {
+                        // Billing logs the payment for it. This never throws.
+                        $billingService->logDetectedRenewal($domain, $whoisData, $renewal);
+                    }
                     $whoisData = $whoisService->keepKnownPrivacy($domain, $whoisData);
 
                     $domainModel->update($domain['id'], [

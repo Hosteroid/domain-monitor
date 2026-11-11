@@ -1,0 +1,212 @@
+{% extends "layout/base.twig" %}
+
+{% set title = 'Price List' %}
+{% set pageTitle = 'Price List' %}
+{% set pageDescription = 'What registrations, renewals and transfers cost per TLD' %}
+{% set pageIcon = 'fas fa-tags' %}
+
+{% block content %}
+{% set inputClass = 'w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-transparent' %}
+{% set labelClass = 'block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5' %}
+{% set thClass = 'px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider' %}
+
+<div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+    <div class="flex items-start">
+        <i class="fas fa-info-circle text-blue-600 dark:text-blue-400 mr-3 mt-0.5"></i>
+        <p class="text-sm text-blue-900 dark:text-blue-300">
+            The expected renewal cost of a domain is its own price if it has one, then a price from this list, then its last renewal payment.
+            The longest matching TLD wins, so <span class="font-mono">.co.uk</span> comes before <span class="font-mono">.uk</span>, and a row for the domain's registrar comes before a row for any registrar.
+        </p>
+    </div>
+</div>
+
+<div class="flex flex-wrap items-center gap-2 mb-4">
+    <button type="button" onclick="openPriceModal()" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+        <i class="fas fa-plus mr-2"></i>Add Price
+    </button>
+    <button type="button" onclick="document.getElementById('priceImportModal').classList.remove('hidden')" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+        <i class="fas fa-file-import mr-2"></i>Import
+    </button>
+    {% if prices %}
+    <a href="/billing/prices/export" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium">
+        <i class="fas fa-file-export mr-2"></i>Export
+    </a>
+    {% endif %}
+    <button type="button" id="priceDeleteBtn" onclick="deleteSelectedPrices()" class="hidden inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors font-medium">
+        <i class="fas fa-trash mr-2"></i>Delete Selected (<span id="priceSelectedCount">0</span>)
+    </button>
+    <a href="/billing" class="ml-auto inline-flex items-center px-4 py-2 text-sm text-gray-600 dark:text-slate-400 hover:text-primary font-medium">
+        <i class="fas fa-arrow-left mr-2"></i>Back to Billing
+    </a>
+</div>
+
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+    {% if prices %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+            <thead class="bg-gray-50 dark:bg-slate-900">
+                <tr>
+                    <th class="px-4 py-3 w-10"><input type="checkbox" onchange="togglePriceBoxes(this.checked)" class="rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary" title="Select all"></th>
+                    <th class="{{ thClass }}">TLD</th>
+                    <th class="{{ thClass }}">Registrar</th>
+                    <th class="{{ thClass }}">Registration</th>
+                    <th class="{{ thClass }}">Renewal / year</th>
+                    <th class="{{ thClass }}">Transfer</th>
+                    <th class="{{ thClass }}">Used By</th>
+                    <th class="{{ thClass }}"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                {% for row in prices %}
+                <tr class="hover:bg-gray-50 dark:hover:bg-slate-700/50">
+                    <td class="px-4 py-3"><input type="checkbox" value="{{ row.id }}" onchange="updatePriceSelection()" class="price-cb rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary"></td>
+                    <td class="px-4 py-3 text-sm font-mono font-semibold text-gray-900 dark:text-white whitespace-nowrap">{{ row.tld }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                        {% if row.registrar %}{{ row.registrar }}{% else %}<span class="text-gray-400 dark:text-slate-500">Any registrar</span>{% endif %}
+                    </td>
+                    {% for column in ['registration_price', 'renewal_price', 'transfer_price'] %}
+                    <td class="px-4 py-3 text-sm whitespace-nowrap {{ column == 'renewal_price' ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-700 dark:text-slate-300' }}">
+                        {% if row[column] is not null %}{{ row[column]|money(row.currency) }}{% else %}<span class="text-gray-400 dark:text-slate-500">-</span>{% endif %}
+                    </td>
+                    {% endfor %}
+                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-slate-400 whitespace-nowrap">
+                        {% if row.renewal_price is null %}-{% else %}{{ row.used }} domain{{ row.used == 1 ? '' : 's' }}{% endif %}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap text-right">
+                        <button type="button" class="px-2 py-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded" title="Edit this price"
+                                data-price="{{ {id: row.id, tld: row.tld, registrar: row.registrar, registration_price: row.registration_price, renewal_price: row.renewal_price, transfer_price: row.transfer_price, currency: row.currency}|json_encode }}"
+                                onclick="openPriceModal(JSON.parse(this.dataset.price))"><i class="fas fa-pen text-xs"></i></button>
+                        <form method="POST" action="/billing/prices/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this price?')">
+                            {{ csrf_field() }}
+                            <input type="hidden" name="price_ids[]" value="{{ row.id }}">
+                            <button type="submit" class="px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded" title="Delete this price"><i class="fas fa-trash text-xs"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-10 text-center">
+        <i class="fas fa-tags text-gray-300 dark:text-slate-600 text-4xl mb-3"></i>
+        <p class="text-sm font-medium text-gray-700 dark:text-slate-300">No prices yet</p>
+        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Add what a renewal costs per TLD, and the renewal forecasts fill in for every domain.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Add or edit a price -->
+<div id="priceModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-xl w-full max-w-lg max-h-full overflow-y-auto">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 flex items-center justify-between">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white"><i class="fas fa-tag text-primary mr-2"></i><span id="priceModalTitle">Add Price</span></h3>
+            <button type="button" onclick="closePriceModal()" class="text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-slate-300"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="POST" action="/billing/prices/save" id="priceForm">
+            {{ csrf_field() }}
+            <input type="hidden" name="id" value="">
+            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="price_tld" class="{{ labelClass }}">TLD</label>
+                    <input type="text" id="price_tld" name="tld" required maxlength="63" placeholder=".com" autocomplete="off" class="{{ inputClass }} lowercase">
+                </div>
+                <div>
+                    <label for="price_currency" class="{{ labelClass }}">Currency</label>
+                    <select id="price_currency" name="currency" class="{{ inputClass }}">
+                        {% for currency in currencies %}
+                        <option value="{{ currency.code }}" {{ currency.code == base ? 'selected' : '' }}>{{ currency.code }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label for="price_registrar" class="{{ labelClass }}">Registrar</label>
+                    <input type="text" id="price_registrar" name="registrar" list="priceRegistrars" maxlength="255" placeholder="Any registrar" autocomplete="off" class="{{ inputClass }}">
+                    <datalist id="priceRegistrars">
+                        {% for registrar in registrars %}<option value="{{ registrar }}">{% endfor %}
+                    </datalist>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Leave empty for a price at any registrar. A name is matched to the registrar the checks read for a domain.</p>
+                </div>
+                <div>
+                    <label for="price_renewal" class="{{ labelClass }}">Renewal per year</label>
+                    <input type="text" id="price_renewal" name="renewal_price" inputmode="decimal" placeholder="14.99" autocomplete="off" class="{{ inputClass }}">
+                </div>
+                <div>
+                    <label for="price_registration" class="{{ labelClass }}">Registration</label>
+                    <input type="text" id="price_registration" name="registration_price" inputmode="decimal" autocomplete="off" class="{{ inputClass }}">
+                </div>
+                <div>
+                    <label for="price_transfer" class="{{ labelClass }}">Transfer</label>
+                    <input type="text" id="price_transfer" name="transfer_price" inputmode="decimal" autocomplete="off" class="{{ inputClass }}">
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex justify-end gap-2 rounded-b-lg">
+                <button type="button" onclick="closePriceModal()" class="px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg text-sm font-medium hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors">Cancel</button>
+                <button type="submit" class="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors"><i class="fas fa-save mr-1.5"></i>Save Price</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<form id="priceDeleteForm" method="POST" action="/billing/prices/delete" class="hidden">
+    {{ csrf_field() }}
+</form>
+
+{% include 'partials/import-modal.twig' with {
+    prefix: 'price',
+    title: 'Import Prices',
+    action: '/billing/prices/import',
+    accept: '.csv',
+    file_hint: 'CSV',
+    format_html: '<p class="text-xs text-gray-600 dark:text-slate-400">CSV columns: <code class="bg-white dark:bg-slate-700 px-1 rounded">tld, registrar, registration_price, renewal_price, transfer_price, currency</code></p><p class="text-xs text-gray-600 dark:text-slate-400 mt-1">An empty registrar means any registrar. A row for a TLD and registrar that is already on the list updates it.</p>'
+} %}
+
+<script>
+function openPriceModal(price) {
+    price = price || {};
+    var form = document.getElementById('priceForm');
+    document.getElementById('priceModalTitle').textContent = price.id ? 'Edit Price' : 'Add Price';
+    ['id', 'tld', 'registrar', 'registration_price', 'renewal_price', 'transfer_price'].forEach(function (name) {
+        form.elements[name].value = price[name] === null || price[name] === undefined ? '' : price[name];
+    });
+    if (price.currency) { form.elements.currency.value = price.currency; }
+    document.getElementById('priceModal').classList.remove('hidden');
+    form.elements.tld.focus();
+}
+
+function closePriceModal() {
+    document.getElementById('priceModal').classList.add('hidden');
+}
+
+function togglePriceBoxes(checked) {
+    document.querySelectorAll('.price-cb').forEach(function (box) { box.checked = checked; });
+    updatePriceSelection();
+}
+
+function updatePriceSelection() {
+    var count = document.querySelectorAll('.price-cb:checked').length;
+    document.getElementById('priceSelectedCount').textContent = count;
+    document.getElementById('priceDeleteBtn').classList.toggle('hidden', count === 0);
+}
+
+async function deleteSelectedPrices() {
+    var boxes = document.querySelectorAll('.price-cb:checked');
+    if (!boxes.length) { return; }
+    var ok = await confirmAction({ message: 'Delete ' + boxes.length + (boxes.length === 1 ? ' price?' : ' prices?') });
+    if (!ok) { return; }
+    var form = document.getElementById('priceDeleteForm');
+    boxes.forEach(function (box) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'price_ids[]';
+        input.value = box.value;
+        form.appendChild(input);
+    });
+    form.submit();
+}
+
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closePriceModal(); }
+});
+</script>
+{% endblock %}

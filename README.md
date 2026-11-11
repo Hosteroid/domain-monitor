@@ -33,6 +33,7 @@ A modern PHP MVC application for monitoring domain expiration dates and sending 
 - 📱 **Monitoring Controls** - Enable/disable notifications per domain with alerts
 - 🌍 **RDAP Support** - Modern protocol for faster, structured domain data
 - 🏴 **Geolocation Tracking** - See location, ISP, and device info for all sessions
+- 💰 **Billing** - Payments, a price list and renewal cost forecasts for every domain
 
 ## 📋 Requirements
 
@@ -349,6 +350,8 @@ A DNS **Deep Scan** looks up subdomains in certificate transparency logs as well
 When a zone has a wildcard record, every name answers, so each refresh and scan probes a random name: subdomains that only get the wildcard's answers are not listed, the wildcard itself is listed as host `*`, and the DNS tab shows a **Wildcard DNS** badge. Subdomains with records of their own, and records you add or import, are kept.
 
 **DNS History** saves a domain's records before every DNS change, so a lost record can be looked up later. Entries are listed on the DNS tab and the **DNS History** page, can be exported as a zone file, and are kept 90 days by default (**Settings → Monitoring → DNS History**).
+
+**Billing** tracks what each domain costs. The domain's **Billing** tab holds its purchases, renewals and sales, and the **Billing** page shows the totals, the yearly renewal cost and the renewals coming up. A **Price List** per TLD and registrar fills in the expected price, and a renewal found by a check is logged and waits for confirmation. Amounts can be in any currency, with totals in one base currency. It can be turned off under **Settings → Billing**.
 
 ### Configure Settings
 

@@ -1,0 +1,509 @@
+{% extends "layout/base.twig" %}
+
+{% set title = 'Billing' %}
+{% set pageTitle = 'Billing' %}
+{% set pageDescription = 'What your domains cost and which renewals are coming up' %}
+{% set pageIcon = 'fas fa-wallet' %}
+
+{% block content %}
+{% set totals = portfolio.totals %}
+{% set card = 'bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4' %}
+{% set cardLabel = 'text-xs font-medium text-gray-500 dark:text-slate-400 uppercase' %}
+{% set cardNote = 'text-xs text-gray-500 dark:text-slate-400 mt-0.5' %}
+{% set panel = 'bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden' %}
+{% set panelHead = 'px-4 py-3 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900 flex items-center justify-between' %}
+{% set panelTitle = 'text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wider flex items-center' %}
+
+{% if portfolio.review_count > 0 %}
+<div class="mb-4 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 rounded-lg p-4 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center">
+        <i class="fas fa-robot text-blue-600 dark:text-blue-400 mr-3"></i>
+        <p class="text-sm text-blue-900 dark:text-blue-300">
+            <span class="font-semibold">{{ portfolio.review_count }} automatic payment{{ portfolio.review_count == 1 ? '' : 's' }} to confirm.</span>
+            Logged when a check found a domain renewed.
+        </p>
+    </div>
+    <a href="/billing?status=review#payments" class="text-sm font-medium text-blue-700 dark:text-blue-400 hover:underline">Show them <i class="fas fa-arrow-right ml-1 text-xs"></i></a>
+</div>
+{% endif %}
+
+<!-- What was spent -->
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-3">
+    <div class="{{ card }}">
+        <p class="{{ cardLabel }}">Spent This Year</p>
+        <p class="text-xl font-semibold text-gray-900 dark:text-white mt-1">{{ totals.this_year|money }}</p>
+        <p class="{{ cardNote }}">{{ 'now'|date('Y') }}</p>
+    </div>
+    <div class="{{ card }}">
+        <p class="{{ cardLabel }}">Last 12 Months</p>
+        <p class="text-xl font-semibold text-gray-900 dark:text-white mt-1">{{ totals.last_12_months|money }}</p>
+        <p class="{{ cardNote }}">All expenses</p>
+    </div>
+    <div class="{{ card }}">
+        <p class="{{ cardLabel }}">Total Invested</p>
+        <p class="text-xl font-semibold text-indigo-600 dark:text-indigo-400 mt-1">{{ totals.invested|money }}</p>
+        <p class="{{ cardNote }}">{{ totals.pending != '0.00' ? 'Plus ' ~ totals.pending|money ~ ' pending' : 'Since the first payment' }}</p>
+    </div>
+    <div class="{{ card }}">
+        <p class="{{ cardLabel }}">Income</p>
+        <p class="text-xl font-semibold text-green-600 dark:text-green-400 mt-1">{{ totals.income|money }}</p>
+        <p class="{{ cardNote }}">Sales and other income</p>
+    </div>
+    <div class="{{ card }}">
+        <p class="{{ cardLabel }}">Profit/Loss</p>
+        <p class="text-xl font-semibold mt-1 {{ totals.profit starts with '-' ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white' }}">{{ totals.profit|money }}</p>
+        <p class="{{ cardNote }}">Income minus expenses</p>
+    </div>
+</div>
+
+<!-- What is coming -->
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
+    <div class="{{ card }}">
+        <p class="{{ cardLabel }}">Yearly Renewal Cost</p>
+        <p class="text-xl font-semibold text-orange-600 dark:text-orange-400 mt-1">{{ portfolio.yearly_cost|money }}</p>
+        <p class="{{ cardNote }}">
+            {{ portfolio.own_count }} domain{{ portfolio.own_count == 1 ? '' : 's' }}{% if portfolio.without_price > 0 %},
+            <a href="/billing/prices" class="text-blue-600 dark:text-blue-400 hover:underline">{{ portfolio.without_price }} without a price</a>{% endif %}
+        </p>
+    </div>
+    {% for days, window in portfolio.windows %}
+    <div class="{{ card }}">
+        <p class="{{ cardLabel }}">Next {{ days }} Days</p>
+        <p class="text-xl font-semibold text-gray-900 dark:text-white mt-1">{{ window.total|money }}</p>
+        <p class="{{ cardNote }}">{{ window.count }} renewal{{ window.count == 1 ? '' : 's' }}{% if window.unknown > 0 %}, {{ window.unknown }} without a price{% endif %}</p>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+    <!-- Upcoming renewals -->
+    <div class="{{ panel }}">
+        <div class="{{ panelHead }}">
+            <h3 class="{{ panelTitle }}"><i class="fas fa-calendar-alt text-gray-400 dark:text-slate-500 mr-2"></i>Upcoming Renewals</h3>
+            <a href="/billing/prices" class="text-xs text-blue-600 dark:text-blue-400 hover:underline">Price list <i class="fas fa-arrow-right ml-1" style="font-size: 8px;"></i></a>
+        </div>
+        {% if portfolio.upcoming %}
+        <div class="divide-y divide-gray-100 dark:divide-slate-700">
+            {% for item in portfolio.upcoming %}
+            <a href="/domains/{{ item.id }}#billing" class="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors">
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ item.domain_name }}</p>
+                    <p class="text-xs text-gray-500 dark:text-slate-400">{{ item.expiration_date|date('M d, Y') }}, {{ item.days == 0 ? 'today' : 'in ' ~ item.days ~ (item.days == 1 ? ' day' : ' days') }}</p>
+                </div>
+                {% if item.expected %}
+                <span class="text-sm font-semibold text-gray-900 dark:text-white whitespace-nowrap">{{ item.expected.price|money(item.expected.currency) }}</span>
+                {% else %}
+                <span class="text-xs text-amber-600 dark:text-amber-400 whitespace-nowrap">No price</span>
+                {% endif %}
+            </a>
+            {% endfor %}
+        </div>
+        {% if portfolio.upcoming_count > portfolio.upcoming|length %}
+        <p class="px-4 py-2 text-xs text-gray-500 dark:text-slate-400 border-t border-gray-100 dark:border-slate-700">The next {{ portfolio.upcoming|length }} of {{ portfolio.upcoming_count }} renewals in the coming 12 months</p>
+        {% endif %}
+        {% else %}
+        <div class="p-8 text-center">
+            <i class="fas fa-calendar-check text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>
+            <p class="text-sm text-gray-600 dark:text-slate-400">No renewals in the coming 12 months</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Renewals per month -->
+    <div class="{{ panel }}">
+        <div class="{{ panelHead }}">
+            <h3 class="{{ panelTitle }}"><i class="fas fa-chart-bar text-gray-400 dark:text-slate-500 mr-2"></i>Renewals per Month</h3>
+            <span class="text-xs text-gray-500 dark:text-slate-400">Estimated cost, next 12 months</span>
+        </div>
+        <div class="p-4" style="height: 280px;"><canvas id="monthsChart"></canvas></div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+    <!-- Spending per year -->
+    <div class="{{ panel }}">
+        <div class="{{ panelHead }}">
+            <h3 class="{{ panelTitle }}"><i class="fas fa-chart-line text-gray-400 dark:text-slate-500 mr-2"></i>Spending per Year</h3>
+        </div>
+        {% if portfolio.years %}
+        <div class="p-4" style="height: 280px;"><canvas id="yearsChart"></canvas></div>
+        {% else %}
+        <div class="p-8 text-center">
+            <i class="fas fa-receipt text-gray-300 dark:text-slate-600 text-3xl mb-2"></i>
+            <p class="text-sm text-gray-600 dark:text-slate-400">No payments yet</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Breakdown -->
+    {% set kinds = {registrar: 'Registrar', tld: 'TLD', tag: 'Tag', group: 'Group'} %}
+    <div class="{{ panel }}">
+        <div class="{{ panelHead }}">
+            <h3 class="{{ panelTitle }}"><i class="fas fa-layer-group text-gray-400 dark:text-slate-500 mr-2"></i>Breakdown</h3>
+            <div class="flex gap-1">
+                {% for kind, label in kinds %}
+                <button type="button" data-breakdown="{{ kind }}" onclick="showBreakdown('{{ kind }}')" class="breakdown-btn px-2 py-1 text-xs rounded font-medium {{ loop.first ? 'bg-primary text-white' : 'text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700' }}">{{ label }}</button>
+                {% endfor %}
+            </div>
+        </div>
+        {% for kind, label in kinds %}
+        <div id="breakdown-{{ kind }}" class="breakdown-table {{ loop.first ? '' : 'hidden' }}">
+            <table class="min-w-full">
+                <thead>
+                    <tr class="text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase">
+                        <th class="px-4 py-2">{{ label }}</th>
+                        <th class="px-4 py-2 text-right">Domains</th>
+                        <th class="px-4 py-2 text-right">Per Year</th>
+                        <th class="px-4 py-2 text-right">Spent</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-slate-700">
+                    {% for row in portfolio.breakdowns[kind]|slice(0, 12) %}
+                    <tr>
+                        <td class="px-4 py-2 text-sm text-gray-900 dark:text-white">{{ row.label }}</td>
+                        <td class="px-4 py-2 text-sm text-right text-gray-600 dark:text-slate-400">{{ row.domains }}</td>
+                        <td class="px-4 py-2 text-sm text-right text-gray-900 dark:text-white whitespace-nowrap">{{ row.yearly|money }}</td>
+                        <td class="px-4 py-2 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{{ row.spent|money }}</td>
+                    </tr>
+                    {% endfor %}
+                    {% if portfolio.other_spent != '0.00' %}
+                    <tr>
+                        <td class="px-4 py-2 text-sm text-gray-500 dark:text-slate-400" colspan="3">Deleted domains and costs without a domain</td>
+                        <td class="px-4 py-2 text-sm text-right font-semibold text-gray-900 dark:text-white whitespace-nowrap">{{ portfolio.other_spent|money }}</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+            {% if portfolio.breakdowns[kind]|length > 12 %}
+            <p class="px-4 py-2 text-xs text-gray-500 dark:text-slate-400 border-t border-gray-100 dark:border-slate-700">The 12 with the highest spending, of {{ portfolio.breakdowns[kind]|length }}</p>
+            {% endif %}
+            {% if kind == 'tag' %}
+            <p class="px-4 py-2 text-xs text-gray-500 dark:text-slate-400 border-t border-gray-100 dark:border-slate-700">A domain with several tags counts under each of them.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+{# ---------------------------------------------------------------- Payments #}
+{% set typeBadges = {
+    purchase: ['bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400', 'fa-shopping-cart'],
+    renewal: ['bg-orange-100 dark:bg-orange-500/10 text-orange-800 dark:text-orange-400', 'fa-redo'],
+    transfer: ['bg-purple-100 dark:bg-purple-500/10 text-purple-800 dark:text-purple-400', 'fa-exchange-alt'],
+    other: ['bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-slate-300', 'fa-receipt'],
+    sale: ['bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400', 'fa-hand-holding-usd'],
+    income: ['bg-teal-100 dark:bg-teal-500/10 text-teal-800 dark:text-teal-400', 'fa-coins']
+} %}
+{% set field = 'w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white' %}
+{% set fieldLabel = 'block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1.5' %}
+{% set button = 'inline-flex items-center px-4 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors font-medium' %}
+{% set pageLink = 'px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-gray-700 dark:text-slate-300' %}
+{% set page = pagination.current_page %}
+{% set perPage = pagination.per_page %}
+{% set here = pagination_url(page, filters, perPage) %}
+{% set filtered = filters.search or filters.type or filters.status or filters.state or filters.from or filters.to %}
+
+<div id="payments" class="flex flex-wrap items-center gap-2 mb-3 pt-2">
+    <h2 class="text-base font-semibold text-gray-900 dark:text-white mr-auto"><i class="fas fa-receipt text-gray-400 dark:text-slate-500 mr-2"></i>Payments</h2>
+    <button type="button" onclick="openPaymentModal({type: 'renewal'})" class="inline-flex items-center px-4 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+        <i class="fas fa-plus mr-2"></i>Add Payment
+    </button>
+    <button type="button" onclick="document.getElementById('paymentImportModal').classList.remove('hidden')" class="{{ button }}"><i class="fas fa-file-import mr-2"></i>Import</button>
+    {% if pagination.total > 0 %}
+    <a href="/billing/export?{{ filters|url_encode }}" class="{{ button }}"><i class="fas fa-file-export mr-2"></i>Export</a>
+    {% endif %}
+</div>
+
+<div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 p-4 mb-4">
+    <form method="GET" action="/billing#payments">
+        <input type="hidden" name="per_page" value="{{ perPage }}">
+        <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+            <div class="col-span-2 md:col-span-1">
+                <label for="pay-search" class="{{ fieldLabel }}">Search</label>
+                <input type="text" id="pay-search" name="search" value="{{ filters.search }}" maxlength="255" placeholder="Domain, company, invoice" class="{{ field }}">
+            </div>
+            <div>
+                <label for="pay-type" class="{{ fieldLabel }}">Type</label>
+                <select id="pay-type" name="type" class="{{ field }}">
+                    <option value="">Any</option>
+                    {% for key, label in typeLabels %}<option value="{{ key }}" {{ filters.type == key ? 'selected' : '' }}>{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="pay-status" class="{{ fieldLabel }}">Status</label>
+                <select id="pay-status" name="status" class="{{ field }}">
+                    <option value="">Any</option>
+                    <option value="paid" {{ filters.status == 'paid' ? 'selected' : '' }}>Paid</option>
+                    <option value="pending" {{ filters.status == 'pending' ? 'selected' : '' }}>Pending</option>
+                    <option value="review" {{ filters.status == 'review' ? 'selected' : '' }}>To confirm</option>
+                </select>
+            </div>
+            <div>
+                <label for="pay-state" class="{{ fieldLabel }}">Domains</label>
+                <select id="pay-state" name="state" class="{{ field }}">
+                    <option value="">All</option>
+                    <option value="existing" {{ filters.state == 'existing' ? 'selected' : '' }}>Existing only</option>
+                    <option value="deleted" {{ filters.state == 'deleted' ? 'selected' : '' }}>Deleted only</option>
+                    <option value="none" {{ filters.state == 'none' ? 'selected' : '' }}>Without a domain</option>
+                </select>
+            </div>
+            <div>
+                <label for="pay-from" class="{{ fieldLabel }}">From</label>
+                <input type="date" id="pay-from" name="from" value="{{ filters.from }}" class="{{ field }}">
+            </div>
+            <div>
+                <label for="pay-to" class="{{ fieldLabel }}">To</label>
+                <input type="date" id="pay-to" name="to" value="{{ filters.to }}" class="{{ field }}">
+            </div>
+            <div class="col-span-2 md:col-span-1 flex items-end gap-2">
+                <button type="submit" class="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors text-sm font-medium"><i class="fas fa-filter mr-2"></i>Apply</button>
+                <a href="/billing#payments" class="px-3 py-2 border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm font-medium" title="Clear the filters"><i class="fas fa-times"></i></a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div class="mb-3 flex flex-wrap justify-between items-center gap-2">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Showing <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_from }}</span> to
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.showing_to }}</span> of
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.total }}</span> payment{{ pagination.total == 1 ? '' : 's' }}
+    </div>
+    <div class="flex items-center gap-2">
+        <button type="button" id="payConfirmBtn" onclick="submitSelectedPayments('confirm')" class="hidden inline-flex items-center px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors font-medium">
+            <i class="fas fa-check mr-1.5"></i>Confirm Selected (<span class="pay-selected-count">0</span>)
+        </button>
+        <button type="button" id="payDeleteBtn" onclick="submitSelectedPayments('delete')" class="hidden inline-flex items-center px-3 py-1.5 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium">
+            <i class="fas fa-trash-alt mr-1.5"></i>Delete Selected (<span class="pay-selected-count">0</span>)
+        </button>
+        <form method="GET" action="/billing#payments" class="flex items-center gap-2">
+            {% for name, value in filters %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+            <label for="per_page" class="text-sm text-gray-600 dark:text-slate-400">Show:</label>
+            <select name="per_page" id="per_page" onchange="this.form.submit()" class="px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded-lg text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white">
+                {% for choice in [10, 25, 50, 100] %}<option value="{{ choice }}" {{ perPage == choice ? 'selected' : '' }}>{{ choice }}</option>{% endfor %}
+            </select>
+        </form>
+    </div>
+</div>
+
+<div class="{{ panel }}">
+    {% if payments %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+            <thead class="bg-gray-50 dark:bg-slate-900">
+                <tr>
+                    <th class="px-4 py-3 w-10"><input type="checkbox" onchange="togglePaymentBoxes(this.checked)" class="rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary" title="Select all"></th>
+                    {% for heading in ['Date', 'Domain', 'Type', 'Amount', 'Company/Seller', 'Invoice', 'Status', ''] %}
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider">{{ heading }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                {% for row in payments %}
+                {% set badge = typeBadges[row.type]|default(typeBadges.other) %}
+                {% set missing = row.needs_review and row.amount == '0.00' %}
+                <tr class="hover:bg-gray-50 dark:hover:bg-slate-700/50">
+                    <td class="px-4 py-3"><input type="checkbox" value="{{ row.id }}" data-review="{{ row.needs_review and not missing ? '1' : '0' }}" onchange="updatePaymentSelection()" class="pay-cb rounded border-gray-300 dark:border-slate-600 text-primary focus:ring-primary"></td>
+                    <td class="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">{{ row.transaction_date|date('M d, Y') }}</td>
+                    <td class="px-4 py-3 text-sm whitespace-nowrap">
+                        {% if row.live_domain_id %}
+                        <a href="/domains/{{ row.live_domain_id }}#billing" class="font-medium text-primary hover:underline">{{ row.domain_name }}</a>
+                        {% elseif row.domain_name %}
+                        <span class="text-gray-900 dark:text-white">{{ row.domain_name }}</span>
+                        <span class="ml-1 px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-400 text-xs rounded" title="This domain is not in your list">not listed</span>
+                        {% else %}
+                        <span class="text-gray-400 dark:text-slate-500 italic">No domain</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 {{ badge[0] }} text-xs font-semibold rounded"><i class="fas {{ badge[1] }} mr-1" style="font-size: 9px;"></i>{{ typeLabels[row.type]|default(row.type) }}{% if row.term_years and row.term_years > 1 %} ({{ row.term_years }} years){% endif %}</span></td>
+                    <td class="px-4 py-3 text-sm font-semibold whitespace-nowrap {{ row.type in ['sale', 'income'] ? 'text-green-600 dark:text-green-400' : 'text-gray-900 dark:text-white' }}">
+                        {% if missing %}
+                        <span class="text-amber-600 dark:text-amber-400 font-medium">Amount missing</span>
+                        {% else %}
+                        {{ row.type in ['sale', 'income'] ? '+' : '' }}{{ row.amount|money(row.currency) }}
+                        {% if row.currency != base %}<span class="block text-xs font-normal text-gray-500 dark:text-slate-400">{{ row.amount_base|money }}</span>{% endif %}
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-700 dark:text-slate-300">{{ row.vendor ?: '-' }}</td>
+                    <td class="px-4 py-3 text-sm font-mono whitespace-nowrap">
+                        {% if row.invoice_url %}
+                        <a href="{{ row.invoice_url|safe_url }}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 hover:underline">{{ row.invoice_number ?: 'Open' }}<i class="fas fa-external-link-alt ml-1" style="font-size: 9px;"></i></a>
+                        {% else %}
+                        <span class="text-gray-700 dark:text-slate-300">{{ row.invoice_number ?: '-' }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap">
+                        {% if row.needs_review %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded" title="{{ row.status == 'pending' ? 'Not counted until it is confirmed' : 'Logged automatically' }}"><i class="fas fa-robot mr-1" style="font-size: 9px;"></i>To confirm</span>
+                        {% elseif row.status == 'pending' %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 text-xs font-semibold rounded"><i class="fas fa-clock mr-1" style="font-size: 9px;"></i>Pending</span>
+                        {% else %}
+                        <span class="inline-flex items-center px-2 py-0.5 bg-green-100 dark:bg-green-500/10 text-green-800 dark:text-green-400 text-xs font-semibold rounded"><i class="fas fa-check-circle mr-1" style="font-size: 9px;"></i>Paid</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 whitespace-nowrap text-right">
+                        <div class="flex items-center justify-end gap-1">
+                            {% if row.needs_review and not missing %}
+                            <form method="POST" action="/billing/confirm" class="inline">
+                                {{ csrf_field() }}
+                                <input type="hidden" name="return_to" value="{{ here }}">
+                                <input type="hidden" name="payment_ids[]" value="{{ row.id }}">
+                                <button type="submit" class="px-2 py-1 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-500/10 rounded" title="Confirm this payment"><i class="fas fa-check text-xs"></i></button>
+                            </form>
+                            {% endif %}
+                            <button type="button" class="px-2 py-1 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded" title="Edit this payment"
+                                    data-payment="{{ {id: row.id, domain_name: row.domain_name, type: row.type, transaction_date: row.transaction_date, amount: missing ? '' : row.amount, currency: row.currency, amount_base: row.currency != base and not missing ? row.amount_base : '', term_years: row.term_years, vendor: row.vendor, payment_method: row.payment_method, invoice_number: row.invoice_number, invoice_url: row.invoice_url, status: row.status, notes: row.notes}|json_encode }}"
+                                    onclick="openPaymentModal(JSON.parse(this.dataset.payment))"><i class="fas fa-pen text-xs"></i></button>
+                            <form method="POST" action="/billing/delete" class="inline" onsubmit="return confirmSubmit(event, 'Delete this payment?')">
+                                {{ csrf_field() }}
+                                <input type="hidden" name="return_to" value="{{ here }}">
+                                <input type="hidden" name="payment_ids[]" value="{{ row.id }}">
+                                <button type="submit" class="px-2 py-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded" title="Delete this payment"><i class="fas fa-trash text-xs"></i></button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="p-10 text-center">
+        <i class="fas fa-receipt text-gray-300 dark:text-slate-600 text-4xl mb-3"></i>
+        <p class="text-sm font-medium text-gray-700 dark:text-slate-300">{{ filtered ? 'No payments match these filters' : 'No payments yet' }}</p>
+        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">{{ filtered ? 'Change or clear the filters to see more.' : 'Add a payment here or on a domain\'s Billing tab, or import a CSV file.' }}</p>
+    </div>
+    {% endif %}
+</div>
+
+{% if pagination.total_pages > 1 %}
+<div class="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+    <div class="text-sm text-gray-600 dark:text-slate-400">
+        Page <span class="font-semibold text-gray-900 dark:text-white">{{ page }}</span> of
+        <span class="font-semibold text-gray-900 dark:text-white">{{ pagination.total_pages }}</span>
+    </div>
+    <div class="flex items-center gap-1">
+        {% if page > 1 %}
+        <a href="{{ pagination_url(page - 1, filters, perPage) }}#payments" class="{{ pageLink }}"><i class="fas fa-angle-left"></i> Previous</a>
+        {% endif %}
+        {% for i in max(1, page - 2)..min(pagination.total_pages, page + 2) %}
+            {% if i == page %}
+            <span class="px-3 py-2 text-sm bg-primary text-white rounded-lg font-semibold">{{ i }}</span>
+            {% else %}
+            <a href="{{ pagination_url(i, filters, perPage) }}#payments" class="{{ pageLink }}">{{ i }}</a>
+            {% endif %}
+        {% endfor %}
+        {% if page < pagination.total_pages %}
+        <a href="{{ pagination_url(page + 1, filters, perPage) }}#payments" class="{{ pageLink }}">Next <i class="fas fa-angle-right"></i></a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<form id="paymentBulkForm" method="POST" action="/billing/delete" class="hidden">
+    {{ csrf_field() }}
+    <input type="hidden" name="return_to" value="{{ here }}">
+</form>
+
+{% include 'partials/billing-payment-modal.twig' with {base: base, currencies: currencies, return_to: here, ask_domain: true, domain_names: domainNames} only %}
+{% include 'partials/import-modal.twig' with {
+    prefix: 'payment',
+    title: 'Import Payments',
+    action: '/billing/import',
+    accept: '.csv',
+    file_hint: 'CSV',
+    format_html: '<p class="text-xs text-gray-600 dark:text-slate-400">CSV columns, as the export writes them: <code class="bg-white dark:bg-slate-700 px-1 rounded">date, domain, type, amount, currency, base_amount, base_currency, vendor, invoice_number, invoice_url, payment_method, status, years, expires_on, notes, to_confirm</code></p><p class="text-xs text-gray-600 dark:text-slate-400 mt-1">Only date, type, amount and currency are needed. A payment that is saved already is skipped.</p>'
+} %}
+{% include 'partials/billing-charts.twig' %}
+<script type="application/json" id="billingPageData">{{ chartJson|raw }}</script>
+<script>
+function showBreakdown(kind) {
+    document.querySelectorAll('.breakdown-table').forEach(function (table) { table.classList.toggle('hidden', table.id !== 'breakdown-' + kind); });
+    document.querySelectorAll('.breakdown-btn').forEach(function (btn) {
+        var active = btn.dataset.breakdown === kind;
+        btn.classList.toggle('bg-primary', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('text-gray-600', !active);
+        btn.classList.toggle('dark:text-slate-400', !active);
+    });
+}
+
+function togglePaymentBoxes(checked) {
+    document.querySelectorAll('.pay-cb').forEach(function (box) { box.checked = checked; });
+    updatePaymentSelection();
+}
+
+function updatePaymentSelection() {
+    var boxes = document.querySelectorAll('.pay-cb:checked');
+    var review = Array.prototype.filter.call(boxes, function (box) { return box.dataset.review === '1'; }).length;
+    document.querySelectorAll('.pay-selected-count').forEach(function (count) { count.textContent = boxes.length; });
+    document.getElementById('payDeleteBtn').classList.toggle('hidden', boxes.length === 0);
+    document.getElementById('payConfirmBtn').classList.toggle('hidden', review === 0);
+}
+
+async function submitSelectedPayments(action) {
+    var boxes = document.querySelectorAll('.pay-cb:checked');
+    if (!boxes.length) { return; }
+    if (action === 'delete') {
+        var ok = await confirmAction({ message: 'Delete ' + boxes.length + (boxes.length === 1 ? ' payment?' : ' payments?') });
+        if (!ok) { return; }
+    }
+    var form = document.getElementById('paymentBulkForm');
+    form.action = action === 'delete' ? '/billing/delete' : '/billing/confirm';
+    boxes.forEach(function (box) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'payment_ids[]';
+        input.value = box.value;
+        form.appendChild(input);
+    });
+    form.submit();
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    var data = JSON.parse(document.getElementById('billingPageData').textContent);
+    var money = function (value) { return billingMoney(value, data.currency); };
+
+    billingChart('monthsChart', {
+        type: 'bar',
+        data: { labels: data.months.labels, datasets: [{ label: 'Estimated cost', data: data.months.totals, backgroundColor: 'rgba(251, 146, 60, 0.7)', borderColor: 'rgb(251, 146, 60)', borderWidth: 1 }] },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: function (context) {
+                    var count = data.months.counts[context.dataIndex];
+                    return money(context.parsed.y) + ', ' + count + (count === 1 ? ' renewal' : ' renewals');
+                } } }
+            },
+            scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } }, grid: { display: false } } }
+        }
+    });
+
+    var series = function (label, values, color) { return { label: label, data: values, backgroundColor: color, stack: 'spent' }; };
+    billingChart('yearsChart', {
+        type: 'bar',
+        data: {
+            labels: data.years.labels,
+            datasets: [
+                series('Purchases', data.years.purchase, 'rgba(59, 130, 246, 0.8)'),
+                series('Renewals', data.years.renewal, 'rgba(251, 146, 60, 0.8)'),
+                series('Transfers', data.years.transfer, 'rgba(168, 85, 247, 0.8)'),
+                series('Other', data.years.other, 'rgba(156, 163, 175, 0.8)'),
+                { label: 'Income', data: data.years.income, backgroundColor: 'rgba(34, 197, 94, 0.8)', stack: 'income' }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { padding: 12, font: { size: 11 } } },
+                tooltip: { callbacks: { label: function (context) { return context.dataset.label + ': ' + money(context.parsed.y); } } }
+            },
+            scales: { y: { stacked: true, beginAtZero: true, ticks: { font: { size: 10 } } }, x: { stacked: true, ticks: { font: { size: 10 } }, grid: { display: false } } }
+        }
+    });
+});
+</script>
+{% endblock %}

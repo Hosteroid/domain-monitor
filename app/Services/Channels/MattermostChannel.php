@@ -64,6 +64,10 @@ class MattermostChannel implements NotificationChannelInterface
                         // Renewal alerts
                         $fields[] = ['short' => true, 'title' => 'Previous Expiration', 'value' => $data['previous_expiration_date']];
                     }
+                    if (!empty($data['renewal_cost'])) {
+                        // Expiry reminders, when billing knows the price
+                        $fields[] = ['short' => true, 'title' => 'Renewal Cost', 'value' => $data['renewal_cost']];
+                    }
                     $fields[] = ['short' => true, 'title' => 'Registrar', 'value' => $data['registrar'] ?? 'N/A'];
                 }
                 if (isset($data['new_status'])) {

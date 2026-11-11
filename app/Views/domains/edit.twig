@@ -139,6 +139,31 @@
                     {% endif %}
                 </div>
 
+                {% if billingOn|default(false) %}
+                <!-- Own renewal price -->
+                <div>
+                    <label for="renewal_price" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Renewal Price per Year
+                        <span class="text-gray-400 dark:text-slate-500 font-normal">(Optional)</span>
+                    </label>
+                    {# Tells the save that this form has the price fields: one without them (an older page) leaves the price alone #}
+                    <input type="hidden" name="billing_price_field" value="1">
+                    <div class="flex gap-2">
+                        <input type="text" id="renewal_price" name="renewal_price" value="{{ domain.renewal_price }}" inputmode="decimal" placeholder="From the price list" autocomplete="off"
+                               class="flex-1 px-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary text-sm">
+                        <select name="renewal_currency" aria-label="Currency" class="w-28 px-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-gray-900 dark:text-white focus:ring-2 focus:ring-primary focus:border-primary text-sm">
+                            {% for currency in billingCurrencies %}
+                            <option value="{{ currency.code }}" {{ (domain.renewal_currency ?: billingBase) == currency.code ? 'selected' : '' }}>{{ currency.code }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-slate-400">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        What this domain costs to renew, for the renewal forecasts. Leave empty to take the price from the <a href="/billing/prices" class="text-primary hover:underline">price list</a>.
+                    </p>
+                </div>
+
+                {% endif %}
                 <!-- Active Monitoring -->
                 <div id="dns-monitoring" class="bg-gray-50 dark:bg-slate-900 rounded-lg p-4 border border-gray-200 dark:border-slate-700 space-y-4">
                     <label class="flex items-start cursor-pointer">

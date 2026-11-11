@@ -32,6 +32,10 @@
                 <i class="fas fa-bell mr-2"></i>
                 Monitoring
             </button>
+            <button onclick="switchTab('billing')" id="tab-billing" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600 whitespace-nowrap">
+                <i class="fas fa-wallet mr-2"></i>
+                Billing
+            </button>
             <button onclick="switchTab('isolation')" id="tab-isolation" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300 hover:border-gray-300 dark:hover:border-slate-600 whitespace-nowrap">
                 <i class="fas fa-users mr-2"></i>
                 User Isolation
@@ -669,6 +673,9 @@
         </form>
     </div>
 </div>
+
+<!-- Tab Content: Billing Settings -->
+{% include 'settings/_billing.twig' %}
 
 <!-- Tab Content: User Isolation Settings -->
 <div id="content-isolation" class="tab-content hidden">
@@ -1455,7 +1462,7 @@ function switchTab(tabName) {
 
 window.addEventListener('DOMContentLoaded', function() {
     const hash = window.location.hash.substring(1);
-    const validTabs = ['app', 'email', 'monitoring', 'isolation', 'security', 'system', 'maintenance', 'updates'];
+    const validTabs = ['app', 'email', 'monitoring', 'billing', 'isolation', 'security', 'system', 'maintenance', 'updates'];
     
     if (hash && validTabs.includes(hash)) {
         switchTab(hash);

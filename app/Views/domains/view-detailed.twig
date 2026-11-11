@@ -148,10 +148,15 @@
                 {% endif %}
                 {% endif %}
             </button>
+            {% if billing.on %}
             <button onclick="switchTab('billing')" id="tab-billing" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
                 <i class="fas fa-dollar-sign mr-1.5" style="font-size: 10px;"></i>
                 Billing
+                {% if billing.review_count > 0 %}
+                <span class="ml-1.5 px-1.5 py-0.5 bg-blue-100 dark:bg-blue-500/10 text-blue-800 dark:text-blue-400 text-xs font-semibold rounded" title="Automatic payments to confirm">{{ billing.review_count }}</span>
+                {% endif %}
             </button>
+            {% endif %}
             <button onclick="switchTab('notifications')" id="tab-notifications" class="tab-button flex-1 px-4 py-2.5 text-xs font-medium border-b-2 border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-500">
                 <i class="fas fa-bell mr-1.5" style="font-size: 10px;"></i>
                 Notifications
@@ -181,9 +186,11 @@
         {% include 'domains/tabs/dns.twig' %}
     </div>
 
+    {% if billing.on %}
     <div id="content-billing" class="tab-content hidden">
         {% include 'domains/tabs/billing.twig' %}
     </div>
+    {% endif %}
 
     <div id="content-notifications" class="tab-content hidden">
         {% include 'domains/tabs/notification.twig' %}
@@ -205,6 +212,10 @@ function updateTabHash(tabName) {
 }
 
 function switchTab(tabName) {
+    // A tab that is not on the page (billing turned off, or a mistyped link) opens the overview
+    if (!document.getElementById('content-' + tabName) || !document.getElementById('tab-' + tabName)) {
+        tabName = 'overview';
+    }
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.add('hidden');
     });
@@ -217,6 +228,9 @@ function switchTab(tabName) {
     activeTab.classList.add('active', 'border-primary', 'text-primary', 'bg-blue-50', 'dark:bg-slate-700');
     activeTab.classList.remove('border-transparent', 'text-gray-500', 'dark:text-slate-400');
     updateTabHash(tabName);
+    if (tabName === 'billing' && typeof initBillingCharts === 'function') {
+        initBillingCharts();
+    }
 }
 
 function toggleRawWhois() {

@@ -287,7 +287,7 @@ class Domain extends Model
     /**
      * Get filtered, sorted, and paginated domains
      */
-    public function getFilteredPaginated(array $filters, string $sortBy, string $sortOrder, int $page, int $perPage, int $expiringThreshold = 30, ?int $userId = null): array
+    public function getFilteredPaginated(array $filters, string $sortBy, string $sortOrder, int $page, int $perPage, int $expiringThreshold = 30, ?int $userId = null, ?callable $extraColumns = null): array
     {
         // Get all domains with groups
         $domains = $this->getAllWithGroups($userId);
@@ -365,8 +365,30 @@ class Domain extends Model
             unset($domain);
         }
 
+        // Numeric columns worked out elsewhere, such as the billing ones: [column => [domain id => value]]
+        $numericColumns = $extraColumns !== null ? $extraColumns($domains) : [];
+        if ($numericColumns) {
+            foreach ($domains as &$domain) {
+                foreach ($numericColumns as $column => $values) {
+                    $domain[$column] = $values[(int)$domain['id']] ?? null;
+                }
+            }
+            unset($domain);
+        }
+
         // Apply sorting
-        usort($domains, function($a, $b) use ($sortBy, $sortOrder, $expiringThreshold) {
+        usort($domains, function($a, $b) use ($sortBy, $sortOrder, $expiringThreshold, $numericColumns) {
+            // A numeric column sorts as numbers, and the domains without a value come last either way
+            if (isset($numericColumns[$sortBy])) {
+                $aNumber = $a[$sortBy] ?? null;
+                $bNumber = $b[$sortBy] ?? null;
+                if ($aNumber === null || $bNumber === null) {
+                    return [$aNumber === null, $a['domain_name'] ?? ''] <=> [$bNumber === null, $b['domain_name'] ?? ''];
+                }
+                $comparison = (float)$aNumber <=> (float)$bNumber;
+                return $sortOrder === 'desc' ? -$comparison : $comparison;
+            }
+
             $aVal = $a[$sortBy] ?? '';
             $bVal = $b[$sortBy] ?? '';
 

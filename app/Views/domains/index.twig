@@ -275,6 +275,11 @@
                             </div>
                         </div>
                     </div>
+                    {% if billingOn|default(false) %}
+                    <button type="button" onclick="openBulkPaymentModal()" class="{{ bulkButton }}">
+                        <i class="fas fa-receipt text-gray-400 dark:text-slate-500"></i> Add Payment
+                    </button>
+                    {% endif %}
                     <span class="hidden sm:block w-px h-6 mx-1 bg-blue-200 dark:bg-slate-600"></span>
                     <button type="button" onclick="bulkDelete()" class="inline-flex items-center gap-2 whitespace-nowrap px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-500/40 bg-white dark:bg-slate-800 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors">
                         <i class="fas fa-trash"></i> Delete
@@ -448,6 +453,16 @@
                                 {% else %}
                                     <span class="text-gray-400 dark:text-slate-500">Never</span>
                                 {% endif %}
+                            </td>
+                            {% endif %}
+                            {% if 'renewal_cost' in columns %}
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                {% if domain.renewal_cost is not null %}{{ domain.renewal_cost|money }}<span class="text-gray-400 dark:text-slate-500"> / yr</span>{% else %}<span class="text-gray-400 dark:text-slate-500">-</span>{% endif %}
+                            </td>
+                            {% endif %}
+                            {% if 'total_spent' in columns %}
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
+                                {% if domain.total_spent is not null %}{{ domain.total_spent|money }}{% else %}<span class="text-gray-400 dark:text-slate-500">-</span>{% endif %}
                             </td>
                             {% endif %}
                             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -1115,5 +1130,8 @@ document.addEventListener('click', function(e) {
     }
 });
 </script>
+{% if billingOn|default(false) %}
+{% include 'partials/billing-bulk-modal.twig' with {base: billingBase, currencies: billingCurrencies} only %}
+{% endif %}
 {% include 'partials/transfer-modal.twig' %}
 {% endblock %}

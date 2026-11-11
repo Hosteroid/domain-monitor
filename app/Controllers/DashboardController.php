@@ -101,6 +101,7 @@ class DashboardController extends Controller
         
         $this->view('dashboard/index', [
             'recentDomains' => $formattedRecentDomains,
+            'billingCard' => (new \App\Services\BillingService())->dashboardCard($allDomains, $userId),
             'expiringThisMonth' => $formattedExpiringDomains,
             'expiringCount' => count($allExpiringDomains),
             'expiringCertificates' => $expiringCertificates,
