@@ -258,7 +258,8 @@ class EmailHelper
             if ($isHtml) {
                 // Message is already formatted HTML, use it directly
                 $mail->Body = $message;
-                $mail->AltBody = strip_tags($message);
+                // The text version shows escaped characters (a name with & or <) as they were typed
+                $mail->AltBody = html_entity_decode(strip_tags($message), ENT_QUOTES | ENT_HTML5, 'UTF-8');
             } else {
                 // Message is plain text, format it with template
                 $mail->Body = self::formatHtmlBody($message, $data, $appSettings);
@@ -342,6 +343,15 @@ class EmailHelper
     }
     
     /**
+     * A person's name for the HTML of an email. The name is typed by the user, at registration
+     * by anyone: it goes into the email as text, never as HTML.
+     */
+    private static function htmlName(string $name): string
+    {
+        return htmlspecialchars($name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+    }
+
+    /**
      * Send verification email
      */
     public static function sendVerificationEmail(string $email, string $fullName, string $token): array
@@ -349,6 +359,7 @@ class EmailHelper
         try {
             $appSettings = self::getAppSettings();
             $verifyUrl = $appSettings['app_url'] . '/verify-email?token=' . $token;
+            $name = self::htmlName($fullName);
             
             $subject = 'Verify Your Email Address';
             
@@ -360,7 +371,7 @@ class EmailHelper
                 </div>
                 
                 <div style='background: #f9f9f9; padding: 30px; border: 1px solid #ddd;'>
-                    <h3 style='color: #333; margin-top: 0;'>Hello {$fullName},</h3>
+                    <h3 style='color: #333; margin-top: 0;'>Hello {$name},</h3>
                     
                     <p style='color: #555; line-height: 1.6; margin-bottom: 20px;'>
                         Thank you for registering with {$appSettings['app_name']}! To complete your account setup, 
@@ -430,6 +441,7 @@ class EmailHelper
         try {
             $appSettings = self::getAppSettings();
             $resetUrl = $appSettings['app_url'] . '/reset-password?token=' . $token;
+            $name = self::htmlName($fullName);
             
             $subject = 'Reset Your Password';
             
@@ -441,7 +453,7 @@ class EmailHelper
                 </div>
                 
                 <div style='background: #f9f9f9; padding: 30px; border: 1px solid #ddd;'>
-                    <h3 style='color: #333; margin-top: 0;'>Hello {$fullName},</h3>
+                    <h3 style='color: #333; margin-top: 0;'>Hello {$name},</h3>
                     
                     <p style='color: #555; line-height: 1.6; margin-bottom: 20px;'>
                         We received a request to reset your password for your {$appSettings['app_name']} account. 
@@ -534,12 +546,16 @@ class EmailHelper
 
     /**
      * Send 2FA verification code email
+     *
+     * @param int $minutes How long the code is valid, as the email says it
      */
-    public static function sendTwoFactorCode(string $email, string $fullName, string $code): array
+    public static function sendTwoFactorCode(string $email, string $fullName, string $code, int $minutes = 10): array
     {
         try {
             $appSettings = self::getAppSettings();
             $subject = 'Your Two-Factor Authentication Code';
+            $name = self::htmlName($fullName);
+            $lifetime = $minutes === 1 ? '1 minute' : "$minutes minutes";
             
             // Create a properly formatted HTML email
             $htmlContent = "
@@ -551,7 +567,7 @@ class EmailHelper
                 <div style='background: #f9f9f9; padding: 30px; border: 1px solid #ddd;'>
                     <h3 style='color: #333; margin-top: 0;'>Your Verification Code</h3>
                     
-                    <p style='color: #555; line-height: 1.6; margin-bottom: 20px;'>Hello {$fullName},</p>
+                    <p style='color: #555; line-height: 1.6; margin-bottom: 20px;'>Hello {$name},</p>
                     
                     <p style='color: #555; line-height: 1.6; margin-bottom: 20px;'>
                         Use this code to complete your two-factor authentication:
@@ -563,7 +579,7 @@ class EmailHelper
                     
                     <div style='background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;'>
                         <p style='margin: 0; color: #856404; font-size: 14px;'>
-                            <strong>⏰ Important:</strong> This code expires in 10 minutes for security reasons.
+                            <strong>⏰ Important:</strong> This code expires in {$lifetime} for security reasons.
                         </p>
                     </div>
                     

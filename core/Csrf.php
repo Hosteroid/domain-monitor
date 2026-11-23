@@ -81,7 +81,8 @@ class Csrf
     {
         $token = $_POST[self::TOKEN_NAME] ?? '';
         
-        if (!self::validateToken($token)) {
+        // A token sent as an array (csrf_token[]=x) is no token
+        if (!is_string($token) || !self::validateToken($token)) {
             if (session_status() === PHP_SESSION_NONE) {
                 session_start();
             }

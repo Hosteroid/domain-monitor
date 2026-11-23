@@ -1,4 +1,4 @@
--- Domain Monitor v1.1.0 - Complete Initial Schema
+-- Domain Monitor v1.2.0 - Complete Initial Schema
 -- This consolidated migration includes all features for fresh installations
 
 -- =====================================================
@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     two_factor_secret VARCHAR(32) NULL,
     two_factor_backup_codes TEXT NULL,
     two_factor_setup_at TIMESTAMP NULL,
+    two_factor_last_step INT UNSIGNED NULL COMMENT 'Time step (Unix time / 30) of the last authenticator app code accepted',
     full_name VARCHAR(255),
     avatar VARCHAR(255) NULL,
     role VARCHAR(50) DEFAULT 'user',
@@ -71,6 +72,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Remember me tokens table
+-- session_id has no foreign key on purpose: the session row is written after the token (see migration 038)
 CREATE TABLE IF NOT EXISTS remember_tokens (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
@@ -79,7 +81,6 @@ CREATE TABLE IF NOT EXISTS remember_tokens (
     expires_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     INDEX idx_token (token),
     INDEX idx_user_id (user_id),
     INDEX idx_session_id (session_id),
@@ -112,6 +113,26 @@ CREATE TABLE IF NOT EXISTS two_factor_email_codes (
     INDEX idx_code (code),
     INDEX idx_expires_at (expires_at),
     INDEX idx_used (used)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Failed logins, counted by the login attempt limit
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    login_name VARCHAR(255) NOT NULL COMMENT 'Username or email as typed. Same collation as users, so every spelling that reaches one account is one name here too',
+    ip_address VARCHAR(45) NOT NULL COMMENT 'IPv6 as its /64 network',
+    attempted_at INT UNSIGNED NOT NULL COMMENT 'Unix time',
+    INDEX idx_login_attempts_name (login_name, attempted_at),
+    INDEX idx_login_attempts_time (attempted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Password reset and verification emails per address, counted by the account email limit
+CREATE TABLE IF NOT EXISTS email_counts (
+    email VARCHAR(255) NOT NULL COMMENT 'Address being mailed. Same collation as users.email, so every spelling of one address is one row',
+    kind VARCHAR(20) NOT NULL COMMENT 'reset or verify: each has its own count',
+    window_start INT UNSIGNED NOT NULL COMMENT 'Unix time of the first email counted',
+    sent INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Emails sent since then',
+    PRIMARY KEY (email, kind),
+    INDEX idx_email_counts_start (window_start)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================
@@ -224,15 +245,17 @@ CREATE TABLE IF NOT EXISTS domain_tags (
     INDEX idx_tag_id (tag_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Default tags
-INSERT INTO tags (name, color, description, user_id) VALUES
-('production', 'bg-green-100 text-green-700 border-green-300', 'Production environment domains', NULL),
-('staging', 'bg-yellow-100 text-yellow-700 border-yellow-300', 'Staging environment domains', NULL),
-('development', 'bg-blue-100 text-blue-700 border-blue-300', 'Development environment domains', NULL),
-('client', 'bg-purple-100 text-purple-700 border-purple-300', 'Client-related domains', NULL),
-('personal', 'bg-orange-100 text-orange-700 border-orange-300', 'Personal domains', NULL),
-('archived', 'bg-gray-100 text-gray-700 border-gray-300', 'Archived or inactive domains', NULL)
-ON DUPLICATE KEY UPDATE color = VALUES(color), description = VALUES(description);
+-- Default tags, added once: they have no owner, so the unique key above does not see that they are there already
+INSERT INTO tags (name, color, description, user_id)
+SELECT d.name, d.color, d.description, NULL FROM (
+    SELECT 'production' AS name, 'bg-green-100 text-green-700 border-green-300' AS color, 'Production environment domains' AS description
+    UNION ALL SELECT 'staging', 'bg-yellow-100 text-yellow-700 border-yellow-300', 'Staging environment domains'
+    UNION ALL SELECT 'development', 'bg-blue-100 text-blue-700 border-blue-300', 'Development environment domains'
+    UNION ALL SELECT 'client', 'bg-purple-100 text-purple-700 border-purple-300', 'Client-related domains'
+    UNION ALL SELECT 'personal', 'bg-orange-100 text-orange-700 border-orange-300', 'Personal domains'
+    UNION ALL SELECT 'archived', 'bg-gray-100 text-gray-700 border-gray-300', 'Archived or inactive domains'
+) AS d
+WHERE NOT EXISTS (SELECT 1 FROM tags WHERE user_id IS NULL);
 
 -- Notification channels table
 CREATE TABLE IF NOT EXISTS notification_channels (
@@ -457,6 +480,32 @@ CREATE TABLE IF NOT EXISTS billing_currencies (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- API tokens: personal tokens for the JSON API under /api/v1
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL COMMENT 'The token acts as this user',
+    name VARCHAR(100) NOT NULL,
+    token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'SHA-256 of the token, the token itself is never stored',
+    token_hint CHAR(4) NOT NULL COMMENT 'Last four characters, for the list',
+    can_write TINYINT(1) NOT NULL DEFAULT 0 COMMENT '0 = read only, 1 = read and write',
+    expires_at INT UNSIGNED NULL COMMENT 'Unix time, NULL = no expiry',
+    last_used_at INT UNSIGNED NULL COMMENT 'Unix time',
+    last_used_ip VARCHAR(45) NULL,
+    window_start INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Start of the rate limit minute, unix time',
+    window_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Requests counted in that minute',
+    created_at INT UNSIGNED NOT NULL COMMENT 'Unix time',
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE KEY uniq_api_token_hash (token_hash),
+    INDEX idx_api_token_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Domain suffixes: the registry part of the Public Suffix List, imported from TLD Registry
+CREATE TABLE IF NOT EXISTS domain_suffixes (
+    suffix VARCHAR(253) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL COMMENT 'Rule in lower case, without a leading *. or !',
+    rule_type TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '0 = rule, 1 = wildcard (*.suffix), 2 = exception (!suffix)',
+    PRIMARY KEY (suffix, rule_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- SSL certificates table for tracking monitored TLS endpoints
 CREATE TABLE IF NOT EXISTS ssl_certificates (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -512,7 +561,7 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('app_name', 'Domain Monitor', 'string', 'Application name'),
 ('app_url', 'http://localhost:8000', 'string', 'Application URL'),
 ('app_timezone', 'UTC', 'string', 'Application timezone'),
-('app_version', '1.1.6', 'string', 'Application version number'),
+('app_version', '1.2.0', 'string', 'Application version number'),
 
 -- Email settings
 ('mail_host', 'smtp.mailtrap.io', 'string', 'SMTP server host'),
@@ -545,6 +594,15 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('two_factor_rate_limit_minutes', '15', 'string', 'Rate limit for 2FA attempts in minutes'),
 ('two_factor_email_code_expiry_minutes', '10', 'string', 'Email code expiry time in minutes'),
 
+-- Login attempt limit settings
+('login_limit_per_address', '5', 'string', 'Failed logins for one name from one address before it is refused (0 = off)'),
+('login_limit_per_account', '20', 'string', 'Failed logins for one name from all addresses before it is refused (0 = off)'),
+('login_limit_minutes', '15', 'string', 'Minutes a failed login counts'),
+
+-- Account email limit settings
+('email_limit_per_recipient', '3', 'string', 'Password reset emails, and verification emails, to one address within the time window (0 = off)'),
+('email_limit_minutes', '60', 'string', 'Minutes the time window lasts, counted from the first email'),
+
 -- User isolation settings
 ('user_isolation_mode', 'shared', 'string', 'User data visibility mode: shared (all users see all data) or isolated (users see only their own data)'),
 
@@ -564,6 +622,14 @@ INSERT INTO settings (setting_key, setting_value, `type`, `description`) VALUES
 ('billing_currency', 'USD', 'string', 'Base currency of all billing totals'),
 ('billing_auto_log_renewals', '1', 'boolean', 'Log a payment when a renewal is detected'),
 ('billing_cost_in_reminders', '1', 'boolean', 'Show the renewal cost in expiry reminders'),
+
+-- API settings
+('api_access', 'off', 'string', 'API under /api/v1: off, read or read_write'),
+('api_users', 'all', 'string', 'Who may use the API: all or admins'),
+('api_rate_limit', '120', 'string', 'API requests per minute for each token'),
+
+-- Domain suffix settings
+('domain_suffix_list_imported_at', '', 'string', 'When the Public Suffix List was last imported (unix time)'),
 
 -- SSL monitoring settings
 ('ssl_check_interval_hours', '12', 'string', 'SSL certificate check interval in hours'),
@@ -594,6 +660,6 @@ CREATE TABLE IF NOT EXISTS migrations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Mark this consolidated migration as executed
-INSERT INTO migrations (migration) VALUES ('000_initial_schema_v1.1.0.sql')
+INSERT INTO migrations (migration) VALUES ('000_initial_schema_v1.2.0.sql')
 ON DUPLICATE KEY UPDATE migration=migration;
 

@@ -111,6 +111,16 @@ try {
         if ($tldListStats['failed_tlds'] > 0) {
             logMessage("  Failed TLDs: {$tldListStats['failed_tlds']}");
         }
+
+        // The domain suffixes come along with the TLD list (#112)
+        try {
+            if ((new \App\Models\DomainSuffix())->isInstalled()) {
+                $suffixStats = (new \App\Services\DomainSuffixService())->import();
+                logMessage("Domain suffixes imported from the Public Suffix List: {$suffixStats['rules']}");
+            }
+        } catch (\Throwable $e) {
+            logMessage("Domain suffix import failed: " . $e->getMessage());
+        }
     }
 
     // Import RDAP data

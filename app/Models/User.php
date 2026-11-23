@@ -8,6 +8,9 @@ class User extends Model
 {
     protected static string $table = 'users';
 
+    /** Minutes a password reset link is valid, as its email says */
+    public const RESET_LINK_MINUTES = 60;
+
     /**
      * Find user by username
      */
@@ -191,47 +194,125 @@ class User extends Model
     }
 
     /**
-     * Create password reset token
+     * Create password reset token. Its link is valid for RESET_LINK_MINUTES from created_at,
+     * which the database fills in: see findPasswordResetToken().
      */
-    public function createPasswordResetToken(int $userId, string $token, string $expiresAt): bool
+    public function createPasswordResetToken(int $userId, string $token): bool
     {
+        // expires_at is for the record only, nothing decides by it. Rows of this table are
+        // never updated: on MariaDB and older MySQL the column takes the current time on every
+        // update that leaves it out.
         $stmt = $this->db->prepare(
-            "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (?, ?, ?)"
+            "INSERT INTO password_reset_tokens (user_id, token, expires_at)
+             VALUES (?, ?, FROM_UNIXTIME(UNIX_TIMESTAMP() + " . (self::RESET_LINK_MINUTES * 60) . "))"
         );
-        return $stmt->execute([$userId, $token, $expiresAt]);
+        return $stmt->execute([$userId, $token]);
     }
 
     /**
-     * Find valid password reset token
+     * Delete a password reset token: its email did not go out, so nobody has the link
+     */
+    public function deletePasswordResetToken(string $token): bool
+    {
+        $stmt = $this->db->prepare("DELETE FROM password_reset_tokens WHERE token = ?");
+        return $stmt->execute([$token]);
+    }
+
+    /**
+     * Find valid password reset token: one that is younger than RESET_LINK_MINUTES.
+     *
+     * The age is measured on the database's clock on both sides: created_at is filled in by the
+     * database, and UNIX_TIMESTAMP() of a TIMESTAMP column is its stored value. So the time
+     * zones of the app and the database and daylight saving changes do not matter. A time made
+     * in PHP (app time zone) must not be compared with the database's NOW().
      */
     public function findPasswordResetToken(string $token): ?array
     {
         $stmt = $this->db->prepare(
-            "SELECT * FROM password_reset_tokens WHERE token = ? AND used = 0 AND expires_at > NOW()"
+            "SELECT * FROM password_reset_tokens
+             WHERE token = ? AND used = 0 AND UNIX_TIMESTAMP(created_at) > UNIX_TIMESTAMP() - ?"
         );
-        $stmt->execute([$token]);
+        $stmt->execute([$token, self::RESET_LINK_MINUTES * 60]);
         $result = $stmt->fetch();
         return $result ?: null;
     }
 
     /**
-     * Mark password reset token as used
+     * Set a new password with a reset link. The link works once: it is deleted before the
+     * password is saved, and a request that finds it gone stops. The account's other links are
+     * deleted with it.
+     *
+     * @return bool False when the link was used or deleted in the meantime
      */
-    public function markPasswordResetTokenAsUsed(int $tokenId): bool
+    public function resetPasswordWithToken(int $tokenId, int $userId, string $newPassword): bool
     {
-        $stmt = $this->db->prepare("UPDATE password_reset_tokens SET used = 1 WHERE id = ?");
-        return $stmt->execute([$tokenId]);
+        $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare("DELETE FROM password_reset_tokens WHERE id = ? AND user_id = ?");
+            $stmt->execute([$tokenId, $userId]);
+            if ($stmt->rowCount() !== 1) {
+                $this->db->rollBack();
+                return false;
+            }
+
+            $stmt = $this->db->prepare("UPDATE users SET password = ? WHERE id = ?");
+            $stmt->execute([$hashedPassword, $userId]);
+
+            $stmt = $this->db->prepare("DELETE FROM password_reset_tokens WHERE user_id = ?");
+            $stmt->execute([$userId]);
+
+            $this->db->commit();
+            return true;
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
-     * Create remember token
+     * Delete the password reset tokens that no longer work: older than RESET_LINK_MINUTES, or
+     * marked as used by an earlier version
+     *
+     * @return int Rows deleted
      */
-    public function createRememberToken(int $userId, string $sessionId, string $token, string $expiresAt): bool
+    public function purgePasswordResetTokens(): int
     {
         $stmt = $this->db->prepare(
-            "INSERT INTO remember_tokens (user_id, session_id, token, expires_at) VALUES (?, ?, ?, ?)"
+            "DELETE FROM password_reset_tokens
+             WHERE used = 1 OR UNIX_TIMESTAMP(created_at) <= UNIX_TIMESTAMP() - ?"
         );
-        return $stmt->execute([$userId, $sessionId, $token, $expiresAt]);
+        $stmt->execute([self::RESET_LINK_MINUTES * 60]);
+
+        return $stmt->rowCount();
+    }
+
+    /**
+     * Create remember token, valid for a number of days.
+     * The expiry is set by the database's clock, the clock findByRememberToken() checks it by.
+     */
+    public function createRememberToken(int $userId, string $sessionId, string $token, int $days): bool
+    {
+        $stmt = $this->db->prepare(
+            "INSERT INTO remember_tokens (user_id, session_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL ? DAY)"
+        );
+        return $stmt->execute([$userId, $sessionId, $token, $days]);
+    }
+
+    /**
+     * Link a remember token to the session it has just logged in
+     */
+    public function linkRememberToken(string $token, string $sessionId): bool
+    {
+        // expires_at is named so that it keeps its value: on MariaDB and older MySQL the column
+        // takes the current time on every update that leaves it out
+        $stmt = $this->db->prepare(
+            "UPDATE remember_tokens SET session_id = ?, expires_at = expires_at WHERE token = ?"
+        );
+        return $stmt->execute([$sessionId, $token]);
     }
 
     /**
@@ -254,6 +335,63 @@ class User extends Model
     {
         $stmt = $this->db->prepare("DELETE FROM remember_tokens WHERE token = ?");
         return $stmt->execute([$token]);
+    }
+
+    /**
+     * Whether the last used authenticator app code is kept: the update that adds the column
+     * (migration 041) may not have run yet
+     */
+    public function remembersTotpStep(): bool
+    {
+        return $this->hasColumn('two_factor_last_step');
+    }
+
+    /**
+     * Use up the time step of an authenticator app code that was found right.
+     *
+     * One statement checks and stores, so of two requests with the same code only one changes
+     * the row, however close together they come. Reading the step, comparing it in PHP and then
+     * writing it would let both through. The secret is not part of the statement on purpose: the
+     * arguments of a call that fails can end up in the error log.
+     *
+     * @param int $step Unix time / 30 of the code, as the authenticator app counted it
+     * @return bool False when this step or a later one was used before, or 2FA is off by now
+     */
+    public function useTotpStep(int $userId, int $step): bool
+    {
+        $stmt = $this->db->prepare(
+            "UPDATE users SET two_factor_last_step = ?
+             WHERE id = ? AND two_factor_enabled = 1
+               AND (two_factor_last_step IS NULL OR two_factor_last_step < ?)"
+        );
+        $stmt->execute([$step, $userId, $step]);
+
+        return $stmt->rowCount() === 1;
+    }
+
+    /**
+     * Store what is left of the backup codes after one was used, but only if the list is still
+     * the one that was read.
+     *
+     * One statement checks and stores, as in useTotpStep(): of two requests that take a code
+     * from the list at the same moment only one changes the row, and the other has to read the
+     * list again. Written back without the condition, one code works for both, and codes that
+     * another request has just used or replaced come back.
+     *
+     * @param string $read The list as it was read. It is compared to the byte: "=" on the bare
+     *                     column would ignore letter case.
+     * @param string $left The list without the used code, as JSON
+     * @return bool False when the list was changed in the meantime, or 2FA is off by now
+     */
+    public function takeBackupCode(int $userId, string $read, string $left): bool
+    {
+        $stmt = $this->db->prepare(
+            "UPDATE users SET two_factor_backup_codes = ?
+             WHERE id = ? AND two_factor_enabled = 1 AND CAST(two_factor_backup_codes AS BINARY) = ?"
+        );
+        $stmt->execute([$left, $userId, $read]);
+
+        return $stmt->rowCount() === 1;
     }
 
     /**

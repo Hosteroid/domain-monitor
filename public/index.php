@@ -47,6 +47,12 @@ if (!empty($requestUri) && $requestUri[0] !== '/') {
     die('Bad Request: Invalid URI format');
 }
 
+// The token API (/api/v1) answers in JSON from here on, also when .env cannot be read
+$isApiRequest = \Core\ApiKernel::handles($parsedPath);
+if ($isApiRequest) {
+    ErrorHandler::useJsonOutput();
+}
+
 // Load environment variables (using safeLoad to not throw if missing)
 $dotenv = Dotenv::createImmutable(__DIR__ . '/..');
 try {
@@ -67,6 +73,13 @@ try {
     throw $e;
 }
 
+// The API runs without a session: it knows tokens only, and a call gets no session cookie and
+// reads or writes nothing in the sessions table.
+if ($isApiRequest) {
+    (new \Core\ApiKernel())->run($parsedPath);
+    exit;
+}
+
 // Configure and start session (with database sessions if available)
 Core\SessionConfig::configure();
 Core\SessionConfig::start();
@@ -74,15 +87,15 @@ Core\SessionConfig::start();
 // Load CSRF helper functions
 require_once __DIR__ . '/../app/Helpers/CsrfHelper.php';
 
-// Check if system is installed (using flag file - no DB queries!)
+// Check if system is installed: the flag file answers without a DB query, and the database is
+// only asked when the file is missing (see Application::isInstalled())
 // Note: REQUEST_URI has already been validated above, so parse_url won't return null
 $currentPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?? '/';
 $isInstallerPath = strpos($currentPath, '/install') === 0;
-$installedFlagFile = __DIR__ . '/../.installed';
+$isInstalled = Application::isInstalled();
 
 if (!$isInstallerPath) {
-    // Check if .installed flag file exists
-    if (!file_exists($installedFlagFile)) {
+    if (!$isInstalled) {
         header('Location: /install');
         exit;
     }
@@ -97,7 +110,7 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token']) && !$isIns
 // Set application timezone early (before any date operations)
 // Also apply on installer paths (e.g. /install/update) when the app is already installed,
 // so that notifications created during upgrades use the correct timezone.
-if (file_exists($installedFlagFile)) {
+if ($isInstalled) {
     try {
         $settingModel = new \App\Models\Setting();
         $timezone = $settingModel->getValue('app_timezone', 'UTC');

@@ -1,0 +1,78 @@
+{# Login Attempt Limit card of the Security tab: failed logins a name may have per address and per account, and how long they count #}
+{% set limitInput = 'w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white' %}
+    <!-- Login Attempt Limit -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mt-6">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Login Attempt Limit</h3>
+            <p class="text-sm text-gray-600 dark:text-slate-400 mt-1">Refuses a login for a while after repeated wrong passwords</p>
+        </div>
+
+        {% if not loginLimit.available %}
+        <div class="p-6">
+            <div class="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 text-sm text-amber-900 dark:text-amber-300">
+                <i class="fas fa-database mr-2"></i>
+                The login attempt limit needs a database update first.
+                <a href="/install/update" class="underline font-medium">Run the update</a>
+            </div>
+        </div>
+        {% else %}
+        <form method="POST" action="/settings/update-login-limit" class="p-6">
+            {{ csrf_field() }}
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="login_limit_per_address" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                            Failed Logins per Address
+                        </label>
+                        <input type="number" id="login_limit_per_address" name="login_limit_per_address"
+                               value="{{ loginLimit.per_address }}"
+                               min="{{ loginLimit.bounds.per_address[1] }}" max="{{ loginLimit.bounds.per_address[2] }}" required
+                               class="{{ limitInput }}">
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">For one username or email from one address. 0 turns it off.</p>
+                    </div>
+
+                    <div>
+                        <label for="login_limit_per_account" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                            Failed Logins per Account
+                        </label>
+                        <input type="number" id="login_limit_per_account" name="login_limit_per_account"
+                               value="{{ loginLimit.per_account }}"
+                               min="{{ loginLimit.bounds.per_account[1] }}" max="{{ loginLimit.bounds.per_account[2] }}" required
+                               class="{{ limitInput }}">
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">For one username or email from all addresses together. 0 turns it off.</p>
+                    </div>
+
+                    <div>
+                        <label for="login_limit_minutes" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                            Time Window (minutes)
+                        </label>
+                        <input type="number" id="login_limit_minutes" name="login_limit_minutes"
+                               value="{{ loginLimit.minutes }}"
+                               min="{{ loginLimit.bounds.minutes[1] }}" max="{{ loginLimit.bounds.minutes[2] }}" required
+                               class="{{ limitInput }}">
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">A failed login stops counting after this time</p>
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg p-4">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                        <i class="fas fa-info-circle text-blue-500 dark:text-blue-400 mr-1"></i>
+                        Behind a Reverse Proxy
+                    </p>
+                    <p class="text-sm text-gray-700 dark:text-slate-300">
+                        {% if loginLimit.address %}The app sees you at <code class="font-mono">{{ loginLimit.address }}</code>. If that is not your own address, every visitor arrives from it.{% else %}Behind a reverse proxy every visitor arrives from the proxy's address.{% endif %}
+                        Wrong passwords for an account then lock it for all visitors until the time window has passed.
+                        Other accounts and logged-in users are not affected, and a password reset by email clears the count.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-6 mt-6 border-t border-gray-200 dark:border-slate-700">
+                <button type="submit" class="inline-flex items-center px-4 py-2.5 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+                    <i class="fas fa-save mr-2"></i>
+                    Save Login Limit
+                </button>
+            </div>
+        </form>
+        {% endif %}
+    </div>

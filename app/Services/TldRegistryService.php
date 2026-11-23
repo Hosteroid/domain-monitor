@@ -21,6 +21,13 @@ class TldRegistryService
     private const IANA_TLD_LIST_URL = 'https://data.iana.org/TLD/tlds-alpha-by-domain.txt';
     private const IANA_RDAP_DOMAIN_URL = 'https://rdap.iana.org/domain/';
 
+    /**
+     * Seconds a WHOIS batch spends on lookups before it hands back to the page, which then asks for
+     * the next batch. PHP stops a request at max_execution_time, 30 seconds by default, and a request
+     * stopped half way answers with an error page instead of its progress.
+     */
+    private const BATCH_SECONDS = 20;
+
     public function __construct()
     {
         $this->httpClient = new Client([
@@ -593,7 +600,13 @@ class TldRegistryService
         }
         
         $importType = $log['import_type'];
-        
+
+        // Room for a batch where the host allows it. The WHOIS batches also stop after BATCH_SECONDS,
+        // for hosts that do not.
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(120);
+        }
+
         switch ($importType) {
             case 'tld_list':
                 return $this->processTldListBatch($logId);
@@ -765,6 +778,12 @@ class TldRegistryService
                 $lastProcessedIdInBatch = 0;
                 
                 foreach ($tldsNeedingWhois as $index => $tld) {
+                    // Hand back to the page in time; the next batch goes on after the last TLD done here
+                    if ($index > 0 && microtime(true) - $batchStartTime > self::BATCH_SECONDS) {
+                        $this->logger->info("Batch stopped after {$index} TLDs to stay within the time limit");
+                        break;
+                    }
+
                     $tldStartTime = microtime(true);
                     $batchStats['total_tlds']++;
                     $tldNumber = $index + 1;
@@ -994,6 +1013,7 @@ class TldRegistryService
             // Step 1: Import TLD List
             if ($currentProgress['current_step'] == 0) {
                 $stats = $this->importTldList();
+                $suffixNote = $this->importDomainSuffixes();
                 $currentProgress['step_progress'][0] = $stats['new_tlds'] + $stats['updated_tlds'];
                 $currentProgress['overall_processed'] += $currentProgress['step_progress'][0];
                 $currentProgress['overall_failed'] += $stats['failed_tlds'];
@@ -1008,7 +1028,7 @@ class TldRegistryService
                     'processed' => $currentProgress['current_step'],
                     'failed' => $currentProgress['overall_failed'],
                     'remaining' => $currentProgress['total_steps'] - $currentProgress['current_step'],
-                    'message' => "Step 1/3: {$currentProgress['step_names'][0]} completed. {$currentProgress['step_progress'][0]} TLDs processed."
+                    'message' => "Step 1/3: {$currentProgress['step_names'][0]} completed. {$currentProgress['step_progress'][0]} TLDs processed.{$suffixNote}"
                 ];
             }
 
@@ -1080,8 +1100,14 @@ class TldRegistryService
                 $lastProcessedIdInBatch = 0;
                 
                 $this->logger->info("Starting to process batch of " . count($tldsNeedingWhois) . " TLDs");
-                
+
                 foreach ($tldsNeedingWhois as $index => $tld) {
+                    // Hand back to the page in time; the next batch goes on after the last TLD done here
+                    if ($index > 0 && microtime(true) - $stepStartTime > self::BATCH_SECONDS) {
+                        $this->logger->info("Batch stopped after {$index} TLDs to stay within the time limit");
+                        break;
+                    }
+
                     $tldStartTime = microtime(true);
                     $tldNumber = $index + 1;
                     $totalInBatch = count($tldsNeedingWhois);
@@ -1252,6 +1278,27 @@ class TldRegistryService
                 'status' => 'error',
                 'message' => 'Complete workflow failed: ' . $e->getMessage()
             ];
+        }
+    }
+
+    /**
+     * The domain suffixes come along with the TLD list: one download of the Public Suffix List
+     * (#112). A failure is logged and the TLD import carries on.
+     *
+     * @return string A sentence for the progress message, starting with a space, or '' before the
+     *                update that adds the suffix table
+     */
+    private function importDomainSuffixes(): string
+    {
+        try {
+            if (!(new \App\Models\DomainSuffix())->isInstalled()) {
+                return '';
+            }
+            $stats = (new DomainSuffixService())->import();
+            return " {$stats['rules']} domain suffixes imported.";
+        } catch (\Throwable $e) {
+            $this->logger->warning('Domain suffix import failed', ['error' => $e->getMessage()]);
+            return ' The domain suffixes could not be imported: ' . $e->getMessage();
         }
     }
 

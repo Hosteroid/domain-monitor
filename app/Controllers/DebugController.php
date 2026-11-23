@@ -41,7 +41,6 @@ class DebugController extends Controller
         // Use reflection to call private discoverTldServers method
         $reflection = new \ReflectionClass($whoisService);
         $discoverMethod = $reflection->getMethod('discoverTldServers');
-        $discoverMethod->setAccessible(true);
         
         // Handle double TLDs
         $doubleTld = null;
@@ -137,7 +136,6 @@ class DebugController extends Controller
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $curlError = curl_error($ch);
             $curlInfo = curl_getinfo($ch);
-            curl_close($ch);
             
             // Debug: Log the actual cURL request details
             $logger->debug('RDAP cURL request details', [

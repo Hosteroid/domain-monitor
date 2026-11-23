@@ -50,8 +50,61 @@ class TldRegistryController extends Controller
                 'sort' => $sort,
                 'order' => $order
             ],
+            'suffixes' => $this->domainSuffixInfo(),
             'title' => 'TLD Registry'
         ]);
+    }
+
+    /**
+     * What the page says about the imported domain suffixes, or null before the update that adds them
+     */
+    private function domainSuffixInfo(): ?array
+    {
+        try {
+            $model = new \App\Models\DomainSuffix();
+            if (!$model->isInstalled()) {
+                return null;
+            }
+            $importedAt = (new \App\Models\Setting())->getValue('domain_suffix_list_imported_at', 0);
+
+            return [
+                'count' => $model->countAll(),
+                'imported_at' => (int)$importedAt,
+            ];
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Import the domain suffixes: the registry part of the Public Suffix List, which tells the
+     * subdomain check which endings take registrations, such as .co.uk or .my.id (#112)
+     */
+    public function importSuffixes()
+    {
+        Auth::requireAdmin();
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/tld-registry');
+            return;
+        }
+
+        $this->verifyCsrf('/tld-registry');
+
+        try {
+            if (!(new \App\Models\DomainSuffix())->isInstalled()) {
+                $_SESSION['error'] = 'Domain suffixes need a database update first';
+            } else {
+                $stats = (new \App\Services\DomainSuffixService())->import();
+                $_SESSION['success'] = "Imported {$stats['rules']} domain suffixes from the Public Suffix List"
+                    . ($stats['version'] !== '' ? ' (' . substr($stats['version'], 0, 10) . ')' : '') . '.';
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error('Domain suffix import failed', ['error' => $e->getMessage()]);
+            $_SESSION['error'] = 'Domain suffix import failed: ' . $e->getMessage();
+        }
+
+        $this->redirect('/tld-registry');
     }
 
     /**
@@ -373,8 +426,8 @@ class TldRegistryController extends Controller
                 return;
             }
 
-            // Ensure user is authenticated
-            if (!isset($_SESSION['user_id'])) {
+            // Ensure user is authenticated: a login that still waits for its 2FA code is not
+            if (!Auth::check()) {
                 $this->logger->warning('Unauthenticated API call attempt', ['log_id' => $logId]);
                 ob_end_clean();
                 $this->json(['error' => 'Authentication required'], 401);

@@ -1708,11 +1708,10 @@ class DnsService
             ],
         ]);
 
-        $http_response_header = null;
-        $response = @file_get_contents('http://ip-api.com/batch', false, $context);
+        ['body' => $response, 'headers' => $responseHeaders] = \App\Helpers\HttpHelper::fetch('http://ip-api.com/batch', $context);
 
         $status = 0;
-        if (isset($http_response_header[0]) && preg_match('/\d{3}/', $http_response_header[0], $m)) {
+        if (isset($responseHeaders[0]) && preg_match('/\d{3}/', $responseHeaders[0], $m)) {
             $status = (int) $m[0];
         }
 
@@ -1720,7 +1719,7 @@ class DnsService
         // ip-api.com bans clients that keep sending once X-Rl is 0.
         $remaining = null;
         $ttl = 60;
-        foreach ($http_response_header ?? [] as $header) {
+        foreach ($responseHeaders as $header) {
             if (preg_match('/^X-Rl:\s*(\d+)/i', $header, $m)) {
                 $remaining = (int) $m[1];
             } elseif (preg_match('/^X-Ttl:\s*(\d+)/i', $header, $m)) {

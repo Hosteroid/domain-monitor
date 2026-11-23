@@ -10,6 +10,9 @@ use App\Models\RememberToken;
 use App\Services\Logger;
 use App\Services\TwoFactorService;
 use App\Helpers\AvatarHelper;
+use App\Helpers\OneTimeSecret;
+use App\Models\ApiToken;
+use App\Models\Setting;
 
 class ProfileController extends Controller
 {
@@ -93,11 +96,167 @@ class ProfileController extends Controller
         $this->view('profile/index', [
             'user' => $user,
             'sessions' => $formattedSessions,
+            // Remembered browsers that the list above cannot show, because their session has expired
+            'rememberedElsewhere' => $this->rememberTokenModel->countWithoutSession((int)$userId, Auth::rememberCookie()),
             'avatar' => $avatar,
             'twoFactorStatus' => $twoFactorStatus,
             'twoFactorPolicy' => $twoFactorPolicy,
+            'api' => $this->apiTokensForView((int)$userId, $user),
             'title' => 'My Profile'
         ]);
+    }
+
+    /** When a new API token can expire: the form's choices, in days */
+    private const TOKEN_EXPIRY_DAYS = ['never' => null, '30' => 30, '90' => 90, '365' => 365];
+
+    /**
+     * What the API Tokens section shows, or null when the page has no such section: before the
+     * database update, or while the API is off or closed to this user and they hold no tokens.
+     * Tokens they still hold stay listed, so they can be revoked.
+     */
+    private function apiTokensForView(int $userId, array $user): ?array
+    {
+        try {
+            $tokens = new ApiToken();
+            if (!$tokens->isInstalled()) {
+                return null;
+            }
+
+            $settingModel = new Setting();
+            $settings = $settingModel->getApiSettings();
+            $mayUse = $this->mayUseApi($settings, $user);
+            $own = ApiToken::withState($tokens->forUser($userId));
+            if (!$mayUse && !$own) {
+                return null;
+            }
+
+            // A token made a moment ago is shown on this one page view, then it is gone
+            $new = $_SESSION['new_api_token'] ?? null;
+            unset($_SESSION['new_api_token']);
+
+            return [
+                'access' => $settings['access'],
+                'can_create' => $mayUse,
+                'can_write' => $settings['access'] === 'read_write',
+                'tokens' => $own,
+                'max' => ApiToken::MAX_PER_USER,
+                'expiry_choices' => ['never' => 'No expiry', '30' => '30 days', '90' => '90 days', '365' => '1 year'],
+                'base_url' => rtrim((string)$settingModel->getValue('app_url', ''), '/') . \Core\ApiKernel::PREFIX,
+                'new_token' => is_string($new) && $new !== '' ? new OneTimeSecret($new) : null,
+            ];
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Whether a user may use the API right now: it is on, and open to them
+     */
+    private function mayUseApi(array $settings, array $user): bool
+    {
+        return $settings['access'] !== 'off' && ($settings['users'] === 'all' || ($user['role'] ?? '') === 'admin');
+    }
+
+    /**
+     * Create an API token. It asks for the account password: a token works without password and
+     * 2FA, so a browser session someone else got hold of must not be enough to make one.
+     */
+    public function createApiToken()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/profile');
+            return;
+        }
+
+        $this->verifyCsrf('/profile');
+
+        $userId = (int)Auth::id();
+        $name = is_string($_POST['token_name'] ?? null) ? trim($_POST['token_name']) : '';
+        $access = $_POST['token_access'] ?? 'read';
+        $expiry = $_POST['token_expiry'] ?? 'never';
+        $password = $_POST['current_password'] ?? '';
+
+        try {
+            $tokens = new ApiToken();
+            if (!$tokens->isInstalled()) {
+                $_SESSION['error'] = 'API tokens need a database update first';
+                $this->redirect('/profile');
+                return;
+            }
+
+            $settings = (new Setting())->getApiSettings();
+            $user = $this->userModel->find($userId);
+
+            if (!$user || !$this->mayUseApi($settings, $user)) {
+                $_SESSION['error'] = $settings['access'] === 'off' ? 'The API is turned off' : 'The API is limited to admins';
+            } elseif ($name === '' || mb_strlen($name) > 100) {
+                $_SESSION['error'] = 'Give the token a name of up to 100 characters';
+            } elseif (!is_string($access) || !in_array($access, ['read', 'write'], true)) {
+                $_SESSION['error'] = 'Choose what the token may do';
+            } elseif ($access === 'write' && $settings['access'] !== 'read_write') {
+                $_SESSION['error'] = 'Write access is turned off';
+            } elseif (!is_string($expiry) || !array_key_exists($expiry, self::TOKEN_EXPIRY_DAYS)) {
+                $_SESSION['error'] = 'Choose when the token expires';
+            } elseif (!is_string($password) || $password === '' || !$this->userModel->verifyPassword($password, $user['password'])) {
+                $_SESSION['error'] = 'Current password is incorrect';
+            } elseif ($tokens->countForUser($userId) >= ApiToken::MAX_PER_USER) {
+                $_SESSION['error'] = 'You can have up to ' . ApiToken::MAX_PER_USER . ' tokens. Revoke one first.';
+            } else {
+                $days = self::TOKEN_EXPIRY_DAYS[$expiry];
+                $expiresAt = $days === null ? null : time() + $days * 86400;
+                $issued = $tokens->issue($userId, $name, $access === 'write', $expiresAt);
+
+                // Shown once by the next page view. Only its hash is saved.
+                $_SESSION['new_api_token'] = $issued['token'];
+                $_SESSION['success'] = 'Token created. Copy it now: it is shown only once.';
+
+                (new Logger('api'))->info('Token created', [
+                    'token_id' => $issued['id'],
+                    'user_id' => $userId,
+                    'can_write' => $access === 'write',
+                    'expires_at' => $expiresAt,
+                ]);
+            }
+        } catch (\Exception $e) {
+            $this->logger->error('Failed to create an API token', ['user_id' => $userId, 'error' => $e->getMessage()]);
+            $_SESSION['error'] = 'Failed to create the token';
+        }
+
+        $this->redirect('/profile#api');
+    }
+
+    /**
+     * Revoke one of the user's own API tokens
+     */
+    public function deleteApiToken($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/profile');
+            return;
+        }
+
+        $this->verifyCsrf('/profile');
+
+        $userId = (int)Auth::id();
+        $id = $params['id'] ?? '';
+
+        try {
+            $tokens = new ApiToken();
+            $token = $tokens->isInstalled() && is_string($id) && preg_match('/^[0-9]{1,9}$/', $id)
+                ? $tokens->revokeOwn((int)$id, $userId)
+                : null;
+
+            if ($token) {
+                (new Logger('api'))->info('Token revoked', ['token_id' => (int)$token['id'], 'user_id' => $userId]);
+                $_SESSION['success'] = 'Token revoked';
+            } else {
+                $_SESSION['error'] = 'Token not found';
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to revoke the token';
+        }
+
+        $this->redirect('/profile#api');
     }
 
     /**
@@ -114,8 +273,9 @@ class ProfileController extends Controller
         $this->verifyCsrf('/profile');
 
         $userId = Auth::id();
-        $fullName = trim($_POST['full_name'] ?? '');
-        $email = trim($_POST['email'] ?? '');
+        // Text only: a field sent as an array reads as empty
+        $fullName = is_string($_POST['full_name'] ?? null) ? trim($_POST['full_name']) : '';
+        $email = is_string($_POST['email'] ?? null) ? trim($_POST['email']) : '';
 
         // Validate
         if (empty($fullName) || empty($email)) {
@@ -152,6 +312,18 @@ class ProfileController extends Controller
         }
         }
 
+        // A changed address gets a verification email. When that address got too many already,
+        // nothing is saved: the account would be left unverified without a link.
+        $limiter = new \App\Services\EmailLimiter();
+        if ($emailChanged) {
+            $wait = $limiter->take($email, \App\Services\EmailLimiter::VERIFY);
+            if ($wait > 0) {
+                $_SESSION['error'] = \App\Services\EmailLimiter::message($wait);
+                $this->redirect('/profile');
+                return;
+            }
+        }
+
         // Prepare update data
         $updateData = [
             'full_name' => $fullName,
@@ -164,11 +336,16 @@ class ProfileController extends Controller
             
             // Generate new verification token
             $verificationToken = bin2hex(random_bytes(32));
-            $updateData['email_verification_token'] = $verificationToken;
         }
 
         // Update user
         $this->userModel->update($userId, $updateData);
+
+        // The link is saved together with its send time. Verifying checks the link's age, and a
+        // link saved without that time was read as expired.
+        if ($emailChanged) {
+            $this->userModel->updateEmailVerificationToken($userId, $verificationToken);
+        }
 
         // Update session
         $_SESSION['full_name'] = $fullName;
@@ -177,9 +354,16 @@ class ProfileController extends Controller
         // Send verification email if email changed
         if ($emailChanged) {
             try {
-                \App\Helpers\EmailHelper::sendVerificationEmail($email, $fullName, $verificationToken);
-                $_SESSION['success'] = 'Profile updated successfully. Please check your new email address for a verification link.';
+                $result = \App\Helpers\EmailHelper::sendVerificationEmail($email, $fullName, $verificationToken);
+                if (empty($result['success'])) {
+                    // Not sent: it is not counted, and "Resend" can send it
+                    $limiter->giveBack();
+                    $_SESSION['success'] = 'Profile updated successfully, but verification email could not be sent. Please try resending verification.';
+                } else {
+                    $_SESSION['success'] = 'Profile updated successfully. Please check your new email address for a verification link.';
+                }
             } catch (\Exception $e) {
+                $limiter->giveBack();
                 $_SESSION['success'] = 'Profile updated successfully, but verification email could not be sent. Please try resending verification.';
                 $this->logger->error("Failed to send verification email after profile update", [
                     'user_id' => $userId,
@@ -244,6 +428,9 @@ class ProfileController extends Controller
             // Update password
             $this->userModel->changePassword($userId, $newPassword);
 
+            // Browsers that were remembered with the old password are forgotten; this one stays
+            $this->rememberTokenModel->deleteOthers((int)$userId, Auth::rememberCookie());
+
             $_SESSION['success'] = 'Password changed successfully';
             $this->redirect('/profile');
     }
@@ -299,6 +486,15 @@ class ProfileController extends Controller
             return;
         }
 
+        // Too many emails to this address: nothing is sent and the last link keeps working
+        $limiter = new \App\Services\EmailLimiter();
+        $wait = $limiter->take((string)$user['email'], \App\Services\EmailLimiter::VERIFY);
+        if ($wait > 0) {
+            $_SESSION['error'] = \App\Services\EmailLimiter::message($wait);
+            $this->redirect('/profile');
+            return;
+        }
+
         try {
             // Generate new verification token
             $token = bin2hex(random_bytes(32));
@@ -309,12 +505,17 @@ class ProfileController extends Controller
             // Update verification token in database
             $this->userModel->updateEmailVerificationToken($userId, $token);
 
-            // Send verification email
-            \App\Helpers\EmailHelper::sendVerificationEmail($user['email'], $user['full_name'], $token);
-
-            $_SESSION['success'] = 'Verification email sent! Please check your inbox.';
+            // Send verification email. One that did not go out is not counted.
+            $result = \App\Helpers\EmailHelper::sendVerificationEmail($user['email'], (string)$user['full_name'], $token);
+            if (empty($result['success'])) {
+                $limiter->giveBack();
+                $_SESSION['error'] = 'Failed to resend verification email. Please try again.';
+            } else {
+                $_SESSION['success'] = 'Verification email sent! Please check your inbox.';
+            }
             
         } catch (\Exception $e) {
+            $limiter->giveBack();
             $_SESSION['error'] = 'Failed to resend verification email. Please try again.';
             $this->logger->error("Failed to resend verification email", [
                 'user_id' => $userId,
@@ -349,14 +550,9 @@ class ProfileController extends Controller
         }
 
         try {
-            // Get all other sessions first to delete their remember tokens
-            $allSessions = $this->sessionModel->getByUserId($userId);
-            $deletedTokens = 0;
-            foreach ($allSessions as $session) {
-                if ($session['id'] !== $currentSessionId) {
-                    $deletedTokens += $this->rememberTokenModel->deleteBySessionId($session['id']);
-                }
-            }
+            // Forget every other remembered login of this user. It goes by user, not by the
+            // sessions listed: a remembered browser whose session has expired has no session row.
+            $deletedTokens = $this->rememberTokenModel->deleteOthers((int)$userId, Auth::rememberCookie());
             
             // Delete all other sessions (this actually logs them out!)
             $count = $this->sessionModel->deleteOtherSessions($userId, $currentSessionId);
@@ -404,6 +600,16 @@ class ProfileController extends Controller
             $session = $this->sessionModel->getById($sessionId);
 
             if (!$session) {
+                // The row is gone when the session expired and was cleaned up after this page
+                // was loaded. A remembered login of that browser could still sign it in again,
+                // so it goes as well. Only a token of this user: the session ID comes from the
+                // request, and there is no row left to say whose session it was.
+                if ($this->rememberTokenModel->deleteOwnBySessionId($sessionId, (int)$userId) > 0) {
+                    $_SESSION['success'] = 'Session had already expired - remember me disabled for that device';
+                    $this->redirect('/profile#sessions');
+                    return;
+                }
+
                 $_SESSION['error'] = 'Session not found';
                 $this->redirect('/profile');
                 return;

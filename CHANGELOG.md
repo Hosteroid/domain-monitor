@@ -5,12 +5,14 @@ All notable changes to Domain Monitor will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-23
 
 ### Upgrade Notes
-- **Run the updater** - Open `/install/update` to apply migrations 034 and 035
+- **Run the updater** - Open `/install/update` to apply migrations 034 to 043
+- **Domain Suffixes** - Downloaded by the database update; if that fails, use "Import Domain Suffixes" in TLD Registry
 - **DNS History** - On by default, entries kept for 90 days (Settings → Monitoring)
 - **Billing** - On by default and replaces the preview tab; turn it off under Settings → Billing
+- **API** - Off by default; turn it on under Settings → API
 - **.ch and .li** - Add their RDAP server under TLD Registry, see [Lookup Servers](https://github.com/Hosteroid/domain-monitor/wiki/Lookup-Servers)
 - **TLDs Without a Lookup Server** - Domains on .gr, .ph, .vn and similar show Error instead of Active
 - **TLD Registry** - Run "Import TLDs from IANA" again if "With WHOIS" is low
@@ -28,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Currencies** - Payments in any currency, totals in one base currency with rates set in Settings
 - **Renewal Cost** - Renewal Cost and Total Spent list columns, dashboard card, optional line in expiry reminders
 - **Bulk Payment** - One payment for each selected domain, for an invoice that covers several
+- **API** - JSON API for totals, domains, DNS records and certificates; a write token can add, change, delete and refresh domains (#93, #102)
+- **API Tokens** - Personal tokens under Profile, read-only or read and write, with optional expiry; admins revoke any in Settings
+- **Domain Suffixes** - TLD Registry imports the Public Suffix List, so endings such as .co.uk or .my.id are known when adding a domain
 
 ### Changed
 - **Zone Import** - Handles multi-string TXT records, escaped quotes and comments containing quotes
@@ -36,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Domain Export** - CSV and JSON include creation date, date added, nameservers, privacy and own renewal price
 - **Billing Tab** - Shows real data instead of the preview; Chart.js loads only when the tab is opened
 - **RDAP Lookup** - Asks the registrar's RDAP server for the registrant when the registry has none
+- **Deprecation Notices** - Written to the error log instead of showing an error page
+- **Subdomain Check** - Uses the imported suffix list instead of a built-in list of second-level endings
 
 ### Fixed
 - **Quick Scan** - Fixed removal of subdomains found by a Deep Scan
@@ -49,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Domain List** - Fixed tag filter lost when changing page size
 - **Domain Page** - Fixed broken tabs when the address names a tab that does not exist
 - **Edit Domain** - Fixed manual expiration date saved without checking that it is a date
+- **Add and Edit Domain** - Fixed error page for an unknown notification group or a domain added twice at once
+- **Isolated Mode** - Fixed a domain hidden from its owner when all its tags belong to another user
 - **Availability Detection** - Unregistered domains detected on about 60 more registries
 - **TLDs Without a Lookup Server** - Fixed IANA's TLD record being saved as domain data
 - **WHOIS Rate Limits** - Long rate-limit responses (.lu) no longer overwrite saved data
@@ -59,27 +68,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CSV Import** - Fixed files saved by Excel as "CSV UTF-8" and cells with line breaks
 - **Updater** - Checks file permissions before applying, rolls back on errors, cleans up temporary files (#109)
 - **Template Cache** - Fixed stale pages after an update in production mode
+- **Remember Me** - Fixed login not remembered on installs made with 1.1.0 or later; ending a session from Profile also forgets the login
+- **Remember Me Expiry** - Fixed the 30 days being off by the time difference between app and database; expired tokens are now deleted
+- **Forms** - Fixed error page when the security token or the remember cookie is sent as an array
+- **Installer** - Removed `/install/check-database`, an unused address that ended in an error page
+- **Password Reset** - Fixed reset links expiring too early or too late when app and database time zones differ
+- **Email Verification** - Fixed link sent after a profile email change shown as expired
+- **Database Update** - Fixed "Unknown column" error on installs that began with 1.0.0
+- **Failed Installation** - Fixed endless redirect; the reason is shown on the form and the installation can be started again
+- **Missing .installed File** - Fixed endless redirect on an installed system; pages and API keep working without the file
+- **Default Tags** - Fixed default tags added again when a failed database update is repeated
+- **2FA Email Code** - Fixed Send Email Code button that always failed; the email names the real expiry time
+- **2FA Code Entry** - Fixed codes sent twice or before a backup code was typed in full; fixed endless redirect after 2FA was turned off elsewhere
+- **2FA Profile Forms** - Fixed Disable 2FA and New Backup Codes being sent twice by a double click
+- **Verification Link** - Fixed error page when the token is sent as an array
+- **Login** - Fixed a sign-in sent back to the login form after an unfinished 2FA login in the same browser
+- **Error Log** - Fixed errors not saved when the address, a form field or the stack trace was too long
+- **Location Lookup** - One lookup per sign-in instead of two; fixed error page on an unexpected answer; private Docker, VPN and IPv6 addresses are no longer looked up
+- **Session Lifetime** - Fixed sessions ended after 24 hours whatever `SESSION_LIFETIME` says; expired sessions are removed whenever a new one starts
+- **Profile Sessions** - Fixed remembered login left behind when the ended session had already expired
+- **PHP 8.5** - Fixed error page when adding a domain; removed calls that PHP 8.5 deprecates (#111)
+- **.id Domains** - Fixed .my.id, .desa.id, .ponpes.id, .kop.id and .ai.id domains refused as subdomains (#112)
+- **TLD Import** - Fixed the WHOIS step stopping with "Network error" where PHP allows 30 seconds per request
 
 ### Security
 - **CSRF Protection** - Added to domain delete, group delete, channel delete/toggle and update check
+- **Error Pages** - Stack traces no longer shown in production for PHP warnings and startup errors
+- **Domain Import** - Fixed another user's notification group accepted in isolated mode
 - **POST Method Enforced** - TLD toggle/refresh, notification mark-read, resend verification and logout changed from GET to POST
 - **TLD Import Progress** - Requires admin and a CSRF token
 - **CSV Export** - Cells starting with =, +, - or @ are escaped against spreadsheet formulas
+- **Login Attempt Limit** - Login is refused after 5 failed attempts in 15 minutes, per account and address; set in Settings → Security
+- **2FA Code Limit** - Fixed the limit failing when app and database time zones differ; codes are refused after 5 wrong ones in 15 minutes, per account; set in Settings → Security
+- **2FA Backup Codes** - Fixed `00000000` accepted on accounts with a backup code like `0E123456`; new backup codes require a 2FA code
+- **2FA Code Reuse** - Fixed an authenticator code accepted more than once, and a backup code accepted twice when sent at the same moment
+- **2FA Forced Policy** - 2FA can no longer be turned off while the policy is Forced
+- **Remember Me** - New session ID after an automatic login; Logout Others and a password change forget all other remembered browsers
+- **Account Email Limit** - At most 3 password reset and 3 verification emails per address in an hour; set in Settings → Security
+- **Account Emails** - The user's name is escaped in verification, password reset and 2FA emails
+- **Installer** - Admin password no longer left in plain text in a session file; fixed "Installation Complete" page never shown after installing
+- **2FA Setup** - Fixed the setup confirmation being reachable without a completed login
+- **Login Session** - New session ID as soon as the password is accepted, also when a 2FA code follows
+- **Error Log** - Fixed passwords, 2FA secrets and tokens saved with stack traces; 2FA codes, backup codes and link tokens are now redacted
+- **Channel Logs** - Fixed webhook addresses and Telegram bot tokens written to log files when a notification is sent or fails
+- **Session Location** - Looked up at sign-in only, no longer on every page request without a session cookie
 
 ### Technical
 - **Core** - `Core\TemplateLoader`, `TwigService::clearCache()`
-- **Services** - `DnsHistoryService`, `BillingService`, `DnsService::buildBindZone()`, `TldRegistryService::parseIanaPage()`, `WhoisService::keepKnownPrivacy()`
-- **Helpers** - `CsvHelper`, `MoneyHelper`; `DomainHelper::lookupFields()`, `DomainHelper::suffixes()`
-- **Models** - `DnsHistory`, `BillingTransaction`, `BillingPrice`, `BillingCurrency`; `Setting::isDnsHistoryOn()`, `Setting::getDnsHistoryRetentionDays()`, `Setting::getValues()`
+- **Services** - `DnsHistoryService`, `BillingService`, `DomainSuffixService`, `DnsService::buildBindZone()`, `TldRegistryService::parseIanaPage()`, `WhoisService::keepKnownPrivacy()`
+- **Helpers** - `CsvHelper`, `HttpHelper`, `MoneyHelper`; `DomainHelper::lookupFields()`, `DomainHelper::suffixes()`
+- **Models** - `DnsHistory`, `BillingTransaction`, `BillingPrice`, `BillingCurrency`, `DomainSuffix`; `Setting::isDnsHistoryOn()`, `Setting::getDnsHistoryRetentionDays()`, `Setting::getValues()`
 - **Controllers** - `BillingController`, `BillingPriceController`
 - **Views** - `billing/index.twig`, `billing/prices.twig`, `partials/billing-*.twig`, `partials/lookup-note.twig`, `partials/privacy-badge.twig`; `money` filter; `postTo()`, `data-method="post"` and `data-mark-read` links
 - **Routes** - `GET /dns-history`, `POST /dns-history/delete`, `GET /dns-history/{id}/export`, `GET /domains/{id}/dns-export`, `/billing`, `/billing/prices`
-- **Database** - `dns_history` table, `domains.dns_history_enabled`, settings `dns_history_enabled` and `dns_history_retention_days`
+- **Database** - `dns_history` table, `domains.dns_history_enabled`, settings `dns_history_enabled` and `dns_history_retention_days`; `domain_suffixes` table
 - **Billing Database** - `billing_transactions`, `billing_prices`, `billing_currencies`, `domains.renewal_price`, `domains.renewal_currency`, four `billing_*` settings
 
 ### Migrations
+- `000_initial_schema_v1.2.0.sql` - Base schema for fresh installs, renamed from v1.1.0
 - `034_add_dns_history.sql` - DNS history table, per-domain switch and settings
 - `035_add_billing.sql` - Billing tables, own renewal price columns and settings
+- `036_add_api_tokens.sql` - API tokens table and API settings
+- `037_add_login_attempts.sql` - Failed logins table and login limit settings
+- `038_drop_remember_tokens_session_key.sql` - Drops the remember token foreign key that broke "Remember me" on fresh installs
+- `039_add_email_limit.sql` - Email counts table and account email limit settings
+- `040_add_missing_settings.sql` - Settings rows that 018 to 035 could not add on databases that began with v1.0.0
+- `041_add_two_factor_last_step.sql` - Last accepted authenticator code per user, so each code works once
+- `042_add_domain_suffixes.sql` - Domain suffixes table and its last import setting
+- `043_update_app_version_v1.2.0.sql` - Updates app version to 1.2.0
 
 ## [1.1.6] - 2026-11-04
 

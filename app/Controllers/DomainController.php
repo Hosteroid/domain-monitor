@@ -16,6 +16,7 @@ class DomainController extends Controller
     private WhoisService $whoisService;
     private SslCertificate $sslCertificateModel;
     private SslService $sslService;
+    private ?\App\Services\DomainService $domainService = null;
 
     /** Optional columns of the domains list, in the order of its cells; each key is also the sort key */
     private const LIST_COLUMNS = [
@@ -50,15 +51,26 @@ class DomainController extends Controller
      */
     private function checkDomainAccess(int $id): ?array
     {
-        $userId = \Core\Auth::id();
-        $settingModel = new \App\Models\Setting();
-        $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
-        
-        if ($isolationMode === 'isolated') {
-            return $this->domainModel->findWithIsolation($id, $userId);
-        } else {
-            return $this->domainModel->find($id);
-        }
+        return $this->domainService()->findById($id, (int)\Core\Auth::id());
+    }
+
+    /**
+     * A text field of the form, trimmed, or '' when it was not sent. A value that is not text is
+     * passed on as it came, so the service refuses it instead of reading it as empty.
+     */
+    private function postedText(string $field)
+    {
+        $value = $_POST[$field] ?? '';
+
+        return is_string($value) ? trim($value) : $value;
+    }
+
+    /**
+     * The service that adds, changes, deletes and refreshes a domain. The API uses it too.
+     */
+    private function domainService(): \App\Services\DomainService
+    {
+        return $this->domainService ??= new \App\Services\DomainService();
     }
 
     public function index()
@@ -402,8 +414,21 @@ class DomainController extends Controller
         $sslMonitoringEnabled = $settingModel->isSslMonitoringOnForNewDomains() ? 1 : 0;
         $tagModel = new \App\Models\Tag();
 
-        // Form-level notification group
+        // Form-level notification group. It gets the same check as the group of a single add: it
+        // has to exist and, in isolated mode, to be the user's own.
         $formGroupId = (int)($_POST['notification_group_id'] ?? 0);
+        if ($formGroupId > 0) {
+            $groupError = $this->domainService()->groupError($formGroupId, (int)$userId);
+            if ($groupError !== null) {
+                $logger->warning('Domains import refused: notification group cannot be used', [
+                    'group_id' => $formGroupId,
+                    'user_id' => $userId
+                ]);
+                $_SESSION['error'] = $groupError;
+                $this->redirect('/domains/bulk-add');
+                return;
+            }
+        }
 
         $added = 0;
         $skipped = 0;
@@ -556,111 +581,31 @@ class DomainController extends Controller
         // CSRF Protection
         $this->verifyCsrf('/domains/create');
 
-        $domainName = \App\Helpers\InputValidator::sanitizeDomainInput(trim($_POST['domain_name'] ?? ''));
-        $groupId = !empty($_POST['notification_group_id']) ? (int)$_POST['notification_group_id'] : null;
-        $tagsInput = trim($_POST['tags'] ?? '');
-        $userId = \Core\Auth::id();
+        // The checks, the lookup and the insert are the service's, shared with the API
+        $result = $this->domainService()->add([
+            'domain_name' => is_string($_POST['domain_name'] ?? null) ? $_POST['domain_name'] : '',
+            'notification_group_id' => !empty($_POST['notification_group_id']) ? (int)$_POST['notification_group_id'] : null,
+            'tags' => $this->postedText('tags'),
+        ], (int)\Core\Auth::id());
 
-        // Validate root domain (not a subdomain, respects multi-level TLDs)
-        $domainCheck = \App\Helpers\InputValidator::validateRootDomain($domainName);
-        if (!$domainCheck['valid']) {
-            $_SESSION['error'] = $domainCheck['error'];
-            $this->redirect('/domains/create');
-            return;
-        }
-        $domainName = $domainCheck['domain'];
-
-        // Validate tags
-        $tagValidation = \App\Helpers\InputValidator::validateTags($tagsInput);
-        if (!$tagValidation['valid']) {
-            $_SESSION['error'] = $tagValidation['error'];
-            $this->redirect('/domains/create');
-            return;
-        }
-        $tags = $tagValidation['tags'];
-
-        // Validate notification group in isolation mode
-        if ($groupId) {
-            $settingModel = new \App\Models\Setting();
-            $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
-            
-            if ($isolationMode === 'isolated') {
-                $group = $this->groupModel->find($groupId);
-                if (!$group || $group['user_id'] != $userId) {
-                    $_SESSION['error'] = 'You can only assign domains to your own notification groups';
-                    $this->redirect('/domains/create');
-                    return;
-                }
-            }
-        }
-
-        // Check if domain already exists
-        if ($this->domainModel->existsByDomain($domainName)) {
-            $_SESSION['error'] = 'Domain already exists';
+        if (!$result['ok']) {
+            $_SESSION['error'] = $result['error'] ?? 'Could not retrieve WHOIS information for this domain';
             $this->redirect('/domains/create');
             return;
         }
 
-        // Get WHOIS information
-        $whoisData = $this->whoisService->getDomainInfo($domainName);
-
-        if (!$whoisData) {
-            $_SESSION['error'] = WhoisService::getLastErrorMessage() ?? 'Could not retrieve WHOIS information for this domain';
-            $this->redirect('/domains/create');
-            return;
-        }
-
-        // Create domain
-        $status = $this->whoisService->getDomainStatus($whoisData['expiration_date'], $whoisData['status'] ?? [], $whoisData);
+        $domainName = $result['domain_name'];
 
         // Warn if domain is available (not registered)
-        if ($status === 'available') {
+        if ($result['status'] === 'available') {
             $_SESSION['warning'] = "Note: '$domainName' appears to be AVAILABLE (not registered). You're monitoring an unregistered domain.";
-        }
-
-        $id = $this->domainModel->create([
-            'domain_name' => $domainName,
-            'notification_group_id' => $groupId,
-            'registrar' => $whoisData['registrar'],
-            'registrar_url' => $whoisData['registrar_url'] ?? null,
-            'expiration_date' => $whoisData['expiration_date'],
-            'updated_date' => $whoisData['updated_date'] ?? null,
-            'abuse_email' => $whoisData['abuse_email'] ?? null,
-            'last_checked' => date('Y-m-d H:i:s'),
-            'status' => $status,
-            'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE),
-            'is_active' => 1,
-            'ssl_monitoring_enabled' => (new \App\Models\Setting())->isSslMonitoringOnForNewDomains() ? 1 : 0,
-            'user_id' => $userId
-        ]);
-
-        // Payments saved under this name before the domain was added
-        (new \App\Services\BillingService())->relinkDomain((int)$id, $domainName, $userId);
-
-        // Handle tags using the new tag system
-        if (!empty($tags)) {
-            $tagModel = new \App\Models\Tag();
-            $tagModel->updateDomainTags($id, $tags, $userId);
-        }
-
-        // Log domain creation
-        $logger = new \App\Services\Logger();
-        $logger->info('Domain created', [
-            'domain_id' => $id,
-            'domain_name' => $domainName,
-            'user_id' => $userId,
-            'status' => $status,
-            'expiration_date' => $whoisData['expiration_date'],
-            'notification_group_id' => $groupId
-        ]);
-
-        if ($status !== 'available') {
+        } else {
             $_SESSION['success'] = "Domain '$domainName' added successfully";
         }
 
         // The list shows only "Error" for a domain nothing could be read about: say why now
-        if (!empty($whoisData['lookup_note'])) {
-            $_SESSION['warning'] = "Registration data for '$domainName' could not be read. {$whoisData['lookup_note']} "
+        if (!empty($result['lookup_note'])) {
+            $_SESSION['warning'] = "Registration data for '$domainName' could not be read. {$result['lookup_note']} "
                 . 'The domain page says what can be done.';
         }
         $this->redirect('/domains');
@@ -732,241 +677,54 @@ class DomainController extends Controller
 
         $id = (int)($params['id'] ?? 0);
         $domain = $this->checkDomainAccess($id);
-        
+
         if (!$domain) {
             $_SESSION['error'] = 'Domain not found';
             $this->redirect('/domains');
             return;
         }
 
-        $userId = \Core\Auth::id();
-
-        $groupId = !empty($_POST['notification_group_id']) ? (int)$_POST['notification_group_id'] : null;
-        $isActive = isset($_POST['is_active']) ? 1 : 0;
-        $dnsMonitoringEnabled = isset($_POST['dns_monitoring_enabled']) ? 1 : 0;
-        $sslMonitoringEnabled = isset($_POST['ssl_monitoring_enabled']) ? 1 : 0;
-        $tagsInput = trim($_POST['tags'] ?? '');
-        // An empty date field clears the date. Anything else has to be a real date.
+        // An empty date field clears the date. Anything else has to be a real date: the service checks it.
         $manualExpirationDate = $_POST['manual_expiration_date'] ?? '';
         if (is_string($manualExpirationDate)) {
             $manualExpirationDate = trim($manualExpirationDate);
         }
         if ($manualExpirationDate === '') {
             $manualExpirationDate = null;
-        } elseif (!is_string($manualExpirationDate) || !\App\Helpers\InputValidator::validateDate($manualExpirationDate)) {
-            $_SESSION['error'] = 'Enter a valid expiration date';
-            $this->redirect('/domains/' . $id . '/edit');
-            return;
         }
-        
-        // Validate tags
-        $tagValidation = \App\Helpers\InputValidator::validateTags($tagsInput);
-        if (!$tagValidation['valid']) {
-            $_SESSION['error'] = $tagValidation['error'];
-            $this->redirect('/domains/' . $id . '/edit');
-            return;
-        }
-        $tags = $tagValidation['tags'];
 
-        // Validate notification group in isolation mode
-        if ($groupId) {
-            $settingModel = new \App\Models\Setting();
-            $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
-            
-            if ($isolationMode === 'isolated') {
-                $group = $this->groupModel->find($groupId);
-                if (!$group || $group['user_id'] != $userId) {
-                    $_SESSION['error'] = 'You can only assign domains to your own notification groups';
-                    $this->redirect('/domains/' . $id . '/edit');
-                    return;
-                }
-            }
-        }
-        
-        // Check if monitoring status changed
-        $statusChanged = ($domain['is_active'] != $isActive);
-        $oldGroupId = $domain['notification_group_id'];
-
-        $fields = [
-            'notification_group_id' => $groupId,
-            'is_active' => $isActive,
-            'dns_monitoring_enabled' => $dnsMonitoringEnabled,
-            'ssl_monitoring_enabled' => $sslMonitoringEnabled,
-            'expiration_date' => $manualExpirationDate
+        // The form always sends every one of these, so a box that is not ticked switches its part off.
+        // The service changes only the keys it is given, which is what lets the API send fewer.
+        $changes = [
+            'notification_group_id' => !empty($_POST['notification_group_id']) ? (int)$_POST['notification_group_id'] : null,
+            'is_active' => isset($_POST['is_active']) ? 1 : 0,
+            'dns_monitoring_enabled' => isset($_POST['dns_monitoring_enabled']) ? 1 : 0,
+            'ssl_monitoring_enabled' => isset($_POST['ssl_monitoring_enabled']) ? 1 : 0,
+            'tags' => $this->postedText('tags'),
+            'expiration_date' => $manualExpirationDate,
         ];
 
-        // Only when the form has the checkbox, and once the update that adds the column has run
-        if (isset($_POST['dns_history_field']) && $this->domainModel->hasColumn('dns_history_enabled')) {
-            $fields['dns_history_enabled'] = isset($_POST['dns_history_enabled']) ? 1 : 0;
+        // Only when the form has the checkbox
+        if (isset($_POST['dns_history_field'])) {
+            $changes['dns_history_enabled'] = isset($_POST['dns_history_enabled']) ? 1 : 0;
         }
 
         // The domain's own renewal price: only when the form has the fields and billing is on
-        $billing = new \App\Services\BillingService();
-        if (isset($_POST['billing_price_field']) && $billing->isOn()) {
-            [$ownPrice, $ownCurrency, $priceError] = $billing->readOwnPrice($_POST['renewal_price'] ?? '', $_POST['renewal_currency'] ?? '');
-            if ($priceError !== null) {
-                $_SESSION['error'] = $priceError;
-                $this->redirect('/domains/' . $id . '/edit');
-                return;
-            }
-            $fields['renewal_price'] = $ownPrice;
-            $fields['renewal_currency'] = $ownCurrency;
+        if (isset($_POST['billing_price_field']) && (new \App\Services\BillingService())->isOn()) {
+            $changes['renewal_price'] = $_POST['renewal_price'] ?? '';
+            $changes['renewal_currency'] = $_POST['renewal_currency'] ?? '';
         }
 
-        $this->domainModel->update($id, $fields);
+        $result = $this->domainService()->update($domain, $changes, (int)\Core\Auth::id());
 
-        // An expiry date moved ahead by hand is a renewal no check can see, for TLDs whose lookup has no date
-        $savedLookup = json_decode((string)($domain['whois_data'] ?? ''), true);
-        $oldTime = strtotime((string)($domain['expiration_date'] ?? ''));
-        $newTime = is_string($manualExpirationDate) ? strtotime($manualExpirationDate) : false;
-        if (empty($savedLookup['expiration_date']) && $oldTime && $newTime && $newTime > time()
-            && $newTime - $oldTime >= \App\Services\WhoisService::RENEWAL_MIN_DAYS * 86400) {
-            $billing->logDetectedRenewal($domain, ['registrar' => $domain['registrar'] ?? null], [
-                'old_expiration' => $domain['expiration_date'],
-                'new_expiration' => date('Y-m-d', $newTime),
-                'auto_renew_period' => false,
-            ]);
-        }
-
-        // Send notification if monitoring status changed and has notification group
-        if ($statusChanged && $groupId) {
-            $notificationService = new \App\Services\NotificationService();
-            
-            if ($isActive) {
-                // Monitoring activated
-                $message = "🟢 Domain monitoring has been ACTIVATED for {$domain['domain_name']}\n\n" .
-                          "The domain will now be monitored regularly and you'll receive expiration alerts.";
-                $subject = "✅ Monitoring Activated: {$domain['domain_name']}";
-            } else {
-                // Monitoring deactivated
-                $message = "🔴 Domain monitoring has been DEACTIVATED for {$domain['domain_name']}\n\n" .
-                          "You will no longer receive alerts for this domain until monitoring is re-enabled.";
-                $subject = "⏸️ Monitoring Paused: {$domain['domain_name']}";
-            }
-            
-            $notificationService->sendToGroup($groupId, $subject, $message);
-        }
-
-        // Send notification if SSL monitoring changed and has notification group
-        $sslMonitoringChanged = (($domain['ssl_monitoring_enabled'] ?? 0) != $sslMonitoringEnabled);
-        if ($sslMonitoringChanged && $groupId) {
-            $notificationService = new \App\Services\NotificationService();
-
-            if ($sslMonitoringEnabled) {
-                $message = "🟢 SSL monitoring has been ENABLED for {$domain['domain_name']}\n\n" .
-                          "The root certificate and monitored SSL endpoints will now be checked automatically.";
-                $subject = "✅ SSL Monitoring Enabled: {$domain['domain_name']}";
-            } else {
-                $message = "🔴 SSL monitoring has been DISABLED for {$domain['domain_name']}\n\n" .
-                          "SSL certificates will no longer be checked until monitoring is re-enabled.";
-                $subject = "⏸️ SSL Monitoring Disabled: {$domain['domain_name']}";
-            }
-
-            $notificationService->sendToGroup($groupId, $subject, $message);
-        }
-
-        // Send notification if DNS monitoring changed and has notification group
-        $dnsMonitoringChanged = (($domain['dns_monitoring_enabled'] ?? 1) != $dnsMonitoringEnabled);
-        if ($dnsMonitoringChanged && $groupId) {
-            $notificationService = new \App\Services\NotificationService();
-
-            if ($dnsMonitoringEnabled) {
-                $message = "🟢 DNS monitoring has been ENABLED for {$domain['domain_name']}\n\n" .
-                          "DNS records will be checked for changes and you'll receive alerts when they change.";
-                $subject = "✅ DNS Monitoring Enabled: {$domain['domain_name']}";
-            } else {
-                $message = "🔴 DNS monitoring has been DISABLED for {$domain['domain_name']}\n\n" .
-                          "DNS records will no longer be checked. You will not receive DNS change alerts.";
-                $subject = "⏸️ DNS Monitoring Disabled: {$domain['domain_name']}";
-            }
-
-            $notificationService->sendToGroup($groupId, $subject, $message);
-        }
-        
-        // Also send notification if group changed and monitoring is active
-        if (!$statusChanged && $isActive && $oldGroupId != $groupId) {
-            $notificationService = new \App\Services\NotificationService();
-            
-            if ($groupId) {
-                // Assigned to new group
-                $groupModel = new NotificationGroup();
-                $group = $groupModel->find($groupId);
-                $groupName = $group ? $group['name'] : 'Unknown Group';
-                
-                $message = "🔔 Notification group updated for {$domain['domain_name']}\n\n" .
-                          "This domain is now assigned to: {$groupName}\n" .
-                          "You will receive expiration alerts through this notification group.";
-                $subject = "📬 Group Changed: {$domain['domain_name']}";
-                
-                $notificationService->sendToGroup($groupId, $subject, $message);
-            }
-        }
-
-        // Handle tags using the new tag system
-        if (!empty($tags)) {
-            $tagModel = new \App\Models\Tag();
-            $tagModel->updateDomainTags($id, $tags, $userId);
-        } else {
-            // Remove all tags from domain
-            $tagModel = new \App\Models\Tag();
-            $tagModel->removeAllFromDomain($id);
+        if (!$result['ok']) {
+            $_SESSION['error'] = $result['error'];
+            $this->redirect('/domains/' . $id . '/edit');
+            return;
         }
 
         $_SESSION['success'] = 'Domain updated successfully';
         $this->redirect('/domains/' . $id);
-    }
-
-    /**
-     * Perform WHOIS lookup and persist results.
-     * @return string|null Status message on success, null on failure.
-     */
-    private function performWhoisRefresh(int $id, array $domain): ?string
-    {
-        $logger = new \App\Services\Logger();
-
-        $whoisData = $this->whoisService->getDomainInfo($domain['domain_name']);
-
-        if (!$whoisData) {
-            $logger->error('WHOIS refresh failed', [
-                'domain_id' => $id,
-                'domain_name' => $domain['domain_name'],
-                'user_id' => \Core\Auth::id()
-            ]);
-            return null;
-        }
-
-        $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
-        $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
-        $renewal = $this->whoisService->detectRenewal($domain, $whoisData, $status);
-        if ($renewal) {
-            // Billing logs the payment for it. This never throws.
-            (new \App\Services\BillingService())->logDetectedRenewal($domain, $whoisData, $renewal);
-        }
-        $whoisData = $this->whoisService->keepKnownPrivacy($domain, $whoisData);
-
-        $this->domainModel->update($id, [
-            'registrar' => $whoisData['registrar'],
-            'registrar_url' => $whoisData['registrar_url'] ?? null,
-            'expiration_date' => $expirationDate,
-            'updated_date' => $whoisData['updated_date'] ?? null,
-            'abuse_email' => $whoisData['abuse_email'] ?? null,
-            'last_checked' => date('Y-m-d H:i:s'),
-            'status' => $status,
-            'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE)
-        ]);
-
-        $this->sendWhoisRefreshAlerts($id, $this->whoisService->getLastKnownStatus($domain), $status, $renewal);
-
-        $logger->info('WHOIS refresh completed', [
-            'domain_id' => $id,
-            'domain_name' => $domain['domain_name'],
-            'new_status' => $status,
-            'registrar' => $whoisData['registrar'],
-            'expiration_date' => $whoisData['expiration_date'],
-            'user_id' => \Core\Auth::id()
-        ]);
-
-        return 'WHOIS updated';
     }
 
     /**
@@ -976,40 +734,7 @@ class DomainController extends Controller
      */
     private function isCheckedByCron(array $domain, string $check): bool
     {
-        if (empty($domain['is_active'])) {
-            return false;
-        }
-
-        return $check === 'whois'
-            || (!empty($domain[$check . '_monitoring_enabled'])
-                && in_array($domain['status'] ?? '', Domain::DNS_SSL_CHECK_STATUSES, true));
-    }
-
-    /**
-     * Send the status change and renewal alerts for a WHOIS refresh. The cron compares against
-     * the saved data, so a change found here would otherwise never be alerted.
-     *
-     * @param string $oldStatus WhoisService::getLastKnownStatus() of the domain before the refresh
-     */
-    private function sendWhoisRefreshAlerts(int $id, string $oldStatus, string $status, ?array $renewal): void
-    {
-        if ($oldStatus === $status && $renewal === null) {
-            return;
-        }
-
-        $domain = $this->domainModel->find($id);
-        if (!$domain || !$this->isCheckedByCron($domain, 'whois')) {
-            return;
-        }
-
-        $notificationService = new \App\Services\NotificationService();
-
-        if ($oldStatus !== $status) {
-            $notificationService->alertDomainStatusChange($domain, $oldStatus, $status, $renewal !== null);
-        }
-        if ($renewal !== null) {
-            $notificationService->alertDomainRenewal($domain, $renewal);
-        }
+        return Domain::isCheckedByCron($domain, $check);
     }
 
     /**
@@ -1368,10 +1093,10 @@ class DomainController extends Controller
             return;
         }
 
-        $result = $this->performWhoisRefresh($id, $domain);
+        $result = $this->domainService()->refresh($domain, \Core\Auth::id());
 
-        if ($result === null) {
-            $_SESSION['error'] = WhoisService::getLastErrorMessage() ?? 'Could not retrieve WHOIS information';
+        if (!$result['ok']) {
+            $_SESSION['error'] = $result['error'] ?? 'Could not retrieve WHOIS information';
         } else {
             $_SESSION['success'] = 'WHOIS information refreshed';
         }
@@ -1398,7 +1123,7 @@ class DomainController extends Controller
         }
 
         $messages = [];
-        $messages[] = $this->performWhoisRefresh($id, $domain) ?? 'WHOIS failed';
+        $messages[] = $this->domainService()->refresh($domain, \Core\Auth::id())['ok'] ? 'WHOIS updated' : 'WHOIS failed';
         if (!empty($domain['dns_monitoring_enabled'])) {
             $messages[] = $this->performDnsRefresh($id, $domain);
         } else {
@@ -1429,7 +1154,7 @@ class DomainController extends Controller
 
         $this->verifyCsrf('/domains');
 
-        $id = $params['id'] ?? 0;
+        $id = (int)($params['id'] ?? 0);
         $domain = $this->checkDomainAccess($id);
 
         if (!$domain) {
@@ -1438,9 +1163,9 @@ class DomainController extends Controller
             return;
         }
 
-        $historyKept = (new \App\Services\DnsHistoryService())->recordDeletion($domain);
-        $paymentsKept = (new \App\Services\BillingService())->hasPayments($domain);
-        $this->domainModel->delete($id);
+        $result = $this->domainService()->delete($domain);
+        $historyKept = $result['history_kept'];
+        $paymentsKept = $result['payments_kept'];
         $_SESSION['success'] = 'Domain deleted successfully' . ($historyKept ? '. ' . $this->dnsHistoryKeptNote(1) : '')
             . ($paymentsKept ? ($historyKept ? ' ' : '. ') . 'Its payments are kept in Billing.' : '');
         $this->redirect('/domains');
@@ -1895,7 +1620,7 @@ class DomainController extends Controller
         $this->verifyCsrf('/domains');
 
         $domainIds = $_POST['domain_ids'] ?? [];
-        
+
         if (empty($domainIds)) {
             $_SESSION['error'] = 'No domains selected';
             $this->redirect('/domains');
@@ -1927,6 +1652,7 @@ class DomainController extends Controller
         $refreshed = 0;
         $failed = 0;
         $failureReasons = [];
+        $domainService = $this->domainService();
 
         foreach ($domainIds as $id) {
             // Check domain access based on isolation mode
@@ -1937,42 +1663,19 @@ class DomainController extends Controller
             }
             if (!$domain) continue;
 
-            $whoisData = $this->whoisService->getDomainInfo($domain['domain_name']);
+            // The same refresh as the button on a domain page. This loop writes its own log lines.
+            $result = $domainService->refresh($domain, $userId, false);
 
-            if (!$whoisData) {
+            if (!$result['ok']) {
                 $logger->warning('Bulk refresh failed for domain - WHOIS data not retrieved', [
                     'domain_id' => $id,
                     'domain_name' => $domain['domain_name'] ?? 'unknown',
                     'user_id' => $userId
                 ]);
                 $failed++;
-                $failureReasons[WhoisService::getLastErrorMessage() ?? 'WHOIS lookup failed.'][] = $domain['domain_name'];
+                $failureReasons[$result['error'] ?? 'WHOIS lookup failed.'][] = $domain['domain_name'];
                 continue;
             }
-
-            // Use WHOIS expiration date if available, otherwise preserve manual expiration date
-            $expirationDate = $whoisData['expiration_date'] ?? $domain['expiration_date'];
-            
-            $status = $this->whoisService->getDomainStatus($expirationDate, $whoisData['status'] ?? [], $whoisData);
-            $renewal = $this->whoisService->detectRenewal($domain, $whoisData, $status);
-            if ($renewal) {
-                // Billing logs the payment for it. This never throws.
-                (new \App\Services\BillingService())->logDetectedRenewal($domain, $whoisData, $renewal);
-            }
-            $whoisData = $this->whoisService->keepKnownPrivacy($domain, $whoisData);
-
-            $this->domainModel->update($id, [
-                'registrar' => $whoisData['registrar'],
-                'registrar_url' => $whoisData['registrar_url'] ?? null,
-                'expiration_date' => $expirationDate,
-                'updated_date' => $whoisData['updated_date'] ?? null,
-                'abuse_email' => $whoisData['abuse_email'] ?? null,
-                'last_checked' => date('Y-m-d H:i:s'),
-                'status' => $status,
-                'whois_data' => json_encode($whoisData, JSON_INVALID_UTF8_SUBSTITUTE)
-            ]);
-
-            $this->sendWhoisRefreshAlerts((int)$id, $this->whoisService->getLastKnownStatus($domain), $status, $renewal);
 
             $refreshed++;
         }
@@ -2004,7 +1707,7 @@ class DomainController extends Controller
         $this->verifyCsrf('/domains');
 
         $domainIds = $_POST['domain_ids'] ?? [];
-        
+
         if (empty($domainIds)) {
             $_SESSION['error'] = 'No domains selected';
             $this->redirect('/domains');
@@ -2023,8 +1726,7 @@ class DomainController extends Controller
         $settingModel = new \App\Models\Setting();
         $isolationMode = $settingModel->getValue('user_isolation_mode', 'shared');
 
-        $historyService = new \App\Services\DnsHistoryService();
-        $billingService = new \App\Services\BillingService();
+        $domainService = $this->domainService();
         $deleted = 0;
         $historyKept = 0;
         $paymentsKept = 0;
@@ -2039,12 +1741,12 @@ class DomainController extends Controller
                 continue;
             }
 
-            $kept = $historyService->recordDeletion($domain);
-            $hadPayments = $billingService->hasPayments($domain);
-            if ($this->domainModel->delete($id)) {
+            // The same delete as the button on a domain page
+            $result = $domainService->delete($domain);
+            if ($result['deleted']) {
                 $deleted++;
-                $historyKept += $kept ? 1 : 0;
-                $paymentsKept += $hadPayments ? 1 : 0;
+                $historyKept += $result['history_kept'] ? 1 : 0;
+                $paymentsKept += $result['payments_kept'] ? 1 : 0;
             }
         }
 
@@ -2232,31 +1934,28 @@ class DomainController extends Controller
 
         $id = (int)($params['id'] ?? 0);
         $domain = $this->checkDomainAccess($id);
-        
+
         if (!$domain) {
             $_SESSION['error'] = 'Domain not found';
             $this->redirect('/domains');
             return;
         }
 
+        // As posted, not trimmed. Anything but text is the service's to refuse.
         $notes = $_POST['notes'] ?? '';
-
-        // Validate notes length
-        $lengthError = \App\Helpers\InputValidator::validateLength($notes, 5000, 'Notes');
 
         $settingModel = new \App\Models\Setting();
         $viewTemplate = $settingModel->getValue('domain_view_template', 'detailed');
         $redirect = '/domains/' . $id . ($viewTemplate === 'detailed' ? '#overview' : '');
 
-        if ($lengthError) {
-            $_SESSION['error'] = $lengthError;
+        // The length check is the service's
+        $result = $this->domainService()->update($domain, ['notes' => $notes], (int)\Core\Auth::id());
+
+        if (!$result['ok']) {
+            $_SESSION['error'] = $result['error'];
             $this->redirect($redirect);
             return;
         }
-
-        $this->domainModel->update($id, [
-            'notes' => $notes
-        ]);
 
         $_SESSION['success'] = 'Notes updated successfully';
         $this->redirect($redirect);

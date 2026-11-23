@@ -9,6 +9,9 @@ class Database
 {
     private static ?PDO $pdo = null;
 
+    /** A connection was tried in this request and failed */
+    private static bool $failed = false;
+
     public function __construct()
     {
         if (self::$pdo === null) {
@@ -44,8 +47,17 @@ class Database
                 PDO::ATTR_EMULATE_PREPARES => false,
             ]);
         } catch (PDOException $e) {
+            self::$failed = true;
             throw new \Exception("Database connection failed: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Whether connecting was tried and failed, so the error handler does not try again
+     */
+    public static function hasFailed(): bool
+    {
+        return self::$failed;
     }
 
     public static function getConnection(): PDO

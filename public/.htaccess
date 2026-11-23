@@ -1,5 +1,9 @@
 RewriteEngine On
 
+# Pass the Authorization header on to PHP, which CGI and FPM setups drop (API tokens)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # Redirect to index.php
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

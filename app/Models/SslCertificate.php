@@ -27,7 +27,7 @@ class SslCertificate extends Model
     public function getAllMonitored(?int $userId = null): array
     {
         $sql = "SELECT sc.id, sc.domain_id, sc.hostname, sc.port, sc.status, sc.is_trusted,
-                       sc.valid_to, sc.issuer_name, sc.last_checked, sc.last_error,
+                       sc.valid_from, sc.valid_to, sc.issuer_name, sc.last_checked, sc.last_error,
                        JSON_UNQUOTE(JSON_EXTRACT(sc.raw_data, '$.issuer.O')) AS issuer_organization,
                        d.domain_name
                 FROM ssl_certificates sc

@@ -10,16 +10,6 @@ namespace App\Helpers;
 class InputValidator
 {
     /**
-     * Second-level labels that ccTLD registries use for registrations (e.g. .com.br, .co.uk, .gob.mx, .me.uk).
-     * Every label that is a registration suffix under at least 9 two-letter ccTLDs in the ICANN section
-     * of the Public Suffix List (checked November 2026), plus ltd/plc (.uk) and ne (.jp).
-     */
-    private const COMMON_SECOND_LEVEL_SUFFIXES = [
-        'com', 'net', 'org', 'co', 'ac', 'gov', 'edu', 'biz', 'info', 'ltd', 'plc', 'or', 'ne', 'go', 'mil', 'nom', 'sch',
-        'gob', 'name', 'int', 'pro', 'tv', 'web', 'tm', 'asso', 'me', 'coop', 'id', 'med',
-    ];
-
-    /**
      * Validate domain name format
      *
      * @param string $domain Domain name to validate
@@ -60,7 +50,8 @@ class InputValidator
 
     /**
      * Validate that a domain is a registrable root domain (not a subdomain).
-     * Uses the tld_registry table to identify multi-level TLDs like .co.uk.
+     * Uses the Public Suffix List that TLD Registry imports, and the tld_registry table, to know
+     * multi-level endings like .co.uk or .my.id.
      *
      * @return array{valid: bool, domain: string, error: string|null}
      */
@@ -99,15 +90,32 @@ class InputValidator
             $labelCount = count($parts) - 1;
         }
 
-        // The IANA import only holds single-label TLDs, so multi-level ccTLDs like .com.br are
-        // recognised here: the match was a two-letter ccTLD and the label before it is a common
-        // second-level suffix. Less common ones (e.g. .blog.br) can be added in TLD Registry.
         $partCount = count($parts);
-        if ($partCount >= 3
+        $publicSuffix = (new \App\Services\DomainSuffixService())->publicSuffix($domain);
+        if ($publicSuffix !== null) {
+            // The Public Suffix List, once TLD Registry has imported it, knows every ending that
+            // takes registrations, such as .co.uk or .my.id (#112). A longer ending in TLD
+            // Registry, such as one an admin added by hand, still counts.
+            $suffixLabels = substr_count($publicSuffix, '.') + 1;
+            if ($suffixLabels > $partCount - $labelCount) {
+                $matchedTld = '.' . $publicSuffix;
+                $labelCount = $partCount - $suffixLabels;
+            }
+            if ($labelCount === 0) {
+                return [
+                    'valid' => false,
+                    'domain' => $domain,
+                    'error' => "\"$domain\" is a domain ending, not a domain that can be registered"
+                ];
+            }
+        } elseif ($partCount >= 3
             && $labelCount === $partCount - 1
             && strlen($parts[$partCount - 1]) === 2
-            && in_array($parts[$partCount - 2], self::COMMON_SECOND_LEVEL_SUFFIXES, true)
         ) {
+            // Until the list is imported, only the list could tell a second-level ending such as
+            // .com.br from a domain under a country TLD, so the check gives way: under a two-letter
+            // TLD the last two labels count as the ending. example.com.br is accepted, and so is
+            // blog.example.de; blog.example.com.br is still taken for a subdomain.
             $matchedTld = '.' . $parts[$partCount - 2] . $matchedTld;
             $labelCount = $partCount - 2;
         }

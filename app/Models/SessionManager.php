@@ -69,14 +69,57 @@ class SessionManager extends Model
     }
 
     /**
+     * What getGeolocationData() answered for each address during this request. A sign-in asks
+     * twice for the same address, for its session row and for its notification: the second time
+     * costs no request, and a lookup service that does not answer is waited for once.
+     */
+    private static array $geolocationByAddress = [];
+
+    /**
      * Get geolocation data from IP address
      * (Moved from old Session model)
      */
     public static function getGeolocationData(string $ipAddress): array
     {
+        if (!isset(self::$geolocationByAddress[$ipAddress])) {
+            self::$geolocationByAddress[$ipAddress] = self::lookUpGeolocation($ipAddress);
+        }
+
+        return self::$geolocationByAddress[$ipAddress];
+    }
+
+    /**
+     * Whether an address is a public one. Only those are looked up: not an address of a private
+     * or reserved range (local networks, Docker, link-local, loopback), IPv4 or IPv6.
+     */
+    private static function isPublicAddress(string $ipAddress): bool
+    {
+        if (filter_var($ipAddress, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+            return false;
+        }
+
+        // 100.64.0.0/10, shared by providers and VPNs, is on neither of PHP's two lists
+        return !preg_match('/^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\./', $ipAddress);
+    }
+
+    /**
+     * Look one address up, or answer without asking where there is nothing to look up
+     */
+    private static function lookUpGeolocation(string $ipAddress): array
+    {
+        // An IPv4 address written as IPv6 (::ffff:192.168.1.5) is the IPv4 address: PHP versions
+        // disagree on whether that form is a reserved one
+        if (preg_match('/^::ffff:(\d{1,3}(\.\d{1,3}){3})$/i', $ipAddress, $mapped)) {
+            $ipAddress = $mapped[1];
+        }
+
+        // Text that is no address is not sent to the lookup service
+        if ($ipAddress !== 'localhost' && filter_var($ipAddress, FILTER_VALIDATE_IP) === false) {
+            return self::getDefaultGeolocation();
+        }
+
         // Skip for localhost/private IPs
-        if (in_array($ipAddress, ['127.0.0.1', '::1', 'localhost']) || 
-            preg_match('/^(10|172\.16|192\.168)\./', $ipAddress)) {
+        if (!self::isPublicAddress($ipAddress)) {
             return [
                 'country' => 'Local',
                 'country_code' => 'xx',
@@ -106,7 +149,8 @@ class SessionManager extends Model
             
             $data = json_decode($response, true);
             
-            if (!$data || $data['status'] !== 'success') {
+            // Without "status": "success" it is no answer, whatever else came back
+            if (!$data || ($data['status'] ?? null) !== 'success') {
                 return self::getDefaultGeolocation();
             }
             
@@ -122,7 +166,7 @@ class SessionManager extends Model
         } catch (\Exception $e) {
             $logger = new \App\Services\Logger();
             $logger->warning('Geolocation lookup failed', [
-                'ip' => $ip,
+                'ip' => $ipAddress,
                 'error' => $e->getMessage()
             ]);
             return self::getDefaultGeolocation();
@@ -176,17 +220,24 @@ class SessionManager extends Model
     }
 
     /**
-     * Clean old sessions (older than session lifetime)
+     * Delete all sessions that are past their lifetime: the ones the session handler no longer
+     * accepts. The lifetime is the configured one, never a fixed 24 hours: with a longer
+     * SESSION_LIFETIME that ended sessions that were still valid.
+     *
+     * The statement itself is the handler's (DatabaseSessionHandler::deleteExpired()), which
+     * removes a batch per call. Here it runs until nothing is left: Profile lists right after.
      */
-    public function cleanOldSessions(int $lifetimeMinutes = 1440): int
+    public function cleanOldSessions(): int
     {
-        $cutoff = time() - ($lifetimeMinutes * 60);
-        
-        $stmt = $this->db->prepare(
-            "DELETE FROM sessions WHERE last_activity < ?"
-        );
-        $stmt->execute([$cutoff]);
-        return $stmt->rowCount();
+        $lifetime = \Core\SessionConfig::lifetime();
+        $deleted = 0;
+
+        do {
+            $batch = \Core\DatabaseSessionHandler::deleteExpired($this->db, $lifetime);
+            $deleted += $batch;
+        } while ($batch >= \Core\DatabaseSessionHandler::EXPIRED_BATCH);
+
+        return $deleted;
     }
 }
 

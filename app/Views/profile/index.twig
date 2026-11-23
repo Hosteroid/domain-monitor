@@ -79,6 +79,12 @@
                     <i class="fas fa-laptop w-5 mr-3 text-sm"></i>
                     <span>Active Sessions</span>
                 </button>
+                {% if api %}
+                <button onclick="showSection('api')" id="nav-api" class="nav-item w-full flex items-center px-4 py-2.5 text-sm font-medium rounded-lg transition-colors mb-1">
+                    <i class="fas fa-plug w-5 mr-3 text-sm"></i>
+                    <span>API Tokens</span>
+                </button>
+                {% endif %}
                 
                 {% if user.role != 'admin' %}
                 <hr class="my-3 border-gray-200 dark:border-slate-700">
@@ -356,13 +362,10 @@
 
                             <div class="flex flex-col sm:flex-row gap-3">
                                 {% if twoFactorStatus.backup_codes_count < 3 %}
-                                <form method="POST" action="/2fa/regenerate-backup-codes" onsubmit="return confirmSubmit(event, 'Generate new backup codes? Your current codes will stop working.', { title: 'Regenerate Codes', icon: 'fa-key text-blue-500', confirmText: 'Generate', confirmClass: 'bg-blue-600 hover:bg-blue-700' })">
-                                    {{ csrf_field() }}
-                                    <button type="submit" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium">
-                                        <i class="fas fa-refresh mr-2"></i>
-                                        Generate New Backup Codes
-                                    </button>
-                                </form>
+                                <button type="button" onclick="showBackupCodesModal()" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                                    <i class="fas fa-refresh mr-2"></i>
+                                    Generate New Backup Codes
+                                </button>
                                 {% endif %}
 
                                 {% if twoFactorPolicy != 'forced' %}
@@ -497,8 +500,11 @@
                         <div>
                             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Active Sessions</h3>
                             <p class="text-sm text-gray-600 dark:text-slate-400 mt-1">Manage devices and sessions where you're logged in ({{ sessions|default([])|length }} active)</p>
+                            {% if rememberedElsewhere|default(0) > 0 %}
+                            <p class="text-sm text-amber-700 dark:text-amber-300 mt-1">{{ rememberedElsewhere }} {{ rememberedElsewhere == 1 ? 'browser' : 'browsers' }} with "Remember me" {{ rememberedElsewhere == 1 ? 'has' : 'have' }} no active session but can still log in. Logout Others removes {{ rememberedElsewhere == 1 ? 'it' : 'them' }}.</p>
+                            {% endif %}
                         </div>
-                        {% if sessions|default([])|length > 1 %}
+                        {% if sessions|default([])|length > 1 or rememberedElsewhere|default(0) > 0 %}
                         <form method="POST" action="/profile/logout-other-sessions" onsubmit="return confirmSubmit(event, 'Logout all other sessions?', { title: 'Logout Sessions', icon: 'fa-sign-out-alt text-red-500' })" class="inline">
                             {{ csrf_field() }}
                             <button type="submit" class="inline-flex items-center px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium">
@@ -612,6 +618,11 @@
             </div>
         </div>
 
+        <!-- API Tokens Section -->
+        {% if api %}
+        {% include 'profile/_api_tokens.twig' %}
+        {% endif %}
+
         <!-- Danger Zone Section -->
         {% if user.role != 'admin' %}
         <div id="section-danger" class="content-section hidden">
@@ -709,7 +720,7 @@ function showSection(section) {
 
 document.addEventListener('DOMContentLoaded', function() {
     const hash = window.location.hash.substring(1);
-    const validSections = ['profile', 'security', 'twofactor', 'sessions'{% if user.role != 'admin' %}, 'danger'{% endif %}];
+    const validSections = ['profile', 'security', 'twofactor', 'sessions'{% if api %}, 'api'{% endif %}{% if user.role != 'admin' %}, 'danger'{% endif %}];
     
     if (hash && validSections.includes(hash)) {
         showSection(hash);
@@ -734,7 +745,86 @@ function hideDisable2FAModal() {
     document.getElementById('disable2FAModal').classList.add('hidden');
     document.getElementById('disable2FAForm').reset();
 }
+
+function showBackupCodesModal() {
+    document.getElementById('backupCodesModal').classList.remove('hidden');
+    document.getElementById('backupCodesCode').focus();
+}
+
+function hideBackupCodesModal() {
+    document.getElementById('backupCodesModal').classList.add('hidden');
+    document.getElementById('backupCodesForm').reset();
+}
+
+// The two forms that take a 2FA code go out once, whether by the button or by Enter: a code
+// works once, so a second send would be refused, and its answer would be the one shown
+document.addEventListener('DOMContentLoaded', function() {
+    ['disable2FAForm', 'backupCodesForm'].forEach(function(id) {
+        const form = document.getElementById(id);
+        let sent = false;
+
+        form.addEventListener('submit', function(e) {
+            if (sent) {
+                e.preventDefault();
+                return;
+            }
+            sent = true;
+        });
+        // Back on this page through the browser's Back button: it may be sent again
+        window.addEventListener('pageshow', function(e) {
+            if (e.persisted) {
+                sent = false;
+            }
+        });
+    });
+});
 </script>
+
+<!-- New Backup Codes Modal: they take a 2FA code, like turning 2FA off -->
+<div id="backupCodesModal" class="hidden fixed inset-0 bg-gray-600/50 dark:bg-black/60 overflow-y-auto h-full w-full z-50">
+    <div class="relative top-20 mx-auto p-5 border border-gray-200 dark:border-slate-700 w-96 shadow-lg rounded-md bg-white dark:bg-slate-800">
+        <div class="mt-3">
+            <div class="flex items-center justify-center w-12 h-12 mx-auto bg-blue-100 dark:bg-blue-500/20 rounded-full mb-4">
+                <i class="fas fa-key text-blue-600 dark:text-blue-400 text-xl"></i>
+            </div>
+
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white text-center mb-2">Generate New Backup Codes</h3>
+            <p class="text-sm text-gray-500 dark:text-slate-400 text-center mb-6">
+                Your current backup codes will stop working. Enter your 2FA code to confirm.
+            </p>
+
+            <form id="backupCodesForm" method="POST" action="/2fa/regenerate-backup-codes" class="space-y-4">
+                {{ csrf_field() }}
+                <div>
+                    <label for="backupCodesCode" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                        Verification Code
+                    </label>
+                    <input type="text"
+                           id="backupCodesCode"
+                           name="verification_code"
+                           maxlength="8"
+                           placeholder="Enter 2FA code"
+                           autocomplete="one-time-code"
+                           class="w-full px-3 py-2.5 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary transition-colors text-sm bg-white dark:bg-slate-700 text-gray-900 dark:text-white"
+                           required>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Enter your authenticator code or one of your backup codes</p>
+                </div>
+
+                <div class="flex space-x-3 pt-4">
+                    <button type="submit"
+                            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-medium transition-colors text-sm">
+                        Generate
+                    </button>
+                    <button type="button"
+                            onclick="hideBackupCodesModal()"
+                            class="flex-1 bg-gray-300 dark:bg-slate-600 hover:bg-gray-400 dark:hover:bg-slate-500 text-gray-700 dark:text-slate-300 py-2.5 rounded-lg font-medium transition-colors text-sm">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <!-- Disable 2FA Modal -->
 <div id="disable2FAModal" class="hidden fixed inset-0 bg-gray-600/50 dark:bg-black/60 overflow-y-auto h-full w-full z-50">

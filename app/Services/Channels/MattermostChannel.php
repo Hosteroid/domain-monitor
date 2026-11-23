@@ -101,9 +101,8 @@ class MattermostChannel implements NotificationChannelInterface
             }
             return $ok;
         } catch (\Exception $e) {
-            $this->logger->error('Mattermost send failed', [
-                'exception' => $e->getMessage()
-            ]);
+            // The message names the webhook's address, which is its secret
+            $this->logger->error('Mattermost send failed', ChannelLog::error($e, [$config['webhook_url']]));
             return false;
         }
     }

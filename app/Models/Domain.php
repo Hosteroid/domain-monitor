@@ -31,22 +31,24 @@ class Domain extends Model
         $sql = "SELECT d.*, ng.name as group_name,
                        GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ',') as tags,
                        GROUP_CONCAT(t.color ORDER BY t.name SEPARATOR '|') as tag_colors
-                FROM domains d 
+                FROM domains d
                 LEFT JOIN notification_groups ng ON d.notification_group_id = ng.id
-                LEFT JOIN domain_tags dt ON d.id = dt.domain_id
-                LEFT JOIN tags t ON dt.tag_id = t.id";
-        
+                LEFT JOIN domain_tags dt ON d.id = dt.domain_id";
+
         if ($userId) {
-            // In isolated mode: only show tags that belong to this user or are global
-            $sql .= " WHERE d.user_id = ? AND (t.user_id = ? OR t.user_id IS NULL) GROUP BY d.id ORDER BY d.status DESC, d.expiration_date ASC";
+            // In isolated mode: only show tags that belong to this user or are global. The condition
+            // is part of the join: as a WHERE clause it also hid a domain whose tags all belong to
+            // someone else.
+            $sql .= " LEFT JOIN tags t ON dt.tag_id = t.id AND (t.user_id = ? OR t.user_id IS NULL)
+                WHERE d.user_id = ? GROUP BY d.id ORDER BY d.status DESC, d.expiration_date ASC";
             $stmt = $this->db->prepare($sql);
             $stmt->execute([$userId, $userId]);
         } else {
             // In shared mode: show all tags
-            $sql .= " GROUP BY d.id ORDER BY d.status DESC, d.expiration_date ASC";
+            $sql .= " LEFT JOIN tags t ON dt.tag_id = t.id GROUP BY d.id ORDER BY d.status DESC, d.expiration_date ASC";
             $stmt = $this->db->query($sql);
         }
-        
+
         return $stmt->fetchAll();
     }
 
@@ -154,6 +156,64 @@ class Domain extends Model
         $stmt->execute($params);
         $result = $stmt->fetch();
         return $result ?: null;
+    }
+
+    /**
+     * Find domain by name with user isolation support
+     */
+    public function findByNameWithIsolation(string $name, ?int $userId = null): ?array
+    {
+        $sql = "SELECT * FROM domains WHERE domain_name = ?";
+        $params = [$name];
+
+        if ($userId) {
+            $sql .= " AND user_id = ?";
+            $params[] = $userId;
+        }
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $result = $stmt->fetch();
+        return $result ?: null;
+    }
+
+    /**
+     * When domains were added, as unix times by domain id. The database fills created_at in its
+     * own time zone, so the text of the column alone does not say which moment it was.
+     *
+     * @param int[] $ids
+     * @return array<int,int>
+     */
+    public function createdTimestamps(array $ids): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (!$ids) {
+            return [];
+        }
+
+        $stmt = $this->db->prepare(
+            "SELECT id, UNIX_TIMESTAMP(created_at) AS created FROM domains WHERE id IN ("
+            . implode(',', array_fill(0, count($ids), '?')) . ")"
+        );
+        $stmt->execute($ids);
+
+        return array_map('intval', array_column($stmt->fetchAll(), 'created', 'id'));
+    }
+
+    /**
+     * Whether the cron checks this domain's WHOIS, DNS or SSL, so a refresh started by hand sends
+     * the alerts the cron would have sent: domain monitoring is on and, for DNS and SSL, their own
+     * monitoring too, with a domain status those checks run for
+     */
+    public static function isCheckedByCron(array $domain, string $check): bool
+    {
+        if (empty($domain['is_active'])) {
+            return false;
+        }
+
+        return $check === 'whois'
+            || (!empty($domain[$check . '_monitoring_enabled'])
+                && in_array($domain['status'] ?? '', self::DNS_SSL_CHECK_STATUSES, true));
     }
 
     /**
@@ -602,22 +662,26 @@ class Domain extends Model
      */
     public function getWithTagsAndGroups(int $id, ?int $userId = null): ?array
     {
+        // In isolated mode: only show tags that belong to this user or are global. The condition is
+        // part of the join: as a WHERE clause it also hid a domain whose tags all belong to someone else.
+        $tagJoin = "LEFT JOIN tags t ON dt.tag_id = t.id";
+        $params = [];
+        if ($userId) {
+            $tagJoin .= " AND (t.user_id = ? OR t.user_id IS NULL)";
+            $params[] = $userId;
+        }
+
         $sql = "SELECT d.*, ng.name as group_name, ng.id as group_id,
                        GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ',') as tags,
                        GROUP_CONCAT(t.color ORDER BY t.name SEPARATOR '|') as tag_colors
-                FROM domains d 
-                LEFT JOIN notification_groups ng ON d.notification_group_id = ng.id 
+                FROM domains d
+                LEFT JOIN notification_groups ng ON d.notification_group_id = ng.id
                 LEFT JOIN domain_tags dt ON d.id = dt.domain_id
-                LEFT JOIN tags t ON dt.tag_id = t.id
+                $tagJoin
                 WHERE d.id = ?";
-
-        // First parameter corresponds to d.id
-        $params = [$id];
+        $params[] = $id;
 
         if ($userId) {
-            // In isolated mode: only show tags that belong to this user or are global
-            $sql .= " AND (t.user_id = ? OR t.user_id IS NULL)";
-            $params[] = $userId;
             $sql .= " AND d.user_id = ?";
             $params[] = $userId;
         }

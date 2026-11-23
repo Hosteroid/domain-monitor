@@ -30,14 +30,12 @@ abstract class AbstractCtLogSource implements CtLogSourceInterface
         ]);
 
         $start = microtime(true);
-        $http_response_header = null;
-        $body = @file_get_contents($url, false, $ctx);
+        ['body' => $body, 'headers' => $responseHeaders] = \App\Helpers\HttpHelper::fetch($url, $ctx);
         $elapsed = microtime(true) - $start;
         $bodyLen = is_string($body) ? strlen($body) : 0;
 
         $log('--- response ---');
         $log('Time: ' . sprintf('%.1f', $elapsed) . 's');
-        $responseHeaders = is_array($http_response_header) ? $http_response_header : [];
         foreach ($responseHeaders ?: ['(no response headers — connection failed or timeout)'] as $header) {
             $log($header);
         }

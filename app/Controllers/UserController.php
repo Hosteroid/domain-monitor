@@ -364,6 +364,11 @@ class UserController extends Controller
                     return;
                 }
                 $this->userModel->changePassword($userId, $password);
+
+                // Browsers that were remembered with the old password are forgotten. When the
+                // admin changes their own password here, the browser they are using stays.
+                $ownToken = (int)$userId === (int)Auth::id() ? Auth::rememberCookie() : '';
+                (new \App\Models\RememberToken())->deleteOthers((int)$userId, $ownToken);
             }
 
             $_SESSION['success'] = 'User updated successfully';

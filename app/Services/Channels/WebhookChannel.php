@@ -48,39 +48,30 @@ class WebhookChannel implements NotificationChannelInterface
                     'status' => $status
                 ]);
             } else {
-                $responseBody = (string) $response->getBody();
                 $this->logger->error('Webhook responded with non-2xx', [
                     'url' => $this->maskUrl($url),
                     'format' => $format,
                     'status' => $status,
-                    'response_body' => $this->truncate($responseBody, 1000),
+                    'response_body' => ChannelLog::answer($response, [$url]),
                     'payload_preview' => $this->getPayloadPreview($payload)
                 ]);
             }
             return $ok;
         } catch (\GuzzleHttp\Exception\RequestException $e) {
-            // Guzzle request exception - may have response details
-            $errorDetails = [
+            // The request failed, maybe with an answer (4xx/5xx). ChannelLog puts together what
+            // the log says about it: the message names the webhook's address, which is its secret
+            $this->logger->error('Webhook request failed', [
                 'url' => $this->maskUrl($url),
-                'format' => $format,
-                'exception' => $e->getMessage(),
+                'format' => $format
+            ] + ChannelLog::error($e, [$url]) + [
                 'payload_preview' => $this->getPayloadPreview($payload)
-            ];
-            
-            // Include response body if available (e.g., 4xx/5xx errors)
-            if ($e->hasResponse()) {
-                $response = $e->getResponse();
-                $errorDetails['status'] = $response->getStatusCode();
-                $errorDetails['response_body'] = $this->truncate((string) $response->getBody(), 1000);
-            }
-            
-            $this->logger->error('Webhook request failed', $errorDetails);
+            ]);
             return false;
         } catch (\Exception $e) {
             $this->logger->error('Webhook send failed', [
                 'url' => $this->maskUrl($url),
-                'format' => $format,
-                'exception' => $e->getMessage(),
+                'format' => $format
+            ] + ChannelLog::error($e, [$url]) + [
                 'payload_preview' => $this->getPayloadPreview($payload)
             ]);
             return false;
@@ -212,12 +203,12 @@ class WebhookChannel implements NotificationChannelInterface
     }
 
     /**
-     * Mask sensitive parts of URL for logging (hide keys/tokens)
+     * The address for a log line: scheme and host only. The rest is the webhook's secret,
+     * whether it sits in the path or in the query string.
      */
     private function maskUrl(string $url): string
     {
-        // Mask query parameters that might contain keys/tokens
-        return preg_replace('/([?&](key|token|secret|password|auth)=)[^&]+/i', '$1***MASKED***', $url);
+        return ChannelLog::text($url);
     }
 
     /**

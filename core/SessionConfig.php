@@ -19,8 +19,7 @@ class SessionConfig
         try {
             // Check if database sessions are available
             if (self::isDatabaseSessionsAvailable()) {
-                $sessionLifetime = (int)($_ENV['SESSION_LIFETIME'] ?? 1440);
-                $handler = new DatabaseSessionHandler($sessionLifetime);
+                $handler = new DatabaseSessionHandler(self::lifetime());
                 session_set_save_handler($handler, true);
             }
             // If not available, PHP will use default file-based sessions (no action needed)
@@ -28,6 +27,21 @@ class SessionConfig
             // Fall back to default file-based sessions
             error_log("Database session handler not available, using file sessions: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Minutes a session may stay idle before it expires: SESSION_LIFETIME from .env, or 24 hours
+     * when that is missing or not a number above 0.
+     *
+     * The one place that reads it. The session handler and the clean-up of old rows
+     * (SessionManager::cleanOldSessions()) both go by it, so a row is deleted when the handler
+     * stops accepting it, not earlier and not later.
+     */
+    public static function lifetime(): int
+    {
+        $minutes = (int)($_ENV['SESSION_LIFETIME'] ?? 0);
+
+        return $minutes > 0 ? $minutes : 1440;
     }
 
     /**
@@ -72,6 +86,31 @@ class SessionConfig
         // Validate session exists in database (for database-backed sessions)
         // This ensures deleted sessions are immediately invalidated
         SessionValidator::validate();
+    }
+
+    /**
+     * Move the running session to the database, keeping its data
+     *
+     * For the request that creates the sessions table: it began with PHP's own session storage,
+     * while the next request reads the session from the database and would find nothing there.
+     * The copy in the old storage (a session file) is deleted.
+     */
+    public static function moveToDatabase(): void
+    {
+        // Nothing to move without a session, or when it is in the database already
+        if (session_status() !== PHP_SESSION_ACTIVE || session_module_name() === 'user') {
+            return;
+        }
+
+        $data = $_SESSION;
+
+        // Suppressed: a session file that can't be deleted must not end the request with an error page
+        @session_destroy();
+
+        self::configure();
+        self::start();
+
+        $_SESSION = $data;
     }
 }
 

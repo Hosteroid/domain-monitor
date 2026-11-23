@@ -1,0 +1,67 @@
+{# Account Email Limit card of the Security tab: password reset and verification emails one address may get, and the time window they are counted in #}
+{% set limitInput = 'w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white' %}
+    <!-- Account Email Limit -->
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden mt-6">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Account Email Limit</h3>
+            <p class="text-sm text-gray-600 dark:text-slate-400 mt-1">Limits the password reset and verification emails one address can get</p>
+        </div>
+
+        {% if not emailLimit.available %}
+        <div class="p-6">
+            <div class="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 text-sm text-amber-900 dark:text-amber-300">
+                <i class="fas fa-database mr-2"></i>
+                The account email limit needs a database update first.
+                <a href="/install/update" class="underline font-medium">Run the update</a>
+            </div>
+        </div>
+        {% else %}
+        <form method="POST" action="/settings/update-email-limit" class="p-6">
+            {{ csrf_field() }}
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="email_limit_per_recipient" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                            Emails per Address
+                        </label>
+                        <input type="number" id="email_limit_per_recipient" name="email_limit_per_recipient"
+                               value="{{ emailLimit.per_recipient }}"
+                               min="{{ emailLimit.bounds.per_recipient[1] }}" max="{{ emailLimit.bounds.per_recipient[2] }}" required
+                               class="{{ limitInput }}">
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Password reset emails, and verification emails, to one email address. Each kind has its own count. 0 turns it off.</p>
+                    </div>
+
+                    <div>
+                        <label for="email_limit_minutes" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                            Time Window (minutes)
+                        </label>
+                        <input type="number" id="email_limit_minutes" name="email_limit_minutes"
+                               value="{{ emailLimit.minutes }}"
+                               min="{{ emailLimit.bounds.minutes[1] }}" max="{{ emailLimit.bounds.minutes[2] }}" required
+                               class="{{ limitInput }}">
+                        <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Starts with the first email to an address. When it ends, the count starts again.</p>
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-lg p-4">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                        <i class="fas fa-info-circle text-blue-500 dark:text-blue-400 mr-1"></i>
+                        How It Counts
+                    </p>
+                    <p class="text-sm text-gray-700 dark:text-slate-300">
+                        Emails are counted for the address they go to, not for the visitor who asks, so the limit works the same behind a reverse proxy.
+                        While a count is full no further email goes out, and the forgot password page says the same as always.
+                        The window cannot be longer than the {{ emailLimit.link_minutes }} minutes a reset link is valid: the newest link in the inbox then still works until the count starts again.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-6 mt-6 border-t border-gray-200 dark:border-slate-700">
+                <button type="submit" class="inline-flex items-center px-4 py-2.5 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+                    <i class="fas fa-save mr-2"></i>
+                    Save Email Limit
+                </button>
+            </div>
+        </form>
+        {% endif %}
+    </div>

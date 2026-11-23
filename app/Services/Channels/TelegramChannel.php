@@ -49,10 +49,10 @@ class TelegramChannel implements NotificationChannelInterface
             }
             return $ok;
         } catch (\Exception $e) {
+            // The message names the address that was asked, and the bot token is part of it
             $this->logger->error('Telegram send failed', [
-                'chat_id' => $config['chat_id'] ?? null,
-                'exception' => $e->getMessage()
-            ]);
+                'chat_id' => $config['chat_id'] ?? null
+            ] + ChannelLog::error($e, [$config['bot_token']]));
             return false;
         }
     }

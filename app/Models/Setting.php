@@ -193,6 +193,111 @@ class Setting extends Model
         return array_column($stmt->fetchAll(), 'setting_value', 'setting_key');
     }
 
+    /** Values of the setting api_access */
+    public const API_ACCESS = ['off', 'read', 'read_write'];
+
+    /** Requests a token may make per minute: the bounds of the setting and its default */
+    public const API_RATE_LIMIT_MIN = 10;
+    public const API_RATE_LIMIT_MAX = 6000;
+    public const API_RATE_LIMIT_DEFAULT = 120;
+
+    /**
+     * The API settings: access (off, read, read_write), users (all, admins) and the requests a
+     * token may make per minute. Off until the migration has added the rows.
+     *
+     * @return array{access: string, users: string, rate_limit: int}
+     */
+    public function getApiSettings(): array
+    {
+        return self::apiSettingsFrom($this->getValues(['api_access', 'api_users', 'api_rate_limit']));
+    }
+
+    /**
+     * The API settings read from rows fetched with getValues(), for a caller that fetches them
+     * together with others
+     *
+     * @return array{access: string, users: string, rate_limit: int}
+     */
+    public static function apiSettingsFrom(array $values): array
+    {
+        $access = (string)($values['api_access'] ?? 'off');
+        $limit = $values['api_rate_limit'] ?? null;
+        $limit = is_numeric($limit) ? (int)$limit : self::API_RATE_LIMIT_DEFAULT;
+
+        return [
+            'access' => in_array($access, self::API_ACCESS, true) ? $access : 'off',
+            'users' => ($values['api_users'] ?? 'all') === 'admins' ? 'admins' : 'all',
+            'rate_limit' => max(self::API_RATE_LIMIT_MIN, min(self::API_RATE_LIMIT_MAX, $limit)),
+        ];
+    }
+
+    /**
+     * Login attempt limit: default, lowest and highest value of each setting. The setting keys
+     * are these names after "login_limit_".
+     */
+    public const LOGIN_LIMIT = [
+        'per_address' => [5, 0, 100],
+        'per_account' => [20, 0, 1000],
+        'minutes' => [15, 1, 1440],
+    ];
+
+    /**
+     * The login attempt limit: failed logins a name may have from one address and from all
+     * addresses together (0 = not counted), and the minutes a failed login counts. The defaults
+     * until the migration has added the rows.
+     *
+     * @return array{per_address: int, per_account: int, minutes: int}
+     */
+    public function getLoginLimitSettings(): array
+    {
+        $values = $this->getValues(array_map(
+            static fn(string $name): string => 'login_limit_' . $name,
+            array_keys(self::LOGIN_LIMIT)
+        ));
+
+        $settings = [];
+        foreach (self::LOGIN_LIMIT as $name => [$default, $min, $max]) {
+            $value = $values['login_limit_' . $name] ?? null;
+            $settings[$name] = is_numeric($value) ? max($min, min($max, (int)$value)) : $default;
+        }
+
+        return $settings;
+    }
+
+    /**
+     * Account email limit: default, lowest and highest value of each setting. The setting keys
+     * are these names after "email_limit_". The window is never longer than a password reset
+     * link is valid: while a count is full, the newest link in the inbox then still works until
+     * the count starts again.
+     */
+    public const EMAIL_LIMIT = [
+        'per_recipient' => [3, 0, 100],
+        'minutes' => [60, 1, User::RESET_LINK_MINUTES],
+    ];
+
+    /**
+     * The account email limit: password reset emails, and verification emails, one address may
+     * get within the time window (0 = not counted), and the minutes the window lasts. The
+     * defaults until the migration has added the rows.
+     *
+     * @return array{per_recipient: int, minutes: int}
+     */
+    public function getEmailLimitSettings(): array
+    {
+        $values = $this->getValues(array_map(
+            static fn(string $name): string => 'email_limit_' . $name,
+            array_keys(self::EMAIL_LIMIT)
+        ));
+
+        $settings = [];
+        foreach (self::EMAIL_LIMIT as $name => [$default, $min, $max]) {
+            $value = $values['email_limit_' . $name] ?? null;
+            $settings[$name] = is_numeric($value) ? max($min, min($max, (int)$value)) : $default;
+        }
+
+        return $settings;
+    }
+
     /**
      * Whether billing is switched on. Off until the migration has added the setting.
      */
@@ -272,7 +377,7 @@ class Setting extends Model
      */
     public function getAppVersion(): string
     {
-        return $this->getValue('app_version', '1.1.6');
+        return $this->getValue('app_version', '1.2.0');
     }
 
     /**
@@ -424,14 +529,65 @@ class Setting extends Model
     }
 
     /**
+     * 2FA code limit: default, lowest and highest value of each setting. The setting keys are
+     * these names after "two_factor_rate_limit_".
+     */
+    public const TWO_FACTOR_LIMIT = [
+        'attempts' => [5, 3, 10],
+        'minutes' => [15, 5, 60],
+    ];
+
+    /** Minutes an email code is valid: default, lowest and highest value */
+    public const TWO_FACTOR_EMAIL_CODE_MINUTES = [10, 1, 30];
+
+    /**
+     * The 2FA code limit: wrong codes an account may enter, from all addresses together, and
+     * the minutes a wrong code counts. As many email codes can be requested in that time. The
+     * default where a row is missing or holds no number: the row for the wrong codes is only
+     * there once the 2FA settings have been saved.
+     *
+     * @return array{attempts: int, minutes: int}
+     */
+    public function getTwoFactorLimitSettings(): array
+    {
+        $values = $this->getValues(array_map(
+            static fn(string $name): string => 'two_factor_rate_limit_' . $name,
+            array_keys(self::TWO_FACTOR_LIMIT)
+        ));
+
+        $settings = [];
+        foreach (self::TWO_FACTOR_LIMIT as $name => [$default, $min, $max]) {
+            $value = $values['two_factor_rate_limit_' . $name] ?? null;
+            $settings[$name] = is_numeric($value) ? max($min, min($max, (int)$value)) : $default;
+        }
+
+        return $settings;
+    }
+
+    /**
+     * Minutes an email code is valid
+     */
+    public function getTwoFactorEmailCodeMinutes(): int
+    {
+        [$default, $min, $max] = self::TWO_FACTOR_EMAIL_CODE_MINUTES;
+        $value = $this->getValue('two_factor_email_code_expiry_minutes', $default);
+
+        return is_numeric($value) ? max($min, min($max, (int)$value)) : $default;
+    }
+
+    /**
      * Get 2FA settings
      */
     public function getTwoFactorSettings(): array
     {
+        $limit = $this->getTwoFactorLimitSettings();
+
         return [
             'policy' => $this->getValue('two_factor_policy', 'optional'),
-            'rate_limit_minutes' => (int)$this->getValue('two_factor_rate_limit_minutes', 15),
-            'email_code_expiry_minutes' => (int)$this->getValue('two_factor_email_code_expiry_minutes', 10)
+            'rate_limit_attempts' => $limit['attempts'],
+            'rate_limit_minutes' => $limit['minutes'],
+            'limit_bounds' => self::TWO_FACTOR_LIMIT,
+            'email_code_expiry_minutes' => $this->getTwoFactorEmailCodeMinutes()
         ];
     }
 

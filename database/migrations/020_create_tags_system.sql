@@ -31,15 +31,17 @@ CREATE TABLE IF NOT EXISTS domain_tags (
     INDEX idx_tag_id (tag_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Insert default tags with their colors (global tags)
-INSERT INTO tags (name, color, description, user_id) VALUES
-('production', 'bg-green-100 text-green-700 border-green-300', 'Production environment domains', NULL),
-('staging', 'bg-yellow-100 text-yellow-700 border-yellow-300', 'Staging environment domains', NULL),
-('development', 'bg-blue-100 text-blue-700 border-blue-300', 'Development environment domains', NULL),
-('client', 'bg-purple-100 text-purple-700 border-purple-300', 'Client-related domains', NULL),
-('personal', 'bg-orange-100 text-orange-700 border-orange-300', 'Personal domains', NULL),
-('archived', 'bg-gray-100 text-gray-700 border-gray-300', 'Archived or inactive domains', NULL)
-ON DUPLICATE KEY UPDATE color = VALUES(color), description = VALUES(description);
+-- Insert default tags with their colors (global tags), once: they have no owner, so the unique key above does not see that they are there already
+INSERT INTO tags (name, color, description, user_id)
+SELECT d.name, d.color, d.description, NULL FROM (
+    SELECT 'production' AS name, 'bg-green-100 text-green-700 border-green-300' AS color, 'Production environment domains' AS description
+    UNION ALL SELECT 'staging', 'bg-yellow-100 text-yellow-700 border-yellow-300', 'Staging environment domains'
+    UNION ALL SELECT 'development', 'bg-blue-100 text-blue-700 border-blue-300', 'Development environment domains'
+    UNION ALL SELECT 'client', 'bg-purple-100 text-purple-700 border-purple-300', 'Client-related domains'
+    UNION ALL SELECT 'personal', 'bg-orange-100 text-orange-700 border-orange-300', 'Personal domains'
+    UNION ALL SELECT 'archived', 'bg-gray-100 text-gray-700 border-gray-300', 'Archived or inactive domains'
+) AS d
+WHERE NOT EXISTS (SELECT 1 FROM tags WHERE user_id IS NULL);
 
 -- Migrate existing comma-separated tags to the new tag system
 -- Create a temporary table to store the migration data

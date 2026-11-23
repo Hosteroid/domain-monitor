@@ -1013,7 +1013,7 @@ class NotificationGroupController extends Controller
                     // Allow it but log a warning - user might have a proxy
                     $logger = new \App\Services\Logger();
                     $logger->warning('Google Chat format selected but URL does not appear to be a Google Chat webhook', [
-                        'url' => $webhookUrl
+                        'url' => \App\Services\Channels\ChannelLog::text($webhookUrl)
                     ]);
                 }
                 

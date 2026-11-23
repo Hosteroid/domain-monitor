@@ -4,7 +4,7 @@
 
 For new installations, use the consolidated schema:
 
-- **`000_initial_schema_v1.1.0.sql`** - Complete database schema for v1.1.0
+- **`000_initial_schema_v1.2.0.sql`** - Complete database schema for v1.2.0
 
 **Install via:** Web installer at `/install`
 
@@ -47,6 +47,14 @@ If upgrading from v1.0.0, these incremental migrations will be applied:
 - `033_add_watchlist_groups.sql` - Notification group purpose (my domains or watchlist) and reminder days after expiry
 - `034_add_dns_history.sql` - DNS history table, per-domain switch and settings
 - `035_add_billing.sql` - Billing: payments, price list, currencies and settings
+- `036_add_api_tokens.sql` - API tokens table and API settings
+- `037_add_login_attempts.sql` - Failed logins table and login attempt limit settings
+- `038_drop_remember_tokens_session_key.sql` - Drops the remember token foreign key that kept "Remember me" from working on fresh installs
+- `039_add_email_limit.sql` - Email counts table and account email limit settings
+- `040_add_missing_settings.sql` - Settings rows that 018 to 035 could not add on databases that began with v1.0.0
+- `041_add_two_factor_last_step.sql` - Last accepted authenticator app code per user, so a code works only once
+- `042_add_domain_suffixes.sql` - Domain suffixes from the Public Suffix List, for the subdomain check
+- `043_update_app_version_v1.2.0.sql` - Update version to 1.2.0
 
 **Upgrade via:** Web updater at `/install/update`
 

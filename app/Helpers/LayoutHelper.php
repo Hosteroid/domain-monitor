@@ -187,7 +187,7 @@ class LayoutHelper
             return [
                 'app_name' => htmlspecialchars($values['app_name'] ?? 'Domain Monitor'),
                 'app_timezone' => $values['app_timezone'] ?? 'UTC',
-                'app_version' => $values['app_version'] ?? '1.1.6',
+                'app_version' => $values['app_version'] ?? '1.2.0',
                 // The row comes with the billing migration, so billing stays off until that has run
                 'billing_enabled' => ($values['billing_enabled'] ?? '0') === '1'
             ];

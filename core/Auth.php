@@ -46,12 +46,13 @@ class Auth
         $currentPath = parse_url($requestUri, PHP_URL_PATH);
         
         // If parse_url fails (malformed URI), treat as root path
-        // This prevents null from being passed to strpos()
+        // so that a path that can't be read is never taken for a public one
         if ($currentPath === null || $currentPath === false) {
             $currentPath = '/';
         }
         
-        // Public paths that don't require authentication
+        // Public paths that don't require authentication. Each is matched whole: a path that only
+        // begins like one, such as /2fa/verify-setup, is not public
         $publicPaths = [
             '/login',
             '/logout',
@@ -61,15 +62,16 @@ class Auth
             '/verify-email',
             '/resend-verification',
             '/install',
+            '/install/run',
+            '/install/complete',
+            '/install/update',
             '/2fa/verify',
             '/2fa/send-email-code'
         ];
         
         // Don't redirect if on a public path
-        foreach ($publicPaths as $path) {
-            if (strpos($currentPath, $path) === 0) {
-                return;
-            }
+        if (in_array($currentPath, $publicPaths, true)) {
+            return;
         }
         
         if (!self::check()) {
@@ -122,6 +124,17 @@ class Auth
     public static function requiresTwoFactor(): bool
     {
         return isset($_SESSION['2fa_required']) && $_SESSION['2fa_required'];
+    }
+
+    /**
+     * The "remember me" token this browser sent, '' if it sent none.
+     * Text only: a cookie sent as an array (remember_token[]=x) is no token.
+     */
+    public static function rememberCookie(): string
+    {
+        $token = $_COOKIE['remember_token'] ?? '';
+
+        return is_string($token) ? $token : '';
     }
 }
 

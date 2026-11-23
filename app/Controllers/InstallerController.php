@@ -35,7 +35,7 @@ class InstallerController extends Controller
     private function getPendingMigrations(bool $createMigrationsTable = true): array
     {
         // For fresh installs - use consolidated schema
-        $freshInstallMigration = ['000_initial_schema_v1.1.0.sql'];
+        $freshInstallMigration = ['000_initial_schema_v1.2.0.sql'];
         
         // For incremental updates from v1.0.0
         $incrementalMigrations = [
@@ -66,6 +66,14 @@ class InstallerController extends Controller
             '033_add_watchlist_groups.sql',
             '034_add_dns_history.sql',
             '035_add_billing.sql',
+            '036_add_api_tokens.sql',
+            '037_add_login_attempts.sql',
+            '038_drop_remember_tokens_session_key.sql',
+            '039_add_email_limit.sql',
+            '040_add_missing_settings.sql',
+            '041_add_two_factor_last_step.sql',
+            '042_add_domain_suffixes.sql',
+            '043_update_app_version_v1.2.0.sql',
         ];
 
         try {
@@ -107,11 +115,10 @@ class InstallerController extends Controller
                 // Notification groups table doesn't exist
             }
             
-            // If no core application tables exist - this is a fresh install
-            // Core tables are: users, domains, settings, notification_groups
-            // Note: sessions, password_reset_tokens, etc. might exist from app startup but don't indicate real installation
-            if (!$hasUsers && !$hasDomains && !$hasSettings && !$hasNotificationGroups) {
-                $this->logger->info("Fresh install detected - no core tables exist, returning fresh install migration only");
+            // If no user exists - this is a fresh install, or one that failed part-way and is run again
+            // It may have left tables behind, and only the consolidated schema creates the admin
+            if (!$hasUsers) {
+                $this->logger->info("Fresh install detected - no users exist, returning fresh install migration only");
                 // Return immediately WITHOUT creating migrations table to avoid partial table creation
                 return $freshInstallMigration;
             }
@@ -218,6 +225,14 @@ class InstallerController extends Controller
                     '033_add_watchlist_groups.sql',
                     '034_add_dns_history.sql',
                     '035_add_billing.sql',
+                    '036_add_api_tokens.sql',
+                    '037_add_login_attempts.sql',
+                    '038_drop_remember_tokens_session_key.sql',
+                    '039_add_email_limit.sql',
+                    '040_add_missing_settings.sql',
+                    '041_add_two_factor_last_step.sql',
+                    '042_add_domain_suffixes.sql',
+                    '043_update_app_version_v1.2.0.sql',
                 ];
             }
 
@@ -289,35 +304,6 @@ class InstallerController extends Controller
     }
     
     /**
-     * Check database connection
-     */
-    public function checkDatabase()
-    {
-        // Block access if already installed
-        if ($this->isInstalled()) {
-            $_SESSION['info'] = 'System is already installed.';
-            $this->redirect('/');
-            return;
-        }
-
-        try {
-            $pdo = \Core\Database::getConnection();
-            $pdo->query("SELECT 1");
-            
-            $this->view('installer/database-check', [
-                'title' => 'Database Connection',
-                'success' => true
-            ]);
-        } catch (\Exception $e) {
-            $this->view('installer/database-check', [
-                'title' => 'Database Connection',
-                'success' => false,
-                'error' => $e->getMessage()
-            ]);
-        }
-    }
-    
-    /**
      * Run installation
      */
     public function install()
@@ -373,10 +359,10 @@ class InstallerController extends Controller
             
             // For fresh installs, ONLY execute the consolidated schema
             // It already includes the migrations table and marks itself as executed
-            if (count($migrations) === 1 && $migrations[0] === '000_initial_schema_v1.1.0.sql') {
+            if (count($migrations) === 1 && $migrations[0] === '000_initial_schema_v1.2.0.sql') {
                 $this->logger->debug("Fresh install - executing consolidated schema only");
                 
-                $file = __DIR__ . '/../../database/migrations/000_initial_schema_v1.1.0.sql';
+                $file = __DIR__ . '/../../database/migrations/000_initial_schema_v1.2.0.sql';
                 $sql = file_get_contents($file);
                 
                 // Replace admin credentials (use PDO::quote to prevent SQL injection)
@@ -390,7 +376,7 @@ class InstallerController extends Controller
                 try {
                     $pdo->exec($sql);
                     $this->logger->info("Consolidated schema executed successfully");
-                    $results[] = '000_initial_schema_v1.1.0.sql';
+                    $results[] = '000_initial_schema_v1.2.0.sql';
                 } catch (\PDOException $e) {
                     $this->logger->error("Consolidated schema execution failed: " . $e->getMessage());
                     // Fallback to statement-by-statement parsing
@@ -413,7 +399,7 @@ class InstallerController extends Controller
                         }
                     }
                     $this->logger->info("Consolidated schema executed with fallback method - $successCount statements successful");
-                    $results[] = '000_initial_schema_v1.1.0.sql';
+                    $results[] = '000_initial_schema_v1.2.0.sql';
                 }
                 
                 // Mark all individual migrations as executed since the consolidated schema includes them all
@@ -453,6 +439,14 @@ class InstallerController extends Controller
                     '033_add_watchlist_groups.sql',
                     '034_add_dns_history.sql',
                     '035_add_billing.sql',
+                    '036_add_api_tokens.sql',
+                    '037_add_login_attempts.sql',
+                    '038_drop_remember_tokens_session_key.sql',
+                    '039_add_email_limit.sql',
+                    '040_add_missing_settings.sql',
+                    '041_add_two_factor_last_step.sql',
+                    '042_add_domain_suffixes.sql',
+                    '043_update_app_version_v1.2.0.sql',
                 ];
 
                 $stmt = $pdo->prepare("INSERT INTO migrations (migration) VALUES (?) ON DUPLICATE KEY UPDATE migration=migration");
@@ -530,9 +524,12 @@ class InstallerController extends Controller
                 $this->logger->info("Encryption key generated");
             }
             
-            // Create .installed flag file
+            // Create .installed flag file. Suppressed: a folder that can't be written to must end
+            // the installation with a message, not with an error page
             $installedFile = __DIR__ . '/../../.installed';
-            file_put_contents($installedFile, date('Y-m-d H:i:s'));
+            if (@file_put_contents($installedFile, date('Y-m-d H:i:s')) === false) {
+                throw new \Exception('The .installed file could not be created. Make the application folder writable for the web server and start the installation again.');
+            }
             $this->logger->info("Installation flag file created");
             
             // Create welcome notification for admin
@@ -552,20 +549,43 @@ class InstallerController extends Controller
                 $this->logger->error("Failed to create welcome notification: " . $e->getMessage());
             }
             
-            // Redirect to complete page
+            // The subdomain check needs the domain suffixes: they are downloaded once, here (#112)
+            $this->importDomainSuffixesIfMissing();
+
+            // This request began with a file session, because the sessions table did not exist
+            // yet. The next request reads its session from the database
+            \Core\SessionConfig::moveToDatabase();
+
+            // Redirect to complete page. The password is not kept: the admin has just typed it
             $_SESSION['install_complete'] = true;
             $_SESSION['admin_username'] = $adminUsername;
-            $_SESSION['admin_password'] = $adminPassword;
             
             $this->logger->info("Installation completed successfully");
             $this->redirect('/install/complete');
             
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             $this->logger->error("Installation failed: " . $e->getMessage(), [
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
+
+            // Take back the admin this attempt created, so that the installer can run again: it asks
+            // for an admin login as soon as a user exists, and nobody can log in before the
+            // installation is finished. The row is found by its password hash, which only this
+            // request has
+            if (isset($passwordHash) && !file_exists(__DIR__ . '/../../.installed')) {
+                try {
+                    $pdo->prepare("DELETE FROM users WHERE password = ?")->execute([$passwordHash]);
+                } catch (\Exception $e2) {
+                    $this->logger->error("Failed to remove the admin of the failed installation: " . $e2->getMessage());
+                }
+            }
+
+            // The sessions table may exist by now. The next request then reads its session from
+            // the database, and the message has to be there
+            \Core\SessionConfig::moveToDatabase();
+
             $_SESSION['error'] = 'Installation failed: ' . $e->getMessage();
             $this->redirect('/install');
         }
@@ -634,6 +654,9 @@ class InstallerController extends Controller
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             ");
             
+            // A database that began with v1.0.0 lacks two settings columns that migrations name
+            $this->addMissingSettingsColumns($pdo);
+
             foreach ($migrations as $migration) {
                 $file = __DIR__ . '/../../database/migrations/' . $migration;
                 if (!file_exists($file)) continue;
@@ -670,10 +693,11 @@ class InstallerController extends Controller
                 $executed[] = $migration;
             }
             
-            // Create .installed flag file if doesn't exist (for v1.0.0 upgrades)
+            // Create .installed flag file if doesn't exist (for v1.0.0 upgrades, or when it was lost).
+            // Suppressed: the system runs without the file, so a folder that can't be written to
+            // must not end the update with an error page
             $installedFile = __DIR__ . '/../../.installed';
-            if (!file_exists($installedFile)) {
-                file_put_contents($installedFile, date('Y-m-d H:i:s'));
+            if (!file_exists($installedFile) && @file_put_contents($installedFile, date('Y-m-d H:i:s')) !== false) {
                 $this->logger->info("Installation flag file created");
             }
             
@@ -691,7 +715,9 @@ class InstallerController extends Controller
                     
                     // Fallback: detect "to" version from which migrations were run
                     if ($toVersion === $fromVersion) {
-                        if (in_array('033_add_watchlist_groups.sql', $executed) || in_array('032_add_renewal_notifications.sql', $executed) || in_array('031_add_ct_log_sources.sql', $executed)) {
+                        if (in_array('043_update_app_version_v1.2.0.sql', $executed) || in_array('034_add_dns_history.sql', $executed)) {
+                            $toVersion = '1.2.0';
+                        } elseif (in_array('033_add_watchlist_groups.sql', $executed) || in_array('032_add_renewal_notifications.sql', $executed) || in_array('031_add_ct_log_sources.sql', $executed)) {
                             $toVersion = '1.1.6';
                         } elseif (in_array('029_add_dns_record_source.sql', $executed)) {
                             $toVersion = '1.1.5';
@@ -722,7 +748,14 @@ class InstallerController extends Controller
             // copies of the old ones, which nothing uses any more
             \Core\TwigService::clearCache();
 
-            $_SESSION['success'] = count($executed) . ' migration(s) executed successfully';
+            // The subdomain check needs the domain suffixes: they are downloaded once, here (#112)
+            $suffixes = $this->importDomainSuffixesIfMissing();
+
+            $_SESSION['success'] = count($executed) . ' migration(s) executed successfully'
+                . ($suffixes === true ? '. Domain suffixes imported' : '');
+            if ($suffixes === false) {
+                $_SESSION['warning'] = 'The domain suffix list could not be downloaded. Import it later in TLD Registry, IANA, Import Domain Suffixes.';
+            }
             $this->logger->info("Update completed successfully", ['migrations_executed' => count($executed)]);
             $this->redirect('/');
             
@@ -738,6 +771,30 @@ class InstallerController extends Controller
     }
     
     /**
+     * Download the domain suffixes when none are stored yet. A failed download never stops an
+     * installation or an update: the subdomain check gives way until the list is there, and an
+     * admin can import it later in TLD Registry.
+     *
+     * @return bool|null True when imported, false when the download failed, null when nothing was needed
+     */
+    private function importDomainSuffixesIfMissing(): ?bool
+    {
+        try {
+            $model = new \App\Models\DomainSuffix();
+            if (!$model->isInstalled() || $model->countAll() > 0) {
+                return null;
+            }
+
+            $stats = (new \App\Services\DomainSuffixService())->import();
+            $this->logger->info('Domain suffixes imported', ['rules' => $stats['rules']]);
+            return true;
+        } catch (\Throwable $e) {
+            $this->logger->warning('Domain suffix import failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Show installation complete page
      */
     public function complete()
@@ -748,15 +805,12 @@ class InstallerController extends Controller
         }
         
         $adminUsername = $_SESSION['admin_username'] ?? 'admin';
-        $adminPassword = $_SESSION['admin_password'] ?? null;
         unset($_SESSION['admin_username']);
-        unset($_SESSION['admin_password']);
         unset($_SESSION['install_complete']);
         
         $this->view('installer/complete', [
             'title' => 'Installation Complete',
-            'adminUsername' => $adminUsername,
-            'adminPassword' => $adminPassword
+            'adminUsername' => $adminUsername
         ]);
     }
     
@@ -806,6 +860,32 @@ class InstallerController extends Controller
     }
 
     /**
+     * A database that began with v1.0.0 has a settings table without `type` and `description`.
+     * No migration adds them and the migrations from 018 on insert with them, so add what is
+     * missing before any migration runs.
+     */
+    private function addMissingSettingsColumns(\PDO $pdo): void
+    {
+        $stmt = $pdo->query(
+            "SELECT COLUMN_NAME FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'settings'"
+        );
+        $columns = array_map('strtolower', $stmt->fetchAll(\PDO::FETCH_COLUMN));
+
+        // No settings table: the consolidated schema creates it with both columns
+        if (!$columns) {
+            return;
+        }
+
+        if (!in_array('type', $columns, true)) {
+            $pdo->exec("ALTER TABLE settings ADD COLUMN `type` VARCHAR(50) DEFAULT 'string' AFTER setting_value");
+        }
+        if (!in_array('description', $columns, true)) {
+            $pdo->exec("ALTER TABLE settings ADD COLUMN `description` TEXT AFTER `type`");
+        }
+    }
+
+    /**
      * Generate encryption key
      */
     private function generateEncryptionKey()
@@ -826,7 +906,11 @@ class InstallerController extends Controller
                 $envContent .= "\nAPP_ENCRYPTION_KEY=$encryptionKey\n";
             }
             
-            file_put_contents($envFile, $envContent);
+            // Suppressed: a .env that can't be written must end the installation with a message,
+            // not with an error page
+            if (@file_put_contents($envFile, $envContent) === false) {
+                throw new \Exception('The encryption key could not be saved to .env. Make the file writable for the web server and start the installation again.');
+            }
         }
     }
 }

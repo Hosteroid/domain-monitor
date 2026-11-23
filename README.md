@@ -22,7 +22,7 @@ A modern PHP MVC application for monitoring domain expiration dates and sending 
 - 🎨 **Modern UI** - Clean, responsive design with intuitive interface
 
 ### Advanced Features
-- 🔐 **Secure by Default** - Random passwords, database-backed sessions, prepared statements
+- 🔐 **Secure by Default** - Hashed passwords, database-backed sessions, prepared statements
 - 🔔 **User Notifications System** - In-app notification center with real-time updates
 - 📬 **Smart Notifications** - Welcome messages, upgrade alerts, domain warnings
 - 🌐 **Advanced Session Management** - View all active sessions with geolocation and device tracking
@@ -34,6 +34,7 @@ A modern PHP MVC application for monitoring domain expiration dates and sending 
 - 🌍 **RDAP Support** - Modern protocol for faster, structured domain data
 - 🏴 **Geolocation Tracking** - See location, ISP, and device info for all sessions
 - 💰 **Billing** - Payments, a price list and renewal cost forecasts for every domain
+- 🔌 **API** - JSON API with personal tokens, for dashboards such as Homepage and for scripts
 
 ## 📋 Requirements
 
@@ -48,12 +49,12 @@ A modern PHP MVC application for monitoring domain expiration dates and sending 
 
 The application includes built-in authentication with secure practices:
 
-- 🔑 **Random Password Generation** - Unique secure password created on installation
+- 🔑 **No Default Password** - You set the admin password yourself during installation
 - 🛡️ **Database-Backed Sessions** - True session management with immediate remote logout
 - 🌍 **Session Tracking** - Monitor all active sessions with location and device info
 - 🚨 **Remote Session Control** - Terminate suspicious sessions from any device
 - 💉 **SQL Injection Protection** - All queries use prepared statements
-- 🔒 **One-time Credentials** - Admin password shown only once during setup
+- 🔒 **Hashed Passwords** - Account passwords are stored as hashes, never in readable form
 - 🍪 **Secure Remember Me** - Cryptographically secure 30-day tokens linked to sessions
 
 ⚠️ **Important:** Save your admin password during installation - it won't be shown again!
@@ -132,13 +133,13 @@ The web installer will:
 1. ✅ Create all database tables
 2. ✅ Generate encryption key and save to `.env`
 3. ✅ Let you set admin email and password
-4. ✅ Show credentials on completion (save them!)
+4. ✅ Show the next steps and a link to the login page
 
-**⚠️ IMPORTANT:** The installer will display your admin credentials **only once**. Save them to a secure password manager!
+**⚠️ IMPORTANT:** The installer does not show your admin password again. Save it to a secure password manager!
 
 ### 6. Import TLD Registry Data (Optional but Recommended)
 
-After logging in, go to **TLD Registry** page and click **"Import TLDs"** to download RDAP and WHOIS server data for 1,400+ TLDs from IANA.
+After logging in, go to **TLD Registry** page and click **"Import TLDs"** to download RDAP and WHOIS server data for 1,400+ TLDs from IANA. The same import fetches the [Public Suffix List](https://publicsuffix.org/), which tells the app that endings such as .co.uk or .my.id take registrations.
 
 Alternatively, use the CLI:
 
@@ -441,6 +442,64 @@ Access your profile settings via the top-right user menu:
 
 All settings are stored in the database and can be updated at any time through the web interface.
 
+## 🔌 API
+
+A JSON API for dashboards and scripts. It is off until an admin turns it on under **Settings → API**, as read-only or as read and write. Each user then creates tokens under **Profile → API Tokens**, and a token sees what its user sees.
+
+Send the token as `Authorization: Bearer <token>` or `X-API-Key: <token>`, never in the URL:
+
+```bash
+curl -H "X-API-Key: dmk_your_token" https://your-domain.com/api/v1/stats
+```
+
+| Call | Does |
+|------|------|
+| `GET /api/v1` | Checks a token |
+| `GET /api/v1/stats` | Totals of domains and certificates by status |
+| `GET /api/v1/domains` | Domains, with `search`, `status`, `group`, `tag`, `domain`, `sort`, `order`, `page`, `per_page` |
+| `GET /api/v1/domains/{id or name}` | One domain with its certificates |
+| `GET /api/v1/domains/{id or name}/dns` | Its DNS records |
+| `GET /api/v1/ssl` | Monitored certificates, soonest expiry first |
+| `GET /api/v1/groups`, `GET /api/v1/tags` | Notification groups and tags |
+| `POST /api/v1/domains` | Adds a domain: `{"domain": "example.com", "notification_group_id": 1, "tags": ["client"], "notes": "..."}` |
+| `PATCH /api/v1/domains/{id or name}` | Changes any of `notification_group_id`, `is_active`, `dns_monitoring`, `ssl_monitoring`, `tags`, `notes`, `expiration_date` |
+| `DELETE /api/v1/domains/{id or name}` | Deletes a domain |
+| `POST /api/v1/domains/{id or name}/refresh` | WHOIS refresh |
+
+- Answers are `{"data": ...}`, and lists add `"meta"` with the page numbers. Errors are `{"error": {"code": "...", "message": "..."}}` with a matching HTTP status.
+- The last four calls need a read and write token. Bodies are JSON, sent with `Content-Type: application/json`.
+- Where a firewall blocks PATCH and DELETE, use `POST /api/v1/domains/{id}` and `POST /api/v1/domains/{id}/delete`.
+- Adding and refreshing ask the registry inside the call, so give the client a timeout of a minute or more.
+- A token may make 120 requests a minute, which Settings → API can change. Adding or refreshing counts as ten.
+- A login proxy or bot protection in front of the app has to let `/api/v1/` through.
+
+Widget for [Homepage](https://gethomepage.dev):
+
+```yaml
+- Domain Monitor:
+    href: https://your-domain.com
+    widget:
+      type: customapi
+      url: https://your-domain.com/api/v1/stats
+      headers:
+        X-API-Key: dmk_your_token
+      mappings:
+        - field: data.domains.total
+          label: Domains
+          format: number
+        - field: data.domains.expiring_soon
+          label: Expiring
+          format: number
+        - field: data.domains.expired
+          label: Expired
+          format: number
+        - field: data.ssl.expiring
+          label: SSL expiring
+          format: number
+```
+
+For a list of the domains that expire soon, use `url: https://your-domain.com/api/v1/domains?status=expiring_soon&sort=expiration_date` with `display: dynamic-list` and the mappings `items: data`, `name: domain`, `label: expiration_date`.
+
 ## 📁 Project Structure
 
 ```
@@ -478,6 +537,7 @@ Domain Monitor/
 4. **Enable HTTPS** in production
 5. **Protect cron endpoints** - Ensure cron scripts aren't web-accessible
 6. **Regular updates** - Keep dependencies updated
+7. **API tokens** - Treat them like passwords, and revoke one under Profile → API Tokens if it leaks
 
 ## 🐛 Troubleshooting
 

@@ -26,7 +26,6 @@ $router = Application::$router;
 
 // Installer routes (public - before auth)
 $router->get('/install', [InstallerController::class, 'index']);
-$router->get('/install/check-database', [InstallerController::class, 'checkDatabase']);
 $router->post('/install/run', [InstallerController::class, 'install']);
 $router->get('/install/complete', [InstallerController::class, 'complete']);
 $router->get('/install/update', [InstallerController::class, 'showUpdate']);
@@ -153,6 +152,7 @@ $router->post('/tld-registry/import', [TldRegistryController::class, 'import']);
 $router->post('/tld-registry/create', [TldRegistryController::class, 'createTld']);
 $router->get('/tld-registry/{id}', [TldRegistryController::class, 'show']);
 $router->post('/tld-registry/import-tld-list', [TldRegistryController::class, 'importTldList']);
+$router->post('/tld-registry/import-suffixes', [TldRegistryController::class, 'importSuffixes']);
 $router->post('/tld-registry/import-rdap', [TldRegistryController::class, 'importRdap']);
 $router->post('/tld-registry/import-whois', [TldRegistryController::class, 'importWhois']);
 $router->post('/tld-registry/start-progressive-import', [TldRegistryController::class, 'startProgressiveImport']);
@@ -174,6 +174,8 @@ $router->post('/settings/update-app', [SettingsController::class, 'updateApp']);
 $router->post('/settings/update-email', [SettingsController::class, 'updateEmail']);
 $router->post('/settings/update-captcha', [SettingsController::class, 'updateCaptcha']);
 $router->post('/settings/update-two-factor', [SettingsController::class, 'updateTwoFactor']);
+$router->post('/settings/update-login-limit', [SettingsController::class, 'updateLoginLimit']);
+$router->post('/settings/update-email-limit', [SettingsController::class, 'updateEmailLimit']);
 $router->post('/settings/test-email', [SettingsController::class, 'testEmail']);
 $router->post('/settings/test-cron', [SettingsController::class, 'testCron']);
 $router->post('/settings/clear-logs', [SettingsController::class, 'clearLogs']);
@@ -181,6 +183,9 @@ $router->post('/settings/toggle-isolation', [SettingsController::class, 'toggleI
 $router->post('/settings/update-billing', [SettingsController::class, 'updateBilling']);
 $router->post('/settings/billing/currency', [SettingsController::class, 'saveBillingCurrency']);
 $router->post('/settings/billing/currency/delete', [SettingsController::class, 'deleteBillingCurrency']);
+$router->post('/settings/update-api', [SettingsController::class, 'updateApi']);
+$router->post('/settings/revoke-api-tokens', [SettingsController::class, 'revokeAllApiTokens']);
+$router->post('/settings/revoke-api-token/{id}', [SettingsController::class, 'revokeApiToken']);
 
 // Updates (Admin Only)
 $router->post('/api/updates/check', [UpdateController::class, 'check']);
@@ -200,6 +205,8 @@ $router->post('/profile/logout-other-sessions', [ProfileController::class, 'logo
 $router->post('/profile/logout-session/{sessionId}', [ProfileController::class, 'logoutSession']);
 $router->post('/profile/upload-avatar', [ProfileController::class, 'uploadAvatar']);
 $router->post('/profile/delete-avatar', [ProfileController::class, 'deleteAvatar']);
+$router->post('/profile/create-api-token', [ProfileController::class, 'createApiToken']);
+$router->post('/profile/delete-api-token/{id}', [ProfileController::class, 'deleteApiToken']);
 
 // Two-Factor Authentication management (protected)
 $router->get('/2fa/setup', [TwoFactorController::class, 'setup']);

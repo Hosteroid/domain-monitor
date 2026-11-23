@@ -36,6 +36,13 @@
                     Check for Updates
                 </button>
             </form>
+            <form method="POST" action="/tld-registry/import-suffixes">
+                {{ csrf_field() }}
+                <button type="submit" class="w-full flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors border-t border-gray-100 dark:border-slate-700" title="Download the Public Suffix List, which tells the subdomain check which endings, such as .co.uk or .my.id, take registrations{% if suffixes and suffixes.count > 0 %}. {{ suffixes.count|number_format }} imported{% if suffixes.imported_at %} on {{ suffixes.imported_at|date('M d, Y') }}{% endif %}{% endif %}">
+                    <i class="fas fa-list text-indigo-600 mr-2.5"></i>
+                    Import Domain Suffixes
+                </button>
+            </form>
             <a href="/tld-registry/import-logs" class="flex items-center px-4 py-2.5 text-sm text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors border-t border-gray-100 dark:border-slate-700">
                 <i class="fas fa-history text-gray-500 dark:text-slate-400 mr-2.5"></i>
                 IANA Import Logs
@@ -71,6 +78,17 @@
         Create TLD
     </button>
 </div>
+{# Without the domain suffixes the subdomain check lets subdomains under country TLDs through (#112) #}
+{% if suffixes and suffixes.count == 0 %}
+<div class="mb-4 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/30 rounded-lg p-4">
+    <div class="flex items-center">
+        <i class="fas fa-exclamation-triangle text-yellow-600 mr-2"></i>
+        <p class="text-sm text-yellow-800 dark:text-yellow-400">
+            Domain suffixes are not imported yet, so the subdomain check is less strict for country TLDs. Use "Import Domain Suffixes" in the IANA menu.
+        </p>
+    </div>
+</div>
+{% endif %}
 {% else %}
 <div class="mb-4 bg-yellow-50 dark:bg-yellow-500/10 border border-yellow-200 dark:border-yellow-500/30 rounded-lg p-4">
     <div class="flex items-center">

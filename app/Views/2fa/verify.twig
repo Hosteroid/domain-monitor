@@ -79,17 +79,16 @@
 
 <script>
 function sendEmailCode() {
-    const btn = event.target;
+    // The button itself, also when the click landed on its icon
+    const btn = event.target.closest('button');
     const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Sending...';
-    
+
+    // The security token goes in the body, where the app reads it
     fetch('/2fa/send-email-code', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-CSRF-Token': document.querySelector('input[name="csrf_token"]').value
-        }
+        body: new URLSearchParams({ csrf_token: document.querySelector('input[name="csrf_token"]').value })
     })
     .then(response => response.json())
     .then(data => {
@@ -115,13 +114,44 @@ function sendEmailCode() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('verifyForm');
     const codeInput = document.getElementById('code');
+    let timer = null;
+    let sent = false;
+
     codeInput.focus();
+
+    // The form goes out once, whether by the button, by Enter or by itself: every wrong code
+    // counts, and an email or backup code works only the first time
+    form.addEventListener('submit', function(e) {
+        if (sent) {
+            e.preventDefault();
+            return;
+        }
+        sent = true;
+        clearTimeout(timer);
+    });
+    // Back on this page through the browser's Back button: it may be sent again
+    window.addEventListener('pageshow', function(e) {
+        if (e.persisted) {
+            sent = false;
+        }
+    });
+
+    // A complete code is sent by itself after a pause in typing. Six digits wait longer, because
+    // they can be the start of a backup code: typing on takes the pending send back.
     codeInput.addEventListener('input', function() {
         this.value = this.value.replace(/[^A-Za-z0-9]/g, '');
-        if ((this.value.length === 6 && /^\d{6}$/.test(this.value)) ||
-            (this.value.length === 8 && /^[A-Z0-9]{8}$/i.test(this.value))) {
-            setTimeout(() => document.getElementById('verifyForm').submit(), 500);
+        clearTimeout(timer);
+
+        const sixDigits = /^\d{6}$/.test(this.value);
+        if (sixDigits || /^[A-Z0-9]{8}$/i.test(this.value)) {
+            timer = setTimeout(function() {
+                if (!sent) {
+                    sent = true;
+                    form.submit();
+                }
+            }, sixDigits ? 1000 : 500);
         }
     });
 });

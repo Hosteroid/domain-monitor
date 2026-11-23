@@ -103,12 +103,41 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('verifyForm');
     const codeInput = document.getElementById('verification_code');
+    let timer = null;
+    let sent = false;
+
     codeInput.focus();
+
+    // The form goes out once, whether by the button, by Enter or by itself: a second send
+    // would find 2FA switched on already and lead away from the backup codes
+    form.addEventListener('submit', function(e) {
+        if (sent) {
+            e.preventDefault();
+            return;
+        }
+        sent = true;
+        clearTimeout(timer);
+    });
+    // Back on this page through the browser's Back button: it may be sent again
+    window.addEventListener('pageshow', function(e) {
+        if (e.persisted) {
+            sent = false;
+        }
+    });
+
     codeInput.addEventListener('input', function() {
         this.value = this.value.replace(/[^0-9]/g, '');
+        clearTimeout(timer);
+
         if (this.value.length === 6) {
-            setTimeout(() => document.getElementById('verifyForm').submit(), 500);
+            timer = setTimeout(function() {
+                if (!sent) {
+                    sent = true;
+                    form.submit();
+                }
+            }, 500);
         }
     });
 });

@@ -1,0 +1,154 @@
+{# API tab of the Settings page: access, who may use it, the rate limit, and every user's tokens #}
+{% set inputClass = 'w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary bg-white dark:bg-slate-700 text-gray-900 dark:text-white' %}
+{% set thClass = 'px-4 py-3 text-left text-xs font-semibold text-gray-600 dark:text-slate-400 uppercase tracking-wider' %}
+<div id="content-api" class="tab-content hidden">
+    <div class="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+        <div class="px-6 py-4 border-b border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-900">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">API Settings</h3>
+            <p class="text-sm text-gray-600 dark:text-slate-400 mt-1">A JSON API for dashboards and scripts, used with personal tokens</p>
+        </div>
+
+        {% if not api.available %}
+        <div class="p-6">
+            <div class="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-800 rounded-lg p-4 text-sm text-amber-900 dark:text-amber-300">
+                <i class="fas fa-database mr-2"></i>
+                The API needs a database update first.
+                <a href="/install/update" class="underline font-medium">Run the update</a>
+            </div>
+        </div>
+        {% else %}
+        <form method="POST" action="/settings/update-api" class="p-6">
+            {{ csrf_field() }}
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label for="api_access" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Access</label>
+                    <select id="api_access" name="api_access" class="{{ inputClass }}">
+                        <option value="off" {{ api.access == 'off' ? 'selected' : '' }}>Off</option>
+                        <option value="read" {{ api.access == 'read' ? 'selected' : '' }}>Read only</option>
+                        <option value="read_write" {{ api.access == 'read_write' ? 'selected' : '' }}>Read and write</option>
+                    </select>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">Read and write lets a write token add, change, delete and refresh domains. Nothing else can be changed through the API.</p>
+                </div>
+                <div>
+                    <label for="api_users" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Who may use it</label>
+                    <select id="api_users" name="api_users" class="{{ inputClass }}">
+                        <option value="all" {{ api.users == 'all' ? 'selected' : '' }}>All users</option>
+                        <option value="admins" {{ api.users == 'admins' ? 'selected' : '' }}>Admins only</option>
+                    </select>
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">A token sees what its user sees. With Admins only, the tokens of other users are refused.</p>
+                </div>
+                <div>
+                    <label for="api_rate_limit" class="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Requests per minute</label>
+                    <input type="number" id="api_rate_limit" name="api_rate_limit" value="{{ api.rate_limit }}" min="{{ api.rate_limit_min }}" max="{{ api.rate_limit_max }}" required class="{{ inputClass }}">
+                    <p class="text-xs text-gray-500 dark:text-slate-400 mt-1">For each token. Adding or refreshing a domain counts as ten, because it asks the registry.</p>
+                </div>
+            </div>
+
+            <div class="mt-4 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-900 dark:text-blue-300">
+                <i class="fas fa-info-circle mr-2"></i>
+                The API answers at <code class="font-mono break-all">{{ api.base_url }}</code>. Each user creates tokens under Profile, API Tokens. The README lists the calls.
+            </div>
+
+            <div class="flex items-center justify-between pt-4 mt-6 border-t border-gray-200 dark:border-slate-700">
+                <button type="submit" class="inline-flex items-center px-4 py-2.5 bg-primary text-white text-sm rounded-lg hover:bg-primary-dark transition-colors font-medium">
+                    <i class="fas fa-save mr-2"></i>
+                    Save API Settings
+                </button>
+            </div>
+        </form>
+
+        <div class="px-6 pb-6">
+            <div class="border-t border-gray-200 dark:border-slate-700 mb-6"></div>
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <h4 class="text-base font-semibold text-gray-900 dark:text-white flex items-center">
+                    <i class="fas fa-key text-primary mr-2"></i>
+                    Tokens
+                    <span class="ml-2 text-sm font-normal text-gray-500 dark:text-slate-400">({{ api.tokens|length }})</span>
+                </h4>
+                {% if api.tokens %}
+                <form method="POST" action="/settings/revoke-api-tokens" onsubmit="return confirmSubmit(event, 'Revoke every token of every user? Everything that uses one stops working.', { title: 'Revoke All Tokens', icon: 'fa-key text-red-500' })">
+                    {{ csrf_field() }}
+                    <button type="submit" class="inline-flex items-center px-3 py-2 bg-red-600 text-white text-xs rounded-lg hover:bg-red-700 transition-colors font-medium">
+                        <i class="fas fa-ban mr-1.5"></i>
+                        Revoke all
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+
+            {% if not api.tokens %}
+            <p class="text-sm text-gray-600 dark:text-slate-400">No tokens yet.</p>
+            {% else %}
+            {% if api.access == 'off' %}
+            <p class="text-sm text-gray-600 dark:text-slate-400 mb-3">These tokens are refused while the API is off, and work again once it is turned on.</p>
+            {% endif %}
+            <div class="overflow-x-auto border border-gray-200 dark:border-slate-700 rounded-lg">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+                    <thead class="bg-gray-50 dark:bg-slate-900">
+                        <tr>
+                            <th class="{{ thClass }}">User</th>
+                            <th class="{{ thClass }}">Token</th>
+                            <th class="{{ thClass }}">Access</th>
+                            <th class="{{ thClass }}">Last used</th>
+                            <th class="{{ thClass }}">Expires</th>
+                            <th class="px-4 py-3 w-10"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-slate-700">
+                        {% for token in api.tokens %}
+                        <tr class="hover:bg-gray-50 dark:hover:bg-slate-700/50">
+                            <td class="px-4 py-3 text-sm text-gray-900 dark:text-white whitespace-nowrap">
+                                {{ token.username }}
+                                {% if not token.is_active %}
+                                <span class="ml-1 px-1.5 py-0.5 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded">Deactivated</span>
+                                {% elseif api.users == 'admins' and token.role != 'admin' %}
+                                <span class="ml-1 px-1.5 py-0.5 bg-gray-200 dark:bg-slate-600 text-gray-700 dark:text-slate-300 text-xs rounded">Not an admin</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-900 dark:text-white">
+                                <div class="font-medium">{{ token.name }}</div>
+                                <div class="text-xs font-mono text-gray-500 dark:text-slate-400">dmk_…{{ token.token_hint }}</div>
+                            </td>
+                            <td class="px-4 py-3 text-sm whitespace-nowrap">
+                                {% if token.can_write %}
+                                <span class="px-2 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-800 dark:text-amber-400 text-xs font-semibold rounded">Read and write</span>
+                                {% else %}
+                                <span class="px-2 py-0.5 bg-gray-100 dark:bg-slate-700 text-gray-700 dark:text-slate-300 text-xs font-semibold rounded">Read</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-700 dark:text-slate-300 whitespace-nowrap">
+                                {% if token.last_used_at %}
+                                {{ token.last_used_at|date('M d, Y H:i') }}
+                                <div class="text-xs text-gray-500 dark:text-slate-400">{{ token.last_used_ip }}</div>
+                                {% else %}
+                                Never
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-700 dark:text-slate-300 whitespace-nowrap">
+                                {% if token.expired %}
+                                <span class="px-2 py-0.5 bg-red-100 dark:bg-red-500/10 text-red-800 dark:text-red-400 text-xs font-semibold rounded">Expired</span>
+                                {% elseif token.expires_at %}
+                                {{ token.expires_at|date('M d, Y') }}
+                                {% else %}
+                                Never
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-3 text-right">
+                                <form method="POST" action="/settings/revoke-api-token/{{ token.id }}" onsubmit="return confirmSubmit(event, 'Revoke this token? Whatever uses it stops working.', { title: 'Revoke Token', icon: 'fa-key text-red-500' })">
+                                    {{ csrf_field() }}
+                                    <button type="submit" class="flex items-center justify-center w-8 h-8 bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-600 hover:text-white dark:hover:bg-red-600 transition-colors" title="Revoke token">
+                                        <i class="fas fa-times text-sm"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>

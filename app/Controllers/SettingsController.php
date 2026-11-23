@@ -195,6 +195,11 @@ class SettingsController extends Controller
             'domainCronStale' => $domainCronStale,
             'dnsCronStale' => $dnsCronStale,
             'billing' => $this->billingSettingsForView(),
+            'api' => $this->apiSettingsForView($appSettings['app_url'] ?? ''),
+            'loginLimit' => $this->loginLimitForView(),
+            'emailLimit' => $this->emailLimitForView(),
+            // False until the update that makes authenticator codes work once has run
+            'totpCodesOnce' => (new \App\Models\User())->remembersTotpStep(),
             'title' => 'Settings'
         ]);
     }
@@ -637,8 +642,8 @@ class SettingsController extends Controller
         $this->verifyCsrf('/settings#security');
 
         try {
-            $twoFactorPolicy = trim($_POST['two_factor_policy'] ?? 'optional');
-            $rateLimitMinutes = (int)($_POST['two_factor_rate_limit_minutes'] ?? 15);
+            // Text only: a field sent as an array reads as empty
+            $twoFactorPolicy = is_string($_POST['two_factor_policy'] ?? null) ? trim($_POST['two_factor_policy']) : '';
             $emailCodeExpiryMinutes = (int)($_POST['two_factor_email_code_expiry_minutes'] ?? 10);
 
             // Validate policy
@@ -649,11 +654,19 @@ class SettingsController extends Controller
                 return;
             }
 
-            // Validate rate limit (1-60 minutes)
-            if ($rateLimitMinutes < 1 || $rateLimitMinutes > 60) {
-                $_SESSION['error'] = 'Rate limit must be between 1 and 60 minutes';
-                $this->redirect('/settings#security');
-                return;
+            // Validate the 2FA code limit: wrong codes allowed and the minutes they count,
+            // whole numbers within the bounds of Setting::TWO_FACTOR_LIMIT
+            $rateLimit = [];
+            foreach (Setting::TWO_FACTOR_LIMIT as $name => [, $min, $max]) {
+                $value = $_POST['two_factor_rate_limit_' . $name] ?? null;
+                $value = is_string($value) ? trim($value) : '';
+                if (!preg_match('/^[0-9]{1,3}$/', $value) || (int)$value < $min || (int)$value > $max) {
+                    $label = $name === 'attempts' ? 'Failed codes allowed' : 'The time window';
+                    $_SESSION['error'] = "$label must be a whole number from $min to $max";
+                    $this->redirect('/settings#security');
+                    return;
+                }
+                $rateLimit[$name] = (int)$value;
             }
 
             // Validate email code expiry (1-30 minutes)
@@ -665,7 +678,8 @@ class SettingsController extends Controller
 
             $twoFactorSettings = [
                 'two_factor_policy' => $twoFactorPolicy,
-                'two_factor_rate_limit_minutes' => $rateLimitMinutes,
+                'two_factor_rate_limit_attempts' => $rateLimit['attempts'],
+                'two_factor_rate_limit_minutes' => $rateLimit['minutes'],
                 'two_factor_email_code_expiry_minutes' => $emailCodeExpiryMinutes
             ];
 
@@ -678,6 +692,157 @@ class SettingsController extends Controller
             $_SESSION['error'] = 'Failed to update 2FA settings: ' . $e->getMessage();
             $this->redirect('/settings#security');
         }
+    }
+
+    /** The login attempt limit settings as the Security tab names them */
+    private const LOGIN_LIMIT_LABELS = [
+        'per_address' => 'Failed logins per address',
+        'per_account' => 'Failed logins per account',
+        'minutes' => 'The time window',
+    ];
+
+    /**
+     * What the Login Attempt Limit card shows. Before the update that adds the table has run it
+     * only says so: without the table nothing is counted.
+     */
+    private function loginLimitForView(): array
+    {
+        try {
+            if (!(new \App\Models\LoginAttempt())->isInstalled()) {
+                return ['available' => false];
+            }
+
+            $address = $_SERVER['REMOTE_ADDR'] ?? '';
+
+            return ['available' => true] + $this->settingModel->getLoginLimitSettings() + [
+                'bounds' => Setting::LOGIN_LIMIT,
+                'address' => is_string($address) ? $address : '',
+            ];
+        } catch (\Throwable $e) {
+            return ['available' => false];
+        }
+    }
+
+    /**
+     * Save the login attempt limit: failed logins per address and per account, and the window
+     */
+    public function updateLoginLimit()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/settings#security');
+            return;
+        }
+        $this->verifyCsrf('/settings#security');
+
+        try {
+            $values = [];
+            $error = null;
+            foreach (Setting::LOGIN_LIMIT as $name => [, $min, $max]) {
+                $value = $_POST['login_limit_' . $name] ?? null;
+                $value = is_string($value) ? trim($value) : '';
+                if (!preg_match('/^[0-9]{1,4}$/', $value) || (int)$value < $min || (int)$value > $max) {
+                    $error = self::LOGIN_LIMIT_LABELS[$name] . " must be a whole number from $min to $max";
+                    break;
+                }
+                $values[$name] = (int)$value;
+            }
+
+            if (!(new \App\Models\LoginAttempt())->isInstalled()) {
+                $_SESSION['error'] = 'The login attempt limit needs a database update first';
+            } elseif ($error !== null) {
+                $_SESSION['error'] = $error;
+            } else {
+                $before = $this->settingModel->getLoginLimitSettings();
+                foreach ($values as $name => $value) {
+                    $this->settingModel->setValue('login_limit_' . $name, (string)$value);
+                }
+
+                (new Logger('auth'))->info('Login attempt limit changed', [
+                    'from' => $before,
+                    'to' => $values,
+                    'admin_user_id' => Auth::id(),
+                ]);
+                $_SESSION['success'] = 'Login attempt limit updated successfully';
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to update the login attempt limit: ' . $e->getMessage();
+        }
+
+        $this->redirect('/settings#security');
+    }
+
+    /** The account email limit settings as the Security tab names them */
+    private const EMAIL_LIMIT_LABELS = [
+        'per_recipient' => 'Emails per address',
+        'minutes' => 'The time window',
+    ];
+
+    /**
+     * What the Account Email Limit card shows. Before the update that adds the table has run it
+     * only says so: without the table nothing is counted.
+     */
+    private function emailLimitForView(): array
+    {
+        try {
+            if (!(new \App\Models\EmailCount())->isInstalled()) {
+                return ['available' => false];
+            }
+
+            return ['available' => true] + $this->settingModel->getEmailLimitSettings() + [
+                'bounds' => Setting::EMAIL_LIMIT,
+                'link_minutes' => \App\Models\User::RESET_LINK_MINUTES,
+            ];
+        } catch (\Throwable $e) {
+            return ['available' => false];
+        }
+    }
+
+    /**
+     * Save the account email limit: emails per address and the time window
+     */
+    public function updateEmailLimit()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/settings#security');
+            return;
+        }
+        $this->verifyCsrf('/settings#security');
+
+        try {
+            $values = [];
+            $error = null;
+            foreach (Setting::EMAIL_LIMIT as $name => [, $min, $max]) {
+                $value = $_POST['email_limit_' . $name] ?? null;
+                $value = is_string($value) ? trim($value) : '';
+                if (!preg_match('/^[0-9]{1,4}$/', $value) || (int)$value < $min || (int)$value > $max) {
+                    $error = self::EMAIL_LIMIT_LABELS[$name] . " must be a whole number from $min to $max";
+                    break;
+                }
+                $values[$name] = (int)$value;
+            }
+
+            if (!(new \App\Models\EmailCount())->isInstalled()) {
+                $_SESSION['error'] = 'The account email limit needs a database update first';
+            } elseif ($error !== null) {
+                $_SESSION['error'] = $error;
+            } else {
+                $before = $this->settingModel->getEmailLimitSettings();
+                foreach ($values as $name => $value) {
+                    $this->settingModel->setValue('email_limit_' . $name, (string)$value);
+                }
+
+                (new Logger('auth'))->info('Account email limit changed', [
+                    'from' => $before,
+                    'to' => $values,
+                    'admin_user_id' => Auth::id(),
+                ]);
+                $_SESSION['success'] = 'Account email limit updated successfully';
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to update the account email limit: ' . $e->getMessage();
+        }
+
+        $this->redirect('/settings#security');
     }
 
     /**
@@ -700,6 +865,151 @@ class SettingsController extends Controller
         } catch (\Throwable $e) {
             return ['available' => false];
         }
+    }
+
+    /**
+     * What the API tab shows. Nothing is read from the tokens table until the update that adds
+     * it has run.
+     */
+    private function apiSettingsForView(string $appUrl): array
+    {
+        try {
+            $tokens = new \App\Models\ApiToken();
+            if (!$tokens->isInstalled()) {
+                return ['available' => false];
+            }
+
+            return ['available' => true] + $this->settingModel->getApiSettings() + [
+                'rate_limit_min' => Setting::API_RATE_LIMIT_MIN,
+                'rate_limit_max' => Setting::API_RATE_LIMIT_MAX,
+                'base_url' => rtrim($appUrl, '/') . \Core\ApiKernel::PREFIX,
+                'tokens' => \App\Models\ApiToken::withState($tokens->allWithOwners()),
+            ];
+        } catch (\Throwable $e) {
+            return ['available' => false];
+        }
+    }
+
+    /**
+     * The tokens model for a change on the API tab, or null with the message set when the
+     * database update has not run yet
+     */
+    private function apiTokensForSave(): ?\App\Models\ApiToken
+    {
+        $tokens = new \App\Models\ApiToken();
+        if (!$tokens->isInstalled()) {
+            $_SESSION['error'] = 'The API needs a database update first';
+            return null;
+        }
+
+        return $tokens;
+    }
+
+    /**
+     * Save the API tab: access, who may use it and the requests a token may make per minute
+     */
+    public function updateApi()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/settings#api');
+            return;
+        }
+        $this->verifyCsrf('/settings#api');
+
+        try {
+            $access = $_POST['api_access'] ?? '';
+            $users = $_POST['api_users'] ?? '';
+            $limit = is_string($_POST['api_rate_limit'] ?? null) ? trim($_POST['api_rate_limit']) : '';
+
+            if (!$this->apiTokensForSave()) {
+                // The message is set
+            } elseif (!is_string($access) || !in_array($access, Setting::API_ACCESS, true)) {
+                $_SESSION['error'] = 'Choose Off, Read only or Read and write';
+            } elseif (!is_string($users) || !in_array($users, ['all', 'admins'], true)) {
+                $_SESSION['error'] = 'Choose who may use the API';
+            } elseif (!preg_match('/^[0-9]{1,5}$/', $limit)
+                || (int)$limit < Setting::API_RATE_LIMIT_MIN || (int)$limit > Setting::API_RATE_LIMIT_MAX) {
+                $_SESSION['error'] = 'Requests per minute must be a whole number from '
+                    . Setting::API_RATE_LIMIT_MIN . ' to ' . Setting::API_RATE_LIMIT_MAX;
+            } else {
+                $before = $this->settingModel->getApiSettings();
+                $this->settingModel->setValue('api_access', $access);
+                $this->settingModel->setValue('api_users', $users);
+                $this->settingModel->setValue('api_rate_limit', (string)(int)$limit);
+
+                (new Logger('api'))->info('API settings changed', [
+                    'from' => $before,
+                    'to' => ['access' => $access, 'users' => $users, 'rate_limit' => (int)$limit],
+                    'admin_user_id' => Auth::id(),
+                ]);
+                $_SESSION['success'] = 'API settings updated successfully';
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to update API settings: ' . $e->getMessage();
+        }
+
+        $this->redirect('/settings#api');
+    }
+
+    /**
+     * Revoke one token of any user
+     */
+    public function revokeApiToken($params = [])
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/settings#api');
+            return;
+        }
+        $this->verifyCsrf('/settings#api');
+
+        try {
+            $id = $params['id'] ?? '';
+            $tokens = $this->apiTokensForSave();
+            $token = $tokens && is_string($id) && preg_match('/^[0-9]{1,9}$/', $id) ? $tokens->revoke((int)$id) : null;
+
+            if ($token) {
+                (new Logger('api'))->info('Token revoked by an admin', [
+                    'token_id' => (int)$token['id'],
+                    'user_id' => (int)$token['user_id'],
+                    'admin_user_id' => Auth::id(),
+                ]);
+                $_SESSION['success'] = 'Token revoked';
+            } elseif ($tokens) {
+                $_SESSION['error'] = 'Token not found';
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to revoke the token: ' . $e->getMessage();
+        }
+
+        $this->redirect('/settings#api');
+    }
+
+    /**
+     * Revoke every token of every user
+     */
+    public function revokeAllApiTokens()
+    {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->redirect('/settings#api');
+            return;
+        }
+        $this->verifyCsrf('/settings#api');
+
+        try {
+            $tokens = $this->apiTokensForSave();
+            if ($tokens) {
+                $count = $tokens->revokeAll();
+                (new Logger('api'))->info('All tokens revoked by an admin', [
+                    'tokens' => $count,
+                    'admin_user_id' => Auth::id(),
+                ]);
+                $_SESSION['success'] = $count === 1 ? 'Revoked 1 token' : "Revoked {$count} tokens";
+            }
+        } catch (\Exception $e) {
+            $_SESSION['error'] = 'Failed to revoke the tokens: ' . $e->getMessage();
+        }
+
+        $this->redirect('/settings#api');
     }
 
     /**
